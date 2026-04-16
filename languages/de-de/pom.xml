@@ -6,17 +6,16 @@
     <groupId>de.bmarwell.proximo.pitido</groupId>
   </parent>
 
-  <artifactId>proximo-pitido-spi</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <artifactId>proximo-pitido-languages-de-de</artifactId>
+  <packaging>jar</packaging>
 
-  <name>Proximo Pitido :: SPI</name>
+  <name>Proximo Pitido :: languages :: de-DE</name>
 
   <dependencies>
     <dependency>
       <groupId>de.bmarwell.proximo.pitido</groupId>
-      <artifactId>proximo-pitido-api</artifactId>
+      <artifactId>proximo-pitido-spi</artifactId>
       <version>1.0.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
-
 </project>
