@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 https://maven.apache.org/xsd/maven-4.1.0.xsd">
+  <modelVersion>4.1.0</modelVersion>
+
+  <groupId>de.bmarwell.proximo.pitido</groupId>
+  <artifactId>proximo-pitido</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+
+  <packaging>pom</packaging>
+
+  <name>Proximo Pitido :: root</name>
+
+  <description>Time announcement in various spoken languages over SIP on WLP</description>
+
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+
+    <!-- plugin dependencies -->
+    <dependency.palantir.version>2.86.0</dependency.palantir.version>
+    <dependency.cleanthat.version>2.25</dependency.cleanthat.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.palantir.javaformat</groupId>
+        <artifactId>palantir-java-format</artifactId>
+        <version>${dependency.palantir.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.github.solven-eu.cleanthat</groupId>
+        <artifactId>java</artifactId>
+        <version>${dependency.cleanthat.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>3.6.2</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.14.1</version>
+        </plugin>
+
+        <plugin>
+          <groupId>com.diffplug.spotless</groupId>
+          <artifactId>spotless-maven-plugin</artifactId>
+          <version>3.4.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>0.8.14</version>
+        </plugin>
+
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-prerequisites</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <phase>validate</phase>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>${maven.compiler.release}</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[4.0.0-rc-5,)</version>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>-Xlint:all</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <configuration>
+          <pom>
+            <sortPom>
+              <spaceBeforeCloseEmptyElement>true</spaceBeforeCloseEmptyElement>
+            </sortPom>
+          </pom>
+
+          <java>
+            <cleanthat>
+              <version>${dependency.cleanthat.version}</version>
+              <mutators>
+                <mutator>*</mutator>
+              </mutators>
+              <excludedMutators>
+                <excludedMutator>AvoidFileStream</excludedMutator>
+              </excludedMutators>
+            </cleanthat>
+
+            <importOrder />
+            <removeUnusedImports />
+
+            <palantirJavaFormat>
+              <version>${dependency.palantir.version}</version>
+            </palantirJavaFormat>
+
+            <licenseHeader>
+              <content><![CDATA[
+/*
+ * Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the European Commission - subsequent
+ * versions of the EUPL (the "Licence");
+ * You may not use this work except in compliance with the Licence.
+ * You may obtain a copy of the Licence at:
+ *
+ * [PROJECT_HOME]/LICENSE
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
+ * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the Licence for the specific language governing permissions and limitations under the Licence.
+ */
+]]></content>
+            </licenseHeader>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-format</id>
+            <goals>
+              <goal>apply</goal>
+            </goals>
+            <phase>process-sources</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <subprojects>
+    <subproject>spi</subproject>
+  </subprojects>
+</project>
