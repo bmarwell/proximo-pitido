@@ -4,7 +4,7 @@
  * You may not use this work except in compliance with the Licence.
  * You may obtain a copy of the Licence at:
  *
- * [PROJECT_HOME]/LICENSE
+ * ${PROJECT_HOME}/LICENSE
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,7 +24,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @WebListener
 public class SipRegistrationListener implements ServletContextListener {
 
-    // TODO: does not work, SipServlets are not CDI-bound (yet)
+    private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
 
     @Inject
     @ConfigProperty(name = "sip.phone.number", defaultValue = "+1000000000")
@@ -38,9 +38,10 @@ public class SipRegistrationListener implements ServletContextListener {
         // Here you would use the SipFactory to create a REGISTER request
         // and send it to your provider (e.g., tel.t-online.de)
         // using your username and password from mpConfig.
-        System.out.println("Registering SIP phone number: " + phoneNumber);
-        System.out.println("Registering SIP via: " + sipFactory);
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Registering SIP phone number: [{0}] via [{1}]",
+                this.phoneNumber,
+                this.sipFactory);
     }
-
-
 }

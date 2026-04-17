@@ -4,7 +4,7 @@
  * You may not use this work except in compliance with the Licence.
  * You may obtain a copy of the Licence at:
  *
- * [PROJECT_HOME]/LICENSE
+ * ${PROJECT_HOME}/LICENSE
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,12 +12,11 @@
  */
 package de.bmarwell.proximo.pitido.war;
 
+import de.bmarwell.proximo.pitido.api.AudioPlayer;
+import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
-
-import de.bmarwell.proximo.pitido.api.AudioPlayer;
-import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.ServletException;
@@ -47,5 +46,17 @@ public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Seri
         // TODO: implement
         throw new UnsupportedOperationException(
                 "not yet implemented: [de.bmarwell.proximo.pitido.war.SipTimeServlet::doInvite].");
+    }
+
+    public void setLanguageFactories(Instance<LanguageFactory> languageFactories) {
+        this.languageFactories = languageFactories;
+    }
+
+    public void setAudioPlayer(AudioPlayer audioPlayer) {
+        this.audioPlayer = audioPlayer;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
     }
 }

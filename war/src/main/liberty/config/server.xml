@@ -26,4 +26,12 @@
   <variable name="SIP_PASSWORD" value="my_secret_password"/>
 
   <variable name="sip.phone.number" value="${env.SIP_PHONE_NUMBER:-}"/>
+
+  <logging
+    consoleLogLevel="INFO"
+    consoleFormat="DEV"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=info"
+    hideMessage="CWOWB1009W"
+    isoDateFormat="true"
+  />
 </server>
