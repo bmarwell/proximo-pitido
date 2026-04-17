@@ -41,4 +41,6 @@ public class SipRegistrationListener implements ServletContextListener {
         System.out.println("Registering SIP phone number: " + phoneNumber);
         System.out.println("Registering SIP via: " + sipFactory);
     }
+
+
 }

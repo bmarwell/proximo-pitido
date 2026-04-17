@@ -5,4 +5,17 @@
   version="4.0">
 
   <display-name>Proximo Pitido</display-name>
+
+  <!--
+    while SipFactory is available as ServletContextAttribute,
+    it is only available for Servlets extending SipServlet,
+    and not available for WebListeners etc. by default.
+    With making it available to InitialContext,
+    we can use a CDI extension on top of it.
+  -->
+  <resource-env-ref>
+    <resource-env-ref-name>sip/SipFactory</resource-env-ref-name>
+    <resource-env-ref-type>javax.servlet.sip.SipFactory</resource-env-ref-type>
+  </resource-env-ref>
+
 </web-app>

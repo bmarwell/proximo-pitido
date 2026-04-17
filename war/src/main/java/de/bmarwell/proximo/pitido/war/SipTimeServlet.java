@@ -12,9 +12,12 @@
  */
 package de.bmarwell.proximo.pitido.war;
 
+import java.io.IOException;
+import java.io.Serial;
+import java.io.Serializable;
+
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
-import java.io.IOException;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.ServletException;
@@ -23,9 +26,10 @@ import javax.servlet.sip.annotation.SipServlet;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @SipServlet(name = "SipTimeServlet")
-public class SipTimeServlet extends javax.servlet.sip.SipServlet {
+public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Serializable {
 
-    // TODO: does not work, SipServlets are not CDI-bound (yet)
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     @Inject
     Instance<LanguageFactory> languageFactories;
