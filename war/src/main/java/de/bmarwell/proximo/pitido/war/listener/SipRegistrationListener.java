@@ -10,38 +10,35 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.war;
+package de.bmarwell.proximo.pitido.war.listener;
 
-import de.bmarwell.proximo.pitido.api.AudioPlayer;
-import de.bmarwell.proximo.pitido.spi.LanguageFactory;
-import java.io.IOException;
-import javax.enterprise.inject.Instance;
+import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
-import javax.servlet.ServletException;
-import javax.servlet.sip.SipServletRequest;
-import javax.servlet.sip.annotation.SipServlet;
+import javax.servlet.ServletContextEvent;
+import javax.servlet.ServletContextListener;
+import javax.servlet.annotation.WebListener;
+import javax.servlet.sip.SipFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-@SipServlet(name = "SipTimeServlet")
-public class SipTimeServlet extends javax.servlet.sip.SipServlet {
+@ApplicationScoped
+@WebListener
+public class SipRegistrationListener implements ServletContextListener {
 
     // TODO: does not work, SipServlets are not CDI-bound (yet)
-
-    @Inject
-    Instance<LanguageFactory> languageFactories;
-
-    @Inject
-    AudioPlayer audioPlayer;
 
     @Inject
     @ConfigProperty(name = "sip.phone.number", defaultValue = "+1000000000")
     private String phoneNumber;
 
+    @Inject
+    SipFactory sipFactory;
+
     @Override
-    protected void doInvite(SipServletRequest req) throws ServletException, IOException {
-        super.doInvite(req);
-        // TODO: implement
-        throw new UnsupportedOperationException(
-                "not yet implemented: [de.bmarwell.proximo.pitido.war.SipTimeServlet::doInvite].");
+    public void contextInitialized(ServletContextEvent sce) {
+        // Here you would use the SipFactory to create a REGISTER request
+        // and send it to your provider (e.g., tel.t-online.de)
+        // using your username and password from mpConfig.
+        System.out.println("Registering SIP phone number: " + phoneNumber);
+        System.out.println("Registering SIP via: " + sipFactory);
     }
 }

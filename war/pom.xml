@@ -2,11 +2,7 @@
 <project xmlns="http://maven.apache.org/POM/4.1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 https://maven.apache.org/xsd/maven-4.1.0.xsd">
   <modelVersion>4.1.0</modelVersion>
 
-  <parent>
-    <groupId>de.bmarwell.proximo.pitido</groupId>
-    <artifactId>proximo-pitido</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-  </parent>
+  <parent />
 
   <artifactId>proximo-pitido-war</artifactId>
 
@@ -15,6 +11,33 @@
   <name>Proximo Pitido :: Web Application (SIP)</name>
 
   <dependencies>
+    <!-- JakartaEE: Stuck at JakartaEE 8.0 because of old sip-api. -->
+    <dependency>
+      <groupId>com.ibm.ws.java</groupId>
+      <artifactId>com.ibm.ws.java.sipServlet.1.1</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>jakarta.enterprise</groupId>
+      <artifactId>jakarta.enterprise.cdi-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.microprofile.config</groupId>
+      <artifactId>microprofile-config-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.microprofile.health</groupId>
+      <artifactId>microprofile-health-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
     <dependency>
       <groupId>de.bmarwell.proximo.pitido</groupId>
       <artifactId>proximo-pitido-api</artifactId>
@@ -23,6 +46,11 @@
     <dependency>
       <groupId>de.bmarwell.proximo.pitido</groupId>
       <artifactId>proximo-pitido-spi</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
+      <groupId>de.bmarwell.proximo.pitido</groupId>
+      <artifactId>proximo-pitido-core</artifactId>
       <version>1.0.0-SNAPSHOT</version>
     </dependency>
 
@@ -34,5 +62,19 @@
       <scope>runtime</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.openliberty.tools</groupId>
+        <artifactId>liberty-maven-plugin</artifactId>
+        <configuration>
+          <installAppPackages>project</installAppPackages>
+
+          <serverName>proximo-pitido</serverName>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

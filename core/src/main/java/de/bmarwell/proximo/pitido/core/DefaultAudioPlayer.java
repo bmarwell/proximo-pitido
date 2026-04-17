@@ -10,16 +10,18 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.spi;
+package de.bmarwell.proximo.pitido.core;
 
-public interface TimeAnnouncement {
+import de.bmarwell.proximo.pitido.api.AudioPlayer;
+import javax.enterprise.context.Dependent;
 
-    /// play the announcement
-    void announce() throws Exception;
+@Dependent
+public class DefaultAudioPlayer implements AudioPlayer {
 
-    /// metadata: Get the ISO language code
-    String getLanguageCode();
-
-    /// get the Display Name, mostly for debugging.
-    String getDisplayName();
+    @Override
+    public void playBlocking(String resourcePath) throws Exception {
+        // TODO: implement
+        throw new UnsupportedOperationException(
+                "not yet implemented: [de.bmarwell.proximo.pitido.core.DefaultAudioPlayer::playBlocking].");
+    }
 }

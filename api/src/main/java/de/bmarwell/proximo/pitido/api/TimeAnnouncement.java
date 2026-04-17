@@ -10,18 +10,10 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.spi;
+package de.bmarwell.proximo.pitido.api;
 
-public interface LanguageSelectionAnnouncement {
+public interface TimeAnnouncement {
 
-    /// Plays the selection phrase for a given number.
-    ///
-    /// Example: "Drücke 1 für Deutsch" at number `1`.
-    void playSelectionPhrase(int number) throws Exception;
-
-    /// metadata: Get the ISO language code
-    String getLanguageCode();
-
-    /// get the Display Name, mostly for debugging.
-    String getDisplayName();
+    /// play the announcement
+    void announce() throws Exception;
 }
