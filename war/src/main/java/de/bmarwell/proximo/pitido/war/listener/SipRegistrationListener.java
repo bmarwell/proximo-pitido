@@ -12,11 +12,14 @@
  */
 package de.bmarwell.proximo.pitido.war.listener;
 
+import java.io.IOException;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
+import javax.servlet.sip.Address;
+import javax.servlet.sip.ServletParseException;
 import javax.servlet.sip.SipFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -27,11 +30,23 @@ public class SipRegistrationListener implements ServletContextListener {
     private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
 
     @Inject
-    @ConfigProperty(name = "sip.phone.number", defaultValue = "+1000000000")
-    private String phoneNumber;
+    SipFactory sipFactory;
 
     @Inject
-    SipFactory sipFactory;
+    @ConfigProperty(name = "sip.provider.host")
+    String host;
+
+    @Inject
+    @ConfigProperty(name = "sip.user.id")
+    String userId;
+
+    @Inject
+    @ConfigProperty(name = "sip.user.domain")
+    String domain;
+
+    @Inject
+    @ConfigProperty(name = "sip.registration.expires", defaultValue = "3600")
+    int expires;
 
     @Override
     public void contextInitialized(ServletContextEvent sce) {
@@ -40,8 +55,38 @@ public class SipRegistrationListener implements ServletContextListener {
         // using your username and password from mpConfig.
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Registering SIP phone number: [{0}] via [{1}]",
-                this.phoneNumber,
+                "Registering SIP user ID: [{0}@{1}] via [{2}]",
+                this.userId,
+                this.domain,
                 this.sipFactory);
+
+        var applicationSession = this.sipFactory.createApplicationSession();
+        var fromUri = this.sipFactory.createSipURI(this.userId, this.domain);
+
+        try {
+            var requestURI = this.sipFactory.createURI("sip:" + this.domain);
+            // var registerRequest = this.sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
+            var registerRequest = this.sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Session: {0}, FromToUri: {1}, RequestUri: {2}",
+                    applicationSession,
+                    fromUri,
+                    requestURI);
+            registerRequest.setExpires(this.expires);
+
+            // Critical for some providers:
+            // The 'Contact' header tells them where the server is physically located
+            Address contact = this.sipFactory.createAddress(fromUri);
+            registerRequest.setAddressHeader("Contact", contact);
+
+            registerRequest.setRequestURI(requestURI);
+
+            registerRequest.send();
+        } catch (ServletParseException | IOException sipEx) {
+            LOGGER.log(System.Logger.Level.ERROR, "Registration failed", sipEx);
+        } catch (NullPointerException npe) {
+            LOGGER.log(System.Logger.Level.ERROR, "Registration failed due to NPE", npe);
+        }
     }
 }

@@ -22,7 +22,6 @@ import javax.inject.Inject;
 import javax.servlet.ServletException;
 import javax.servlet.sip.SipServletRequest;
 import javax.servlet.sip.annotation.SipServlet;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @SipServlet(name = "SipTimeServlet")
 public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Serializable {
@@ -35,10 +34,6 @@ public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Seri
 
     @Inject
     AudioPlayer audioPlayer;
-
-    @Inject
-    @ConfigProperty(name = "sip.phone.number", defaultValue = "+1000000000")
-    private String phoneNumber;
 
     @Override
     protected void doInvite(SipServletRequest req) throws ServletException, IOException {
@@ -54,9 +49,5 @@ public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Seri
 
     public void setAudioPlayer(AudioPlayer audioPlayer) {
         this.audioPlayer = audioPlayer;
-    }
-
-    public void setPhoneNumber(String phoneNumber) {
-        this.phoneNumber = phoneNumber;
     }
 }

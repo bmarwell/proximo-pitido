@@ -20,16 +20,9 @@
 
   <cdi enableImplicitBeanArchives="false" />
 
-  <variable name="SIP_PHONE_NUMBER" value="+1234567890"/>
-  <variable name="SIP_PROVIDER_URL" value="sip:provider.com"/>
-  <variable name="SIP_USERNAME" value="my_user"/>
-  <variable name="SIP_PASSWORD" value="my_secret_password"/>
-
-  <variable name="sip.phone.number" value="${env.SIP_PHONE_NUMBER:-}"/>
-
   <logging
     consoleLogLevel="INFO"
-    consoleFormat="DEV"
+    consoleFormat="TBASIC"
     traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=info"
     hideMessage="CWOWB1009W"
     isoDateFormat="true"
