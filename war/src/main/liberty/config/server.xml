@@ -15,15 +15,18 @@
 
   <sipEndpoint id="defaultSipEndpoint"
     host="*"
-    sipAddressPort="5060"/>
+    sipUDPPort="5060"
+    sipTCPPort="5060"
+    sipTLSPort="5061"
+  />
   <httpEndpoint id="defaultHttpEndpoint" host="*" httpPort="9080" />
 
   <cdi enableImplicitBeanArchives="false" />
 
   <logging
-    consoleLogLevel="INFO"
+    consoleLogLevel="AUDIT"
     consoleFormat="TBASIC"
-    traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=info"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=info:com.ibm.ws.sip.*=debug:jain.protocol.ip.sip.*=debug"
     hideMessage="CWOWB1009W"
     isoDateFormat="true"
   />

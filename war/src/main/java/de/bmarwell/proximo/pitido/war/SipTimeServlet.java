@@ -14,20 +14,27 @@ package de.bmarwell.proximo.pitido.war;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
+import de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
+import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.sip.SipServletRequest;
 import javax.servlet.sip.annotation.SipServlet;
 
-@SipServlet(name = "SipTimeServlet")
+@SipServlet(name = "SipTimeServlet", loadOnStartup = 1, applicationName = "Proximo Pitido")
 public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
+
+    private static final System.Logger LOGGER = System.getLogger(SipTimeServlet.class.getName());
+
+    @Inject
+    SipRegistrationListener sipRegistrationService;
 
     @Inject
     Instance<LanguageFactory> languageFactories;
@@ -41,6 +48,13 @@ public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Seri
         // TODO: implement
         throw new UnsupportedOperationException(
                 "not yet implemented: [de.bmarwell.proximo.pitido.war.SipTimeServlet::doInvite].");
+    }
+
+    @Override
+    public void init(ServletConfig cfg) throws ServletException {
+        super.init(cfg);
+        LOGGER.log(System.Logger.Level.INFO, "do init: {0}", cfg);
+        this.sipRegistrationService.register(getServletContext());
     }
 
     public void setLanguageFactories(Instance<LanguageFactory> languageFactories) {

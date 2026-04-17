@@ -5,4 +5,5 @@
   version="1.1">
 
   <app-name>Proximo Pitido</app-name>
+  <display-name>Proximo Pitido</display-name>
 </sip-app>

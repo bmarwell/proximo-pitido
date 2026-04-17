@@ -13,24 +13,19 @@
 package de.bmarwell.proximo.pitido.war.listener;
 
 import java.io.IOException;
+import java.util.Objects;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
-import javax.servlet.annotation.WebListener;
+import javax.servlet.ServletContext;
 import javax.servlet.sip.Address;
 import javax.servlet.sip.ServletParseException;
 import javax.servlet.sip.SipFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
-@WebListener
-public class SipRegistrationListener implements ServletContextListener {
+public class SipRegistrationListener {
 
     private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
-
-    @Inject
-    SipFactory sipFactory;
 
     @Inject
     @ConfigProperty(name = "sip.provider.host")
@@ -48,36 +43,38 @@ public class SipRegistrationListener implements ServletContextListener {
     @ConfigProperty(name = "sip.registration.expires", defaultValue = "3600")
     int expires;
 
-    @Override
-    public void contextInitialized(ServletContextEvent sce) {
+    public void register(ServletContext servletContext) {
         // Here you would use the SipFactory to create a REGISTER request
         // and send it to your provider (e.g., tel.t-online.de)
         // using your username and password from mpConfig.
+        SipFactory sipFactory = (SipFactory) servletContext.getAttribute(SipFactory.class.getName());
         LOGGER.log(
                 System.Logger.Level.INFO,
                 "Registering SIP user ID: [{0}@{1}] via [{2}]",
                 this.userId,
                 this.domain,
-                this.sipFactory);
+                sipFactory);
 
-        var applicationSession = this.sipFactory.createApplicationSession();
-        var fromUri = this.sipFactory.createSipURI(this.userId, this.domain);
+        var applicationSession = sipFactory.createApplicationSession();
+        Objects.requireNonNull(applicationSession.getApplicationName());
+        var fromUri = sipFactory.createSipURI(this.userId, this.domain);
 
         try {
-            var requestURI = this.sipFactory.createURI("sip:" + this.domain);
-            // var registerRequest = this.sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
-            var registerRequest = this.sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
+            var requestURI = sipFactory.createURI("sip:" + this.domain);
+            var registerRequest = sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
             LOGGER.log(
                     System.Logger.Level.INFO,
-                    "Session: {0}, FromToUri: {1}, RequestUri: {2}",
+                    "Session: {0}, FromToUri: {1}, RequestUri: {2}, request: {3}, applicationName: {4}",
                     applicationSession,
                     fromUri,
-                    requestURI);
+                    requestURI,
+                    registerRequest,
+                    applicationSession.getApplicationName());
             registerRequest.setExpires(this.expires);
 
             // Critical for some providers:
             // The 'Contact' header tells them where the server is physically located
-            Address contact = this.sipFactory.createAddress(fromUri);
+            Address contact = sipFactory.createAddress(fromUri);
             registerRequest.setAddressHeader("Contact", contact);
 
             registerRequest.setRequestURI(requestURI);
