@@ -14,9 +14,13 @@ package de.bmarwell.proximo.pitido.core.media;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.inject.Instance;
+import javax.inject.Inject;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -27,8 +31,9 @@ import org.apache.tika.mime.MediaType;
  * Decodes WAV audio to 8 kHz mono 16-bit PCM.
  *
  * <p>The WAV files used by this application are 8 kHz, 16-bit, stereo (two channels).
- * Stereo samples are mixed to mono using the ITU-R BS.775 −3 dB coefficient (1/√channels),
- * which matches broadcast-standard practice and sounds louder than a plain average.
+ * Stereo samples are mixed to mono via the injected {@link ChannelMixer}.
+ * By default {@link JavaChannelMixer} is used (ITU-R BS.775 −3 dB coefficient);
+ * if {@link LibsoxrChannelMixer} is available on the host it is preferred instead.
  *
  * @deprecated WAV is a legacy format kept for backwards compatibility.
  *     New audio resources should use the Opus codec in an OGG container ({@code .opus}).
@@ -44,6 +49,24 @@ public class WavPcmDecoder implements PcmDecoder {
 
     /** Ensures the deprecation warning is logged at most once per JVM lifetime. */
     private static final AtomicBoolean DEPRECATION_WARNED = new AtomicBoolean(false);
+
+    @Inject
+    Instance<ChannelMixer> channelMixers;
+
+    private ChannelMixer activeChannelMixer;
+
+    @PostConstruct
+    void selectChannelMixer() {
+        this.activeChannelMixer = this.channelMixers.stream()
+                .filter(ChannelMixer::isAvailable)
+                .min(Comparator.comparingInt(ChannelMixer::preference))
+                .orElseThrow(() ->
+                        new IllegalStateException("No ChannelMixer available — JavaChannelMixer must be on classpath"));
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "Selected channel mixer: {0}",
+                this.activeChannelMixer.getClass().getSimpleName());
+    }
 
     @Override
     public boolean supports(String resourcePath, MediaType mimeType) {
@@ -75,7 +98,7 @@ public class WavPcmDecoder implements PcmDecoder {
 
             int channels = fmt.getChannels();
 
-            return new WavPcmStream(raw, channels);
+            return new WavPcmStream(raw, channels, this.activeChannelMixer);
         } catch (UnsupportedAudioFileException unsupportedAudioFileException) {
             throw new IOException("Not a valid WAV file", unsupportedAudioFileException);
         }
@@ -85,13 +108,15 @@ public class WavPcmDecoder implements PcmDecoder {
 
         private final AudioInputStream stream;
         private final int channels;
+        private final ChannelMixer channelMixer;
 
         /** Two bytes per 16-bit sample × number of channels. */
         private final byte[] rawBuf;
 
-        WavPcmStream(AudioInputStream stream, int channels) {
+        WavPcmStream(AudioInputStream stream, int channels, ChannelMixer channelMixer) {
             this.stream = stream;
             this.channels = channels;
+            this.channelMixer = channelMixer;
             this.rawBuf = new byte[channels * 2];
         }
 
@@ -114,26 +139,19 @@ public class WavPcmDecoder implements PcmDecoder {
         }
 
         /**
-         * Mixes all channels to mono using the ITU-R BS.775 −3 dB coefficient (1/√channels).
-         * Little-endian 16-bit PCM.
-         *
-         * <p>This produces better perceived loudness than a simple arithmetic average (−6 dB),
-         * matching broadcast-standard stereo-to-mono downmix practice.
-         * Result is clamped to the {@code short} range to guard against rare clipping on
-         * maximally loud multi-channel content.
+         * Decodes one PCM frame from {@link #rawBuf} and delegates mono mixing to
+         * the chosen {@link ChannelMixer}.
          */
         private short mixChannels() {
-            int sum = 0;
+            short[] channelSamples = new short[this.channels];
 
             for (int ch = 0; ch < this.channels; ch++) {
                 int lo = this.rawBuf[ch * 2] & 0xFF;
                 int hi = this.rawBuf[ch * 2 + 1];
-                sum += (short) ((hi << 8) | lo);
+                channelSamples[ch] = (short) ((hi << 8) | lo);
             }
 
-            int mixed = (int) (sum / Math.sqrt(this.channels));
-
-            return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
+            return this.channelMixer.mix(channelSamples);
         }
 
         @Override

@@ -18,10 +18,11 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.sip.SipServletRequest;
 
@@ -32,9 +33,11 @@ import javax.servlet.sip.SipServletRequest;
  * allocates a local UDP socket for sending RTP, selects the best mutually supported codec,
  * and builds the SDP answer string to include in the 200 OK response.
  *
- * <p>Codec preference is defined by {@link #PREFERRED_CODECS}.
- * The first codec from that list whose payload type appears in the SDP offer is selected.
- * If no preferred codec is offered, PCMA is used as the unconditional fallback.
+ * <p>Codec preference is driven by CDI-injected {@link RtpCodec} beans, filtered by
+ * {@link RtpCodec#isAvailable()} and sorted by {@link RtpCodec#preference()} (lower = preferred).
+ * The first available codec whose payload type appears in the SDP offer is selected.
+ * If no injected codec matches, {@link PcmaRtpCodec#INSTANCE} is used as the unconditional
+ * fallback (PCMA is always available).
  *
  * <p>The SDP answer advertises {@code sendonly} direction since this application is a
  * speaking clock that transmits audio but never expects to receive it.
@@ -47,18 +50,13 @@ public class SdpNegotiator {
 
     private static final System.Logger LOGGER = System.getLogger(SdpNegotiator.class.getName());
 
-    /**
-     * Codecs offered in descending preference order.
-     * The first codec whose payload type appears in the SDP offer is selected.
-     *
-     * <p>G.722 is not listed here yet — add {@link G722RtpCodec} once its encoder is implemented.
-     */
-    private static final List<RtpCodec> PREFERRED_CODECS = List.of(PcmaRtpCodec.INSTANCE);
-
     private static final int PTIME_MS = 20;
 
     @Inject
     LocalSipHostProvider localSipHostProvider;
+
+    @Inject
+    Instance<RtpCodec> availableCodecs;
 
     /**
      * Negotiates media for the given INVITE.
@@ -165,14 +163,20 @@ public class SdpNegotiator {
     }
 
     /**
-     * Selects the best codec from {@link #PREFERRED_CODECS} that is present in the offered set.
-     * Falls back to {@link PcmaRtpCodec#INSTANCE} if no preferred codec is offered.
+     * Selects the best available codec from the CDI-injected {@link RtpCodec} beans.
+     * Filters by {@link RtpCodec#isAvailable()}, sorts by {@link RtpCodec#preference()}
+     * (lower = preferred), then picks the first whose payload type appears in the offer.
+     * Falls back to {@link PcmaRtpCodec#INSTANCE} if nothing matches.
+     * Calls {@link RtpCodec#forCall()} on the winner to obtain a per-call encoder instance.
      */
-    private static RtpCodec selectCodec(Set<Integer> offeredPayloadTypes) {
-        return PREFERRED_CODECS.stream()
+    private RtpCodec selectCodec(Set<Integer> offeredPayloadTypes) {
+        RtpCodec descriptor = this.availableCodecs.stream()
+                .filter(RtpCodec::isAvailable)
                 .filter(codec -> offeredPayloadTypes.contains(codec.payloadType()))
-                .findFirst()
+                .min(Comparator.comparingInt(RtpCodec::preference))
                 .orElse(PcmaRtpCodec.INSTANCE);
+
+        return descriptor.forCall();
     }
 
     private static String buildSdpAnswer(String localIp, int localPort, RtpCodec codec) {

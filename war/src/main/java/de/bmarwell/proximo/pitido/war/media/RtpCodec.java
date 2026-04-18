@@ -24,15 +24,50 @@ import java.io.IOException;
  *
  * <p>Most codecs are stateful (the encoder carries ADPCM predictor state across packets) and must
  * <em>not</em> be shared across call legs.
- * {@link PcmaRtpCodec} is the exception: G.711 A-law is memoryless and its singleton
- * {@link PcmaRtpCodec#INSTANCE} is safe to share.
+ * {@link PcmaRtpCodec} is the exception: G.711 A-law is memoryless, so its CDI singleton instance
+ * is safe to share — {@link #forCall()} returns {@code this}.
  *
- * <p>The {@link #inputSampleRate()} and {@link #samplesPerFrame()} values document what the PCM
- * decode pipeline should deliver to this encoder.
- * The pipeline currently always outputs 8 kHz mono PCM; when 16 kHz language packs become
- * available this interface will allow codecs such as G.722 to request the correct rate.
+ * <p>Each implementation is an {@code @ApplicationScoped} CDI bean.
+ * {@link #isAvailable()} reports whether the codec can actually be used on the current host
+ * (e.g. the required native library is installed).
+ * {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all beans via CDI
+ * {@code Instance<RtpCodec>} and filters by availability and preference.
  */
 public interface RtpCodec {
+
+    /**
+     * Returns {@code true} if this codec can be used on the current host.
+     *
+     * <p>Pure-Java codecs (e.g. PCMA) always return {@code true}.
+     * Native-library codecs (e.g. a future G.722 via libg72x) return {@code false} when the
+     * required library is not installed.
+     */
+    boolean isAvailable();
+
+    /**
+     * Codec preference for SDP negotiation — lower value = offered first (higher quality preferred).
+     *
+     * <p>Example assignments:
+     * <ul>
+     *   <li>G.722 — 50 (preferred when available; wideband 50 Hz–7 kHz)</li>
+     *   <li>PCMA — 100 (always-available narrowband fallback)</li>
+     * </ul>
+     */
+    int preference();
+
+    /**
+     * Returns a codec instance suitable for exactly one call leg.
+     *
+     * <p>Stateless codecs (e.g. PCMA) return {@code this} — the CDI singleton is safe to share.
+     * Stateful codecs (e.g. G.722 ADPCM) must override this to return a new instance with fresh
+     * encoder state; sharing predictor state across calls would corrupt the audio stream.
+     *
+     * <p>Called by {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} once per negotiated
+     * call, immediately before storing the instance in {@link CallMedia}.
+     */
+    default RtpCodec forCall() {
+        return this;
+    }
 
     /**
      * RTP payload type (0–127).

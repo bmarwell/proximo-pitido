@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import java.io.IOException;
+import javax.enterprise.context.ApplicationScoped;
 
 /**
  * G.711 A-law (PCMA) RTP codec, payload type 8.
@@ -23,16 +24,36 @@ import java.io.IOException;
  *
  * <p>G.711 A-law is memoryless: each sample encodes independently, so the encoder carries no state
  * across packets.
- * {@link #INSTANCE} may therefore be shared across call legs without synchronisation.
+ * This bean is {@code @ApplicationScoped} (a CDI singleton) and safe to share across call legs;
+ * {@link #forCall()} returns {@code this}.
+ *
+ * <p>{@link #INSTANCE} is kept as a static fallback for code paths that cannot use CDI injection
+ * (e.g. default return values in {@link SdpNegotiator}).
+ * Prefer CDI injection wherever possible.
  *
  * @see G722RtpCodec
  */
+@ApplicationScoped
 public final class PcmaRtpCodec implements RtpCodec {
 
-    /** Shared singleton — safe to share because A-law encoding is stateless. */
+    /**
+     * Static fallback instance for non-CDI contexts.
+     * Prefer injecting via CDI; use this only where injection is unavailable.
+     */
     public static final PcmaRtpCodec INSTANCE = new PcmaRtpCodec();
 
-    private PcmaRtpCodec() {}
+    PcmaRtpCodec() {}
+
+    @Override
+    public boolean isAvailable() {
+        return true;
+    }
+
+    @Override
+    public int preference() {
+        // PCMA is the narrowband baseline; prefer higher-quality codecs when available.
+        return 100;
+    }
 
     @Override
     public int payloadType() {

@@ -13,6 +13,8 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import java.io.IOException;
+import javax.annotation.PostConstruct;
+import javax.enterprise.context.ApplicationScoped;
 
 /**
  * G.722 wideband audio codec scaffold for RTP transmission (payload type 9).
@@ -29,17 +31,73 @@ import java.io.IOException;
  *
  * <p><strong>Encoding is not yet implemented.</strong>
  * {@link #encode(short[])} throws {@link UnsupportedOperationException}.
- * {@link SdpNegotiator} does not include this codec in its preference list until encoding is
- * implemented and a suitable pure-Java library is available on Maven Central.
+ * {@link #isAvailable()} returns {@code false} until an encoder is implemented.
  *
- * <p>Audio quality note: G.722's wideband advantage requires 16 kHz source audio.
- * The current decode pipeline outputs 8 kHz; language packs would need to supply 16 kHz
- * recordings and the pipeline would need to target {@link #inputSampleRate()} before G.722
- * sounds better than {@link PcmaRtpCodec PCMA}.
+ * <h2>Future implementation path — libg72x via FFM</h2>
+ *
+ * <p>The recommended native backend is {@code libg72x} (ITU-T reference implementation).
+ * Install it on the host:
+ * <ul>
+ *   <li>Debian / Ubuntu: {@code apt install libg72x-dev} (if packaged) or build from source</li>
+ *   <li>Arch Linux: AUR package {@code libg72x}</li>
+ * </ul>
+ *
+ * <p>Bind using the Foreign Function and Memory (FFM) API:
+ * <ol>
+ *   <li>Detect the library: {@code SymbolLookup.libraryLookup("libg72x.so", arena)}</li>
+ *   <li>Bind {@code g722_encode_init(g722_encode_state_t *)} and
+ *       {@code g722_encode(g722_encode_state_t *, const short *, int, unsigned char *)}</li>
+ *   <li>Allocate the opaque state struct as a {@code MemorySegment} and hold it per call leg.</li>
+ * </ol>
+ *
+ * <p>Because the ADPCM predictor state is per-call, {@link #forCall()} must return a new
+ * {@code G722RtpCodec} instance with a fresh encoder state rather than returning {@code this}.
+ * The CDI {@code @ApplicationScoped} bean acts as a factory/descriptor; actual encoding uses
+ * per-call instances.
+ *
+ * <h2>G.729 — will not be implemented</h2>
+ *
+ * <p>G.729 (CS-ACELP, payload type 18) will <em>not</em> be implemented in this project.
+ * The algorithm complexity makes a pure-Java port impractical, and the codec is dying in practice —
+ * Deutsche Telekom and most modern SIP providers do not offer it.
+ * {@code bcg729} exists as a C library but adds significant porting effort for negligible gain.
  *
  * @see PcmaRtpCodec
  */
+@ApplicationScoped
 public final class G722RtpCodec implements RtpCodec {
+
+    private static final System.Logger LOGGER = System.getLogger(G722RtpCodec.class.getName());
+
+    @PostConstruct
+    void logStatus() {
+        LOGGER.log(System.Logger.Level.DEBUG, "G722RtpCodec loaded — encoding not yet implemented, isAvailable=false");
+    }
+
+    @Override
+    public boolean isAvailable() {
+        // Set to true and implement encode() once libg72x FFM binding is complete.
+        return false;
+    }
+
+    @Override
+    public int preference() {
+        // Preferred over PCMA when available: wideband audio sounds significantly better.
+        return 50;
+    }
+
+    /**
+     * Returns a new per-call encoder instance.
+     *
+     * <p>G.722 is stateful (ADPCM predictor); sharing this bean across calls would corrupt audio.
+     * Each call leg must receive its own instance with a freshly initialised encoder state.
+     * Currently returns {@code this} because no encoder state exists yet.
+     * Override once the libg72x FFM binding carries per-call state.
+     */
+    @Override
+    public RtpCodec forCall() {
+        return this;
+    }
 
     @Override
     public int payloadType() {
