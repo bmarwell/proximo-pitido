@@ -145,6 +145,24 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
 4. **Comments signal missing methods** — if a line needs an inline comment, that comment is the method name. Extract the block.
 5. **Code for testability** — avoid `static` methods that depend on other state. Simple pure-function utilities in utility classes are fine as `static`. Inject collaborators rather than `new`-ing them inside methods.
 6. **Correct module placement** — pure-Java logic (no servlet/SIP container classes) belongs in `core`. Servlet/SIP-container-dependent code belongs in `war`.
+7. **Empty lines around control-flow statements** — `if`, `try`, and `return` must be preceded by a blank line, *unless* they are the first statement in their enclosing block.
+   A closing brace of an `if` or `try` block must be followed by a blank line, *unless* it is the last statement in its enclosing block.
+   Example:
+   ```java
+   var sorted = LanguageSelector.sorted(languageFactories);
+
+   if (sorted.isEmpty()) {
+       rejectNoLanguage(req);
+       return;
+   }
+
+   if (sorted.size() == 1) {
+       acceptAndAnnounce(req, sorted.get(0));
+       return;
+   }
+
+   acceptAndPlayMenu(req, sorted);
+   ```
 
 ## Key files
 
