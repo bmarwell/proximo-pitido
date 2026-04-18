@@ -12,12 +12,24 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import java.util.Locale;
+import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.inject.Instance;
+import javax.inject.Inject;
+import org.apache.tika.Tika;
+import org.apache.tika.mime.MediaType;
 
 /**
  * Maps an audio resource path to the {@link PcmDecoder} that can decode it.
  *
- * <p>Extension matching is case-insensitive, so both {@code .wav} and {@code .WAV} are accepted.
+ * <p>Decoder selection is driven by two signals:
+ * <ol>
+ *   <li>The file extension in {@code resourcePath} (case-insensitive).</li>
+ *   <li>The MIME type returned by Apache Tika for the same path.</li>
+ * </ol>
+ * The first registered {@link PcmDecoder} whose {@link PcmDecoder#supports} method returns
+ * {@code true} is used.
+ * {@link MediaType#OCTET_STREAM} is Tika's fallback for unrecognised types and will not trigger
+ * a MIME match.
  *
  * <p>Supported formats:
  * <ul>
@@ -26,34 +38,36 @@ import java.util.Locale;
  *   <li>{@code .flac} — FLAC (stub; throws {@link UnsupportedOperationException})</li>
  * </ul>
  */
-final class PcmDecoderFactory {
+@ApplicationScoped
+public class PcmDecoderFactory {
 
-    private PcmDecoderFactory() {
-        // Utility class — do not instantiate.
-    }
+    private final Tika tika = new Tika();
+
+    @Inject
+    Instance<PcmDecoder> decoders;
 
     /**
      * Returns a {@link PcmDecoder} suitable for the audio file at {@code resourcePath}.
      *
-     * @param resourcePath the classpath resource path, used only to determine the file extension
-     * @return a fresh {@link PcmDecoder} instance; never {@code null}
-     * @throws IllegalArgumentException if the extension is not recognised
+     * @param resourcePath the classpath resource path, used to determine the decoder
+     * @return a {@link PcmDecoder} that supports the resource; never {@code null}
+     * @throws IllegalArgumentException if no registered decoder supports the resource
      */
-    static PcmDecoder forPath(String resourcePath) {
-        String lower = resourcePath.toLowerCase(Locale.ROOT);
+    public PcmDecoder forPath(String resourcePath) {
+        MediaType mimeType = detectMimeType(resourcePath);
 
-        if (lower.endsWith(".wav")) {
-            return new WavPcmDecoder();
-        }
-
-        if (lower.endsWith(".opus")) {
-            return new OggOpusPcmDecoder();
-        }
-
-        if (lower.endsWith(".flac")) {
-            return new FlacPcmDecoder();
+        for (PcmDecoder decoder : this.decoders) {
+            if (decoder.supports(resourcePath, mimeType)) {
+                return decoder;
+            }
         }
 
         throw new IllegalArgumentException("No decoder available for audio resource: " + resourcePath);
+    }
+
+    private MediaType detectMimeType(String resourcePath) {
+        String detected = this.tika.detect(resourcePath);
+
+        return MediaType.parse(detected);
     }
 }
