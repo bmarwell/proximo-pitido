@@ -144,11 +144,15 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
 3. **Avoid `else`** — prefer early returns and guard clauses. Use `else` only when it genuinely aids readability.
 4. **Comments signal missing methods** — if a line needs an inline comment, that comment is the method name. Extract the block.
 5. **Code for testability** — avoid `static` methods that depend on other state. Simple pure-function utilities in utility classes are fine as `static`. Inject collaborators rather than `new`-ing them inside methods.
+   Any collaborator with pluggable implementations must be an `@ApplicationScoped` CDI bean so that it can be injected, stubbed, and replaced in tests. `static` factory methods are acceptable only for pure functions with no external state (e.g. encoding helpers, format converters).
+   `PcmDecoderFactory` is the canonical example: it became `@ApplicationScoped` so tests can inject a fake factory and decoders can be discovered via CDI `Instance<PcmDecoder>` without hard-coded `if`-chains.
 6. **Correct module placement** — pure-Java logic (no servlet/SIP container classes) belongs in `core`. Servlet/SIP-container-dependent code belongs in `war`.
 7. **Empty lines around control-flow statements** — `if`, `try`, and `return` must be preceded by a blank line, *unless* they are the first statement in their enclosing block.
    A closing brace of an `if` or `try` block must be followed by a blank line, *unless* it is the last statement in its enclosing block.
 8. **`this.` prefix for instance fields** — always qualify instance field access with `this.` (e.g. `this.socket`, `this.remoteRtp`).
    Do *not* use `this.` when calling instance methods.
+9. **No `Optional<>` in method parameters** — `Optional` must not appear as a method parameter type.
+   If a parameter may be absent, use a nullable parameter documented with `@param … or {@code null} if …` in the Javadoc, or provide a dedicated method overload.
    Example:
    ```java
    var sorted = LanguageSelector.sorted(languageFactories);
