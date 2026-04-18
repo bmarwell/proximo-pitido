@@ -41,6 +41,8 @@ import org.apache.tika.mime.MediaType;
 @ApplicationScoped
 public class PcmDecoderFactory {
 
+    private static final System.Logger LOGGER = System.getLogger(PcmDecoderFactory.class.getName());
+
     private final Tika tika = new Tika();
 
     @Inject
@@ -55,9 +57,19 @@ public class PcmDecoderFactory {
      */
     public PcmDecoder forPath(String resourcePath) {
         MediaType mimeType = detectMimeType(resourcePath);
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "Selecting decoder for [{0}] (detected MIME type: [{1}])",
+                resourcePath,
+                mimeType);
 
         for (PcmDecoder decoder : this.decoders) {
             if (decoder.supports(resourcePath, mimeType)) {
+                LOGGER.log(
+                        System.Logger.Level.DEBUG,
+                        "Using decoder [{0}] for [{1}]",
+                        decoder.getClass().getSimpleName(),
+                        resourcePath);
                 return decoder;
             }
         }

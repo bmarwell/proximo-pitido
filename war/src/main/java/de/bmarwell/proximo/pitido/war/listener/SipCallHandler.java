@@ -93,6 +93,7 @@ public class SipCallHandler {
      * A further pause after accepting gives the caller's handset time to connect before audio begins.
      */
     public void handleInvite(SipServletRequest req) throws IOException {
+        LOGGER.log(System.Logger.Level.INFO, "Incoming call from [{0}]", req.getFrom());
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
@@ -131,6 +132,11 @@ public class SipCallHandler {
     }
 
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Accepting call from [{0}] — playing [{1}] directly",
+                req.getFrom(),
+                factory.displayName());
         CallMedia media = sdpNegotiator.negotiate(req);
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
@@ -155,6 +161,11 @@ public class SipCallHandler {
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Accepting call from [{0}] — starting language-selection menu ({1} languages)",
+                req.getFrom(),
+                sorted.size());
         CallMedia media = sdpNegotiator.negotiate(req);
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
@@ -206,7 +217,8 @@ public class SipCallHandler {
                     System.Logger.Level.WARNING,
                     "Could not play selection phrase for [{0}] at slot {1} — skipping",
                     factory.displayName(),
-                    slot);
+                    slot,
+                    ioException);
         }
     }
 
@@ -220,17 +232,32 @@ public class SipCallHandler {
         req.createResponse(SipServletResponse.SC_OK).send();
         String sessionId = req.getSession().getId();
         CallState callState = activeCalls.get(sessionId);
+
         if (callState == null) {
             return;
         }
+
         int digit = parseDtmfDigit(req);
+
         if (digit < 1) {
+            LOGGER.log(System.Logger.Level.DEBUG, "DTMF digit unrecognised or out of range — ignoring");
             return;
         }
+
+        LOGGER.log(System.Logger.Level.DEBUG, "DTMF digit [{0}] received for session [{1}]", digit, sessionId);
         Optional<LanguageFactory> chosen = LanguageSelector.fromDigit(callState.sorted(), digit);
+
         if (chosen.isEmpty()) {
+            LOGGER.log(
+                    System.Logger.Level.DEBUG, "DTMF digit [{0}] does not match any language slot — ignoring", digit);
             return;
         }
+
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "DTMF digit [{0}] selected language [{1}]",
+                digit,
+                chosen.get().displayName());
         pendingSelections.putIfAbsent(sessionId, chosen.get());
         callState.menuThread().interrupt();
     }
@@ -241,6 +268,7 @@ public class SipCallHandler {
      */
     public void handleBye(SipServletRequest req) throws IOException {
         String sessionId = req.getSession().getId();
+        LOGGER.log(System.Logger.Level.INFO, "BYE received for session [{0}]", sessionId);
         CallState callState = activeCalls.remove(sessionId);
 
         if (callState != null) {
