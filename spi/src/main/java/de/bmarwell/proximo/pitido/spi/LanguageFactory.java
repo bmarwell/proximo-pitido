@@ -15,6 +15,7 @@ package de.bmarwell.proximo.pitido.spi;
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.api.LanguageSelectionAnnouncement;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
+import java.util.Locale;
 
 /**
  * SPI for adding a language to Próximo Pitido.
@@ -25,28 +26,51 @@ import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
  *
  * <p>When multiple languages are present, the language-selection menu is built from all
  * discovered factories, sorted by {@link #getDefaultOrder()} unless overridden by configuration.
+ *
+ * <p>Use a fully-qualified {@link Locale} (language <em>and</em> region) wherever a language
+ * variant is specific to a region.
+ * For example, European Spanish and Río Platense Spanish share the ISO 639-1 code {@code "es"}
+ * but are represented as {@code Locale.forLanguageTag("es-ES")} and
+ * {@code Locale.forLanguageTag("es-AR")} respectively, which keeps them unambiguous and
+ * allows the runtime to sort and label them correctly.
  */
 public interface LanguageFactory {
 
     /**
-     * Returns the ISO 639-1 two-letter language code (e.g. {@code "de"}, {@code "en"}, {@code "es"}).
+     * Returns the {@link Locale} that identifies this language variant.
+     *
+     * <p>Use a locale that includes both language and region when the variant is region-specific.
+     * Examples:
+     * <ul>
+     *   <li>{@code Locale.GERMANY} ({@code de-DE}) for Standard German</li>
+     *   <li>{@code Locale.forLanguageTag("es-ES")} for European Spanish</li>
+     *   <li>{@code Locale.forLanguageTag("es-AR")} for Río Platense / Argentine Spanish</li>
+     *   <li>{@code Locale.UK} ({@code en-GB}) for British English</li>
+     * </ul>
+     *
+     * <p>The locale is used for identification, sorting fallback, and display — not for
+     * number or date formatting (each implementation controls its own audio logic).
      */
-    String getLanguageCode();
+    Locale getLocale();
 
     /**
-     * Returns a human-readable display name, used for logging and diagnostics.
-     * Example: {@code "Deutsch"}, {@code "English"}.
+     * Returns a human-readable display name in the language itself, used in the selection menu,
+     * logging, and diagnostics.
+     *
+     * <p>For region-specific variants, include the region in parentheses so callers can
+     * distinguish them.
+     * Examples: {@code "Deutsch"}, {@code "English"}, {@code "Español (España)"},
+     * {@code "Español (Río Platense)"}.
      */
     String getDisplayName();
 
     /**
      * Returns the default position of this language in the selection menu.
      *
-     * <p>Lower values appear earlier. Implementations should use stable, unique values
-     * (e.g. {@code 10} for German, {@code 20} for English, {@code 30} for Spanish) so that
-     * the menu order is deterministic across restarts even without explicit configuration.
-     *
-     * <p>The configured order (if any) takes precedence over this default.
+     * <p>Lower values appear earlier.
+     * Use stable, unique values so that the menu order is deterministic across restarts
+     * even without explicit configuration.
+     * The configured order (if any) takes precedence over this default.
      */
     int getDefaultOrder();
 
