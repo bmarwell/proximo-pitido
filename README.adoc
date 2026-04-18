@@ -5,11 +5,9 @@ _„Al próximo pitido serán las tres horas…"_ — _„At the next beep it wi
 
 == Why "Próximo Pitido"?
 
-The name is a nod to the analogue telephone speaking-clock services that existed in many countries
-before smartphones made them redundant.
-In Germany it was the _Zeitansage_ (dial 1191), in France _l'horloge parlante_ (dial 3699).
-The caller would hear a recorded voice counting down to a beep, then announcing the current time to
-the second.
+The name is a nod to the analogue telephone speaking-clock services that existed in many countries before smartphones made them redundant.
+In Germany, it was the _Zeitansage_ (dial 1191), in France _l'horloge parlante_ (dial 3699).
+The caller would hear a recorded voice counting down to a beep, then announcing the current time to the second.
 
 _Próximo pitido_ is the Spanish version of that countdown phrase.
 This project brings that experience to a self-hosted SIP number on a home DSL line.
@@ -18,13 +16,11 @@ This project brings that experience to a self-hosted SIP number on a home DSL li
 
 === Single language
 
-If exactly one language implementation is available on the classpath, an incoming call is answered
-immediately and the time announcement plays straight away — no menu, no waiting.
+If exactly one language implementation is available on the classpath, an incoming call is answered immediately and the time announcement plays straight away — no menu, no waiting.
 
 === Multiple languages
 
-If two or more language implementations are present, the caller first hears the language-selection
-menu, cycling through the available options:
+If two or more language implementations are present, the caller first hears the language-selection menu, cycling through the available options:
 
 ----
 "Für Deutsch drücken Sie die 1."
@@ -33,22 +29,18 @@ menu, cycling through the available options:
 ...  (repeats from the beginning)
 ----
 
-The caller can press the corresponding digit *at any time* — even mid-phrase — and playback stops
-immediately.
+The caller can press the corresponding digit *at any time* — even mid-phrase — and playback stops immediately.
 The chosen language's time announcement then plays.
 
 === Language ordering
 
 The order in which languages appear in the menu can be configured.
-If no explicit order is configured, a deterministic default order is used (defined by each
-`LanguageFactory` implementation via `getDefaultOrder()`), so the menu is always the same across
-restarts.
+If no explicit order is configured, a deterministic default order is used (defined by each `LanguageFactory` implementation via `getDefaultOrder()`), so the menu is always the same across restarts.
 
 === Extensibility
 
 Languages are provided as CDI beans implementing `LanguageFactory` (SPI module).
-Adding a new language means adding a new CDI-visible implementation — no changes to the core or
-war modules are required.
+Adding a new language means adding a new CDI-visible implementation — no changes to the core or war modules are required.
 
 == SIP Registration
 
@@ -70,16 +62,13 @@ On startup the app performs a SIP REGISTER handshake with the configured registr
 
 == Default Application Router (DAR)
 
-The DAR is one of the trickiest parts of Liberty SIP Servlet development and a common source of
-hard-to-diagnose bugs.
+The DAR is one of the trickiest parts of Liberty SIP Servlet development and a common source of hard-to-diagnose bugs.
 Understanding it is essential before touching `dar.properties`.
 
 === What the DAR does
 
-Every SIP message that arrives at (or is sent from) a Liberty SIP application passes through the
-*Default Application Router* before it reaches any servlet.
-The DAR decides which application — and which servlet within that application — should handle each
-message.
+Every SIP message that arrives at (or is sent from) a Liberty SIP application passes through the *Default Application Router* before it reaches any servlet.
+The DAR decides which application — and which servlet within that application — should handle each message.
 Its configuration lives in `war/src/main/liberty/config/dar.properties`.
 
 Each line in `dar.properties` has the form:
@@ -118,13 +107,10 @@ For a simple UAS (like this app) `"NEUTRAL"` is correct.
 
 This is a critical gotcha that is easy to miss.
 
-When the app sends an outgoing REGISTER to the registrar, Liberty routes it through the DAR *on
-the way out* as well as on the way in.
-If `REGISTER` is listed in `dar.properties`, the DAR matches the outgoing REGISTER, creates a
-*server-side transaction* for it inside the app, and routes it back as an incoming request.
+When the app sends an outgoing REGISTER to the registrar, Liberty routes it through the DAR *on the way out* as well as on the way in.
+If `REGISTER` is listed in `dar.properties`, the DAR matches the outgoing REGISTER, creates a *server-side transaction* for it inside the app, and routes it back as an incoming request.
 The app has no `doRegister()` handler, so Liberty responds with `405 Method Not Allowed`.
-The registrar receives the `405` instead of the real `REGISTER` — registration never succeeds and
-the logs fill up with a 405 loop.
+The registrar receives the `405` instead of the real `REGISTER` — registration never succeeds and the logs fill up with a 405 loop.
 
 The fix: simply *omit* `REGISTER` from `dar.properties`.
 Unlisted methods pass through Liberty to the network without triggering application composition.
@@ -132,10 +118,8 @@ Unlisted methods pass through Liberty to the network without triggering applicat
 === INFO (DTMF) must be listed
 
 SIP INFO messages are used to carry DTMF digits during a call (RFC 2976).
-When a caller presses a key during the language-selection menu, the digit arrives as a SIP INFO
-request.
-If `INFO` is not listed in `dar.properties`, Liberty will not route it to the application and the
-keypress is silently dropped.
+When a caller presses a key during the language-selection menu, the digit arrives as a SIP INFO request.
+If `INFO` is not listed in `dar.properties`, Liberty will not route it to the application and the keypress is silently dropped.
 
 === Full current dar.properties
 
