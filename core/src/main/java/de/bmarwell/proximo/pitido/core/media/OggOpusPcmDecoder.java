@@ -12,15 +12,20 @@
  */
 package de.bmarwell.proximo.pitido.core.media;
 
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.Locale;
+import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 import org.apache.tika.mime.MediaType;
 
@@ -28,8 +33,10 @@ import org.apache.tika.mime.MediaType;
  * Decodes Opus audio stored in an OGG container to 8 kHz mono 16-bit PCM.
  *
  * <p>OGG pages are read manually (no external OGG library required).
- * Opus packets are decoded via JNA bindings to the system {@code libopus} library.
- * The system library must be installed: {@code apt install libopus0} on Debian/Ubuntu.
+ * Opus packets are decoded via the Foreign Function and Memory (FFM) API,
+ * calling the system {@code libopus} shared library directly.
+ * The system library must be installed: {@code apt install libopus0} on Debian/Ubuntu,
+ * or {@code pacman -S opus} on Arch Linux.
  *
  * <p>The decoder is initialised at 8 000 Hz to avoid resampling before RTP/PCMA encoding.
  *
@@ -54,46 +61,76 @@ public class OggOpusPcmDecoder implements PcmDecoder {
     private static final int MAX_FRAME_SAMPLES = 960;
 
     // -------------------------------------------------------------------------
-    // JNA binding to libopus
+    // FFM binding to libopus
     // -------------------------------------------------------------------------
 
-    private interface LibOpus extends Library {
+    /**
+     * Downcall handle for {@code opus_decoder_create(int fs, int channels, int *error)}.
+     * Returns a native pointer to the decoder state, or NULL on failure.
+     * The error code is written to the {@code int *error} out-parameter.
+     */
+    private MethodHandle opusDecoderCreate;
 
-        /** Creates a new Opus decoder. @return pointer to decoder state, or NULL on failure. */
-        Pointer opus_decoder_create(int fs, int channels, int[] error);
+    /**
+     * Downcall handle for
+     * {@code opus_decode(OpusDecoder *st, const unsigned char *data, int len,
+     *                    opus_int16 *pcm, int frame_size, int decode_fec)}.
+     * Returns the number of decoded samples per channel, or a negative error code.
+     */
+    private MethodHandle opusDecode;
 
-        /**
-         * Decodes an Opus packet to 16-bit PCM.
-         *
-         * @param st         the decoder state
-         * @param data       compressed data; {@code null} triggers PLC (packet loss concealment)
-         * @param len        number of bytes in {@code data}
-         * @param pcm        output buffer, interleaved; length ≥ {@code frameSize × channels}
-         * @param frameSize  maximum number of samples per channel to decode
-         * @param decodeFec  {@code 0} for normal, {@code 1} for FEC
-         * @return samples decoded per channel, or a negative error code
-         */
-        int opus_decode(Pointer st, byte[] data, int len, short[] pcm, int frameSize, int decodeFec);
+    /** Downcall handle for {@code opus_decoder_destroy(OpusDecoder *st)}. */
+    private MethodHandle opusDecoderDestroy;
 
-        /** Frees the decoder state. */
-        void opus_decoder_destroy(Pointer st);
-    }
-
-    /** Lazily loaded library. Null until first {@link #open} call. */
-    private static LibOpus libOpus;
-
-    private static IOException loadError;
-
-    static {
-        try {
-            libOpus = Native.load("opus", LibOpus.class);
-        } catch (UnsatisfiedLinkError linkError) {
-            loadError = new IOException("libopus not found. Install it with: apt install libopus0", linkError);
-        }
-    }
+    /** Set when {@code libopus} cannot be found at startup; propagated from {@link #open}. */
+    private IOException loadError;
 
     /** CDI no-args constructor. */
     public OggOpusPcmDecoder() {}
+
+    /**
+     * Probes for {@code libopus.so.0} and binds all required FFM method handles.
+     * Called once by the CDI container after construction.
+     */
+    @PostConstruct
+    @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
+    void initFfm() {
+        try {
+            SymbolLookup opus = SymbolLookup.libraryLookup("libopus.so.0", Arena.global());
+            Linker linker = Linker.nativeLinker();
+
+            this.opusDecoderCreate = linker.downcallHandle(
+                    opus.find("opus_decoder_create").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.ADDRESS, // return: OpusDecoder*
+                            ValueLayout.JAVA_INT, // fs
+                            ValueLayout.JAVA_INT, // channels
+                            ValueLayout.ADDRESS // int* error (out-param)
+                            ));
+
+            this.opusDecode = linker.downcallHandle(
+                    opus.find("opus_decode").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT, // return: samples decoded
+                            ValueLayout.ADDRESS, // OpusDecoder* st
+                            ValueLayout.ADDRESS, // const unsigned char* data
+                            ValueLayout.JAVA_INT, // len
+                            ValueLayout.ADDRESS, // opus_int16* pcm (out-param)
+                            ValueLayout.JAVA_INT, // frame_size
+                            ValueLayout.JAVA_INT // decode_fec
+                            ));
+
+            this.opusDecoderDestroy = linker.downcallHandle(
+                    opus.find("opus_decoder_destroy").orElseThrow(), FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+
+            LOGGER.log(System.Logger.Level.DEBUG, "libopus.so.0 loaded via FFM");
+
+        } catch (IllegalArgumentException illegalArgumentException) {
+            this.loadError = new IOException(
+                    "libopus not found — install it with: apt install libopus0 / pacman -S opus",
+                    illegalArgumentException);
+        }
+    }
 
     @Override
     public boolean supports(String resourcePath, MediaType mimeType) {
@@ -109,18 +146,31 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
     @Override
     public PcmStream open(InputStream in) throws IOException {
-        if (loadError != null) {
-            throw loadError;
+        if (this.loadError != null) {
+            throw this.loadError;
         }
 
-        int[] error = new int[1];
-        Pointer decoder = libOpus.opus_decoder_create(SAMPLE_RATE, 1, error);
+        try (Arena callArena = Arena.ofConfined()) {
+            MemorySegment errSeg = callArena.allocate(ValueLayout.JAVA_INT);
+            MemorySegment decoder = invokeCreate(errSeg);
+            int error = errSeg.get(ValueLayout.JAVA_INT, 0L);
 
-        if (decoder == null || error[0] != 0) {
-            throw new IOException("opus_decoder_create failed with error " + error[0]);
+            if (decoder == null || decoder.address() == 0L || error != 0) {
+                throw new IOException("opus_decoder_create failed with error " + error);
+            }
+
+            return new OggOpusPcmStream(in, this.opusDecode, this.opusDecoderDestroy, decoder);
         }
+    }
 
-        return new OggOpusPcmStream(in, libOpus, decoder);
+    private MemorySegment invokeCreate(MemorySegment errSeg) throws IOException {
+        try {
+            return (MemorySegment) this.opusDecoderCreate.invoke(SAMPLE_RATE, 1, errSeg);
+        } catch (RuntimeException runtimeException) {
+            throw runtimeException;
+        } catch (Throwable throwable) {
+            throw new IOException("opus_decoder_create invocation failed", throwable);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -130,8 +180,14 @@ public class OggOpusPcmDecoder implements PcmDecoder {
     private static final class OggOpusPcmStream implements PcmStream {
 
         private final InputStream in;
-        private final LibOpus opus;
-        private final Pointer decoder;
+        private final MethodHandle opusDecode;
+        private final MethodHandle opusDecoderDestroy;
+
+        /**
+         * Native pointer to the libopus decoder state.
+         * Allocated by {@code opus_decoder_create}; freed by {@code opus_decoder_destroy} in {@link #close()}.
+         */
+        private final MemorySegment decoder;
 
         /** Packet queue: OGG packets waiting to be decoded. */
         private final Deque<byte[]> packetQueue = new ArrayDeque<>();
@@ -150,9 +206,12 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
         private boolean endOfStream = false;
 
-        OggOpusPcmStream(InputStream in, LibOpus opus, Pointer decoder) throws IOException {
+        OggOpusPcmStream(
+                InputStream in, MethodHandle opusDecode, MethodHandle opusDecoderDestroy, MemorySegment decoder)
+                throws IOException {
             this.in = in;
-            this.opus = opus;
+            this.opusDecode = opusDecode;
+            this.opusDecoderDestroy = opusDecoderDestroy;
             this.decoder = decoder;
             readNextPage();
             skipHeaderPackets();
@@ -188,20 +247,38 @@ public class OggOpusPcmDecoder implements PcmDecoder {
             }
 
             byte[] packet = this.packetQueue.poll();
-            short[] decoded = new short[MAX_FRAME_SAMPLES];
-            int samples = this.opus.opus_decode(this.decoder, packet, packet.length, decoded, MAX_FRAME_SAMPLES, 0);
 
-            if (samples < 0) {
-                LOGGER.log(
-                        System.Logger.Level.WARNING, "opus_decode returned error code [{0}]; skipping packet", samples);
-                return true;
+            try (Arena callArena = Arena.ofConfined()) {
+                MemorySegment inputSeg = callArena.allocateFrom(ValueLayout.JAVA_BYTE, packet);
+                MemorySegment pcmSeg = callArena.allocate(ValueLayout.JAVA_SHORT, MAX_FRAME_SAMPLES);
+
+                int samples = invokeDecode(inputSeg, packet.length, pcmSeg);
+
+                if (samples < 0) {
+                    LOGGER.log(
+                            System.Logger.Level.WARNING,
+                            "opus_decode returned error code [{0}]; skipping packet",
+                            samples);
+                    return true;
+                }
+
+                this.pcmBuffer =
+                        pcmSeg.asSlice(0L, (long) samples * Short.BYTES).toArray(ValueLayout.JAVA_SHORT);
+                this.pcmOffset = 0;
+                this.pcmAvailable = samples;
             }
 
-            this.pcmBuffer = decoded;
-            this.pcmOffset = 0;
-            this.pcmAvailable = samples;
-
             return true;
+        }
+
+        private int invokeDecode(MemorySegment inputSeg, int packetLength, MemorySegment pcmSeg) throws IOException {
+            try {
+                return (int) this.opusDecode.invoke(this.decoder, inputSeg, packetLength, pcmSeg, MAX_FRAME_SAMPLES, 0);
+            } catch (RuntimeException runtimeException) {
+                throw runtimeException;
+            } catch (Throwable throwable) {
+                throw new IOException("opus_decode invocation failed", throwable);
+            }
         }
 
         /**
@@ -305,7 +382,14 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
         @Override
         public void close() throws IOException {
-            this.opus.opus_decoder_destroy(this.decoder);
+            try {
+                this.opusDecoderDestroy.invoke(this.decoder);
+            } catch (RuntimeException runtimeException) {
+                throw runtimeException;
+            } catch (Throwable throwable) {
+                throw new IOException("opus_decoder_destroy invocation failed", throwable);
+            }
+
             this.in.close();
         }
     }

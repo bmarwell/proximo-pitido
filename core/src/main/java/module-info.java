@@ -10,9 +10,11 @@
  * so the SPI module is re-exported transitively.
  *
  * <h2>Native access</h2>
- * {@link de.bmarwell.proximo.pitido.core.media.LibsoxrChannelMixer} uses the Foreign
- * Function and Memory (FFM) API ({@code java.lang.foreign}) to probe for
- * {@code libsoxr.so.0} at startup.
+ * {@link de.bmarwell.proximo.pitido.core.media.OggOpusPcmDecoder} uses the Foreign
+ * Function and Memory (FFM) API ({@code java.lang.foreign}) to call {@code libopus.so.0}
+ * directly for Opus decoding.
+ * {@link de.bmarwell.proximo.pitido.core.media.LibsoxrChannelMixer} uses the FFM API
+ * to probe for {@code libsoxr.so.0} at startup.
  * At runtime the JVM must be started with
  * {@code --enable-native-access=de.bmarwell.proximo.pitido.core}
  * (or {@code ALL-UNNAMED} when the module system is bypassed by the container).
@@ -34,7 +36,6 @@ module de.bmarwell.proximo.pitido.core {
     requires java.desktop; // javax.sound.sampled.* — WAV decoding
 
     // Third-party compile dependencies
-    requires com.sun.jna; // JNA — libopus bindings (OggOpusPcmDecoder)
     // Transitive because MediaType appears in the exported PcmDecoder.supports() signature.
     requires transitive org.apache.tika.core;
 
