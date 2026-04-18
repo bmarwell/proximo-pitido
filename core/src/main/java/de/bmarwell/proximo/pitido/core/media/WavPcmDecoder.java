@@ -15,6 +15,7 @@ package de.bmarwell.proximo.pitido.core.media;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.enterprise.context.ApplicationScoped;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -40,6 +41,9 @@ public class WavPcmDecoder implements PcmDecoder {
 
     private static final int REQUIRED_SAMPLE_RATE = 8_000;
 
+    /** Ensures the deprecation warning is logged at most once per JVM lifetime. */
+    private static final AtomicBoolean DEPRECATION_WARNED = new AtomicBoolean(false);
+
     @Override
     public boolean supports(String resourcePath, MediaType mimeType) {
         String lower = resourcePath.toLowerCase(Locale.ROOT);
@@ -54,8 +58,11 @@ public class WavPcmDecoder implements PcmDecoder {
 
     @Override
     public PcmStream open(InputStream in) throws IOException {
-        LOGGER.log(
-                System.Logger.Level.WARNING, "Playing WAV audio (deprecated). Prefer .opus files in an OGG container.");
+        if (DEPRECATION_WARNED.compareAndSet(false, true)) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Playing WAV audio (deprecated). Prefer .opus files in an OGG container.");
+        }
 
         try {
             AudioInputStream raw = AudioSystem.getAudioInputStream(in);
