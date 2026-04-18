@@ -63,6 +63,12 @@
     </dependency>
 
     <!-- OGG Opus audio decoding and MIME detection live in proximo-pitido-core. -->
+    <!-- Bridge Tika's SLF4J calls to JDK Platform Logging (System.Logger / Liberty logging). -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-jdk-platform-logging</artifactId>
+      <scope>runtime</scope>
+    </dependency>
   </dependencies>
 
   <build>
