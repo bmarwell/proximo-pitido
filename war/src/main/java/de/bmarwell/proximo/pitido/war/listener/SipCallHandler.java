@@ -83,8 +83,10 @@ public class SipCallHandler {
     /**
      * Handles an incoming INVITE.
      * Rejects with {@code 480 Temporarily Unavailable} when no language factory is registered.
-     * Answers with {@code 200 OK} otherwise, then plays the time announcement (single language)
-     * or the language-selection menu (multiple languages) on a virtual thread.
+     * Answers with {@code 200 OK} otherwise (after a short pre-accept pause), then plays the time
+     * announcement (single language) or the language-selection menu (multiple languages) on a virtual
+     * thread.
+     * A further pause after accepting gives the caller's handset time to connect before audio begins.
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         var sorted = LanguageSelector.sorted(languageFactories);
@@ -94,6 +96,13 @@ public class SipCallHandler {
                     System.Logger.Level.WARNING, "No language factories registered, rejecting call {0}", req.getFrom());
             rejectNoLanguage(req);
 
+            return;
+        }
+
+        try {
+            Thread.sleep(1_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return;
         }
 
@@ -159,6 +168,7 @@ public class SipCallHandler {
     private void runMenu(
             SipSession session, AudioPlayer player, List<LanguageFactory> sorted, String sessionId, CallMedia media) {
         try {
+            Thread.sleep(1_000);
             runMenuLoop(player, sorted);
         } catch (InterruptedException e) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
