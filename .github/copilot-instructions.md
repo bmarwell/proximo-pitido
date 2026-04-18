@@ -147,6 +147,8 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
    Any collaborator with pluggable implementations must be an `@ApplicationScoped` CDI bean so that it can be injected, stubbed, and replaced in tests. `static` factory methods are acceptable only for pure functions with no external state (e.g. encoding helpers, format converters).
    `PcmDecoderFactory` is the canonical example: it became `@ApplicationScoped` so tests can inject a fake factory and decoders can be discovered via CDI `Instance<PcmDecoder>` without hard-coded `if`-chains.
 6. **Correct module placement** — pure-Java logic (no servlet/SIP container classes) belongs in `core`. Servlet/SIP-container-dependent code belongs in `war`.
+   Audio decoding (PCM decoders, MIME detection, `PcmDecoderFactory`) lives in `core.media` so it can be used from a CLI or test without a SIP container.
+   Only classes tightly coupled to an active RTP/SIP session (e.g. `RtpAudioPlayer`, `CallMedia`, `SdpNegotiator`) stay in `war.media`.
 7. **Empty lines around control-flow statements** — `if`, `try`, and `return` must be preceded by a blank line, *unless* they are the first statement in their enclosing block.
    A closing brace of an `if` or `try` block must be followed by a blank line, *unless* it is the last statement in its enclosing block.
 8. **`this.` prefix for instance fields** — always qualify instance field access with `this.` (e.g. `this.socket`, `this.remoteRtp`).
@@ -172,7 +174,11 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
 
 ## Key files
 
-- `war/src/main/java/.../SipTimeServlet.java` — thin dispatcher; `doResponse()` for REGISTER 401/200; delegates `doInvite()`, `doInfo()`, `doBye()` to `SipCallHandler`
+- `war/src/main/java/.../war/media/RtpAudioPlayer.java` — RTP/PCMA sender over UDP; one instance per call
+- `war/src/main/java/.../war/media/package-info.java` — documents that only SIP/RTP session-coupled classes belong here
+- `core/src/main/java/.../core/media/PcmDecoderFactory.java` — `@ApplicationScoped` CDI bean; selects decoder via Tika MIME + extension
+- `core/src/main/java/.../core/media/OggOpusPcmDecoder.java` — preferred decoder (OGG/Opus via libopus JNA)
+- `core/src/main/java/.../core/media/WavPcmDecoder.java` — deprecated WAV decoder
 - `war/src/main/java/.../listener/SipCallHandler.java` — `@ApplicationScoped` CDI bean; owns all call-session logic
 - `war/src/main/java/.../listener/SipRegistrationListener.java` — REGISTER orchestration, state machine
 - `core/src/main/java/.../core/sip/SrvDnsResolver.java` — JNDI-based `_sip._tcp` SRV lookup with caching
