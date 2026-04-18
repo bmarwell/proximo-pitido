@@ -12,10 +12,28 @@
  */
 package de.bmarwell.proximo.pitido.api;
 
-/// To be injected by language implementations
-///
-/// Must be implemented `@RequestScoped`
+import java.io.IOException;
+
+/**
+ * Plays an audio resource to the active SIP call leg (blocking).
+ *
+ * <p>Implementations must block until playback completes or the calling thread is interrupted.
+ * Interruption is the signal to stop playback early — this is how DTMF-triggered language
+ * selection cancels a running menu announcement mid-phrase.
+ *
+ * <p>Implementations should be provided as {@code @Dependent} or per-call-scoped CDI beans
+ * and are created via {@link de.bmarwell.proximo.pitido.spi.LanguageFactory}, which receives
+ * the {@link AudioPlayer} instance as a constructor argument.
+ */
 public interface AudioPlayer {
 
-    void playBlocking(String resourcePath) throws Exception;
+    /**
+     * Plays the given resource to completion.
+     *
+     * @param resourcePath classpath-relative path to the audio resource
+     * @throws IOException          on any I/O or RTP streaming error
+     * @throws InterruptedException if the calling thread is interrupted; implementations must
+     *                              stop playback promptly and propagate this exception
+     */
+    void playBlocking(String resourcePath) throws IOException, InterruptedException;
 }

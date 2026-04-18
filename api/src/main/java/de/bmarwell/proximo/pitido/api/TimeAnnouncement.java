@@ -12,8 +12,21 @@
  */
 package de.bmarwell.proximo.pitido.api;
 
+import java.io.IOException;
+
+/**
+ * Plays the current time announcement for one language.
+ *
+ * <p>Implementations determine the current time themselves (e.g. via {@code ZonedDateTime.now()})
+ * and play the appropriate audio resources via the {@link AudioPlayer} they were constructed with.
+ */
 public interface TimeAnnouncement {
 
-    /// play the announcement
-    void announce() throws Exception;
+    /**
+     * Plays the time announcement to completion, or until the calling thread is interrupted.
+     *
+     * @throws IOException          on any I/O or RTP streaming error
+     * @throws InterruptedException if interrupted; stop playback and propagate
+     */
+    void announce() throws IOException, InterruptedException;
 }

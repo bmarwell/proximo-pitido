@@ -12,14 +12,12 @@
  */
 package de.bmarwell.proximo.pitido.war;
 
-import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
-import de.bmarwell.proximo.pitido.spi.LanguageFactory;
+import de.bmarwell.proximo.pitido.war.listener.SipCallHandler;
 import de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
-import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -28,6 +26,20 @@ import javax.servlet.sip.SipServlet;
 import javax.servlet.sip.SipServletRequest;
 import javax.servlet.sip.SipServletResponse;
 
+/**
+ * Main SIP entry point for the Próximo Pitido application.
+ *
+ * <p>This servlet is intentionally thin: it dispatches each SIP method to the appropriate
+ * CDI handler bean and contains no business logic itself.
+ *
+ * <ul>
+ *   <li>Registration lifecycle (REGISTER / 401 / 200) → {@link SipRegistrationListener}</li>
+ *   <li>Incoming calls (INVITE / INFO / BYE) → {@link SipCallHandler}</li>
+ * </ul>
+ *
+ * <p>{@code loadOnStartup = 1} causes Liberty to initialise this servlet at deployment time,
+ * which is required to kick off the deferred initial REGISTER.
+ */
 @javax.servlet.sip.annotation.SipServlet(name = "SipTimeServlet", loadOnStartup = 1, applicationName = "Proximo Pitido")
 public class SipTimeServlet extends SipServlet implements Serializable {
 
@@ -40,17 +52,21 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     SipRegistrationListener sipRegistrationService;
 
     @Inject
-    Instance<LanguageFactory> languageFactories;
-
-    @Inject
-    AudioPlayer audioPlayer;
+    SipCallHandler sipCallHandler;
 
     @Override
     protected void doInvite(SipServletRequest req) throws ServletException, IOException {
-        super.doInvite(req);
-        // TODO: implement
-        throw new UnsupportedOperationException(
-                "not yet implemented: [de.bmarwell.proximo.pitido.war.SipTimeServlet::doInvite].");
+        sipCallHandler.handleInvite(req);
+    }
+
+    @Override
+    protected void doInfo(SipServletRequest req) throws ServletException, IOException {
+        sipCallHandler.handleDtmf(req);
+    }
+
+    @Override
+    protected void doBye(SipServletRequest req) throws ServletException, IOException {
+        sipCallHandler.handleBye(req);
     }
 
     /**
@@ -139,13 +155,5 @@ public class SipTimeServlet extends SipServlet implements Serializable {
             }
             this.sipRegistrationService.register(getServletContext());
         });
-    }
-
-    public void setLanguageFactories(Instance<LanguageFactory> languageFactories) {
-        this.languageFactories = languageFactories;
-    }
-
-    public void setAudioPlayer(AudioPlayer audioPlayer) {
-        this.audioPlayer = audioPlayer;
     }
 }

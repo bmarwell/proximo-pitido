@@ -13,13 +13,14 @@
 package de.bmarwell.proximo.pitido.core;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
+import java.io.IOException;
 import javax.enterprise.context.Dependent;
 
 @Dependent
 public class DefaultAudioPlayer implements AudioPlayer {
 
     @Override
-    public void playBlocking(String resourcePath) throws Exception {
+    public void playBlocking(String resourcePath) throws IOException, InterruptedException {
         // TODO: implement
         throw new UnsupportedOperationException(
                 "not yet implemented: [de.bmarwell.proximo.pitido.core.DefaultAudioPlayer::playBlocking].");
