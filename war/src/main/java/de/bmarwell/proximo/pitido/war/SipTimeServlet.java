@@ -18,6 +18,7 @@ import de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
+import java.lang.System.Logger.Level;
 import javax.inject.Inject;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -56,6 +57,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
 
     @Override
     protected void doInvite(SipServletRequest req) throws ServletException, IOException {
+        LOGGER.log(Level.INFO, "Received INVITE from [{0}]", req.getFrom());
         sipCallHandler.handleInvite(req);
     }
 

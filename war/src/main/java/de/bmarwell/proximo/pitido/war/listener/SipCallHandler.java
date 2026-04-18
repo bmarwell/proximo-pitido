@@ -17,6 +17,9 @@ import de.bmarwell.proximo.pitido.api.LanguageSelectionAnnouncement;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
 import de.bmarwell.proximo.pitido.core.LanguageSelector;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
+import de.bmarwell.proximo.pitido.war.media.CallMedia;
+import de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer;
+import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -27,6 +30,7 @@ import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.sip.SipServletRequest;
+import javax.servlet.sip.SipServletResponse;
 import javax.servlet.sip.SipSession;
 
 /**
@@ -62,10 +66,10 @@ public class SipCallHandler {
     Instance<LanguageFactory> languageFactories;
 
     @Inject
-    Instance<AudioPlayer> audioPlayerFactory;
+    SdpNegotiator sdpNegotiator;
 
-    /** Holds per-call state while the language-selection menu is running. */
-    private record CallState(Thread menuThread, List<LanguageFactory> sorted) {}
+    /** Holds per-call state while a call is active. */
+    private record CallState(Thread menuThread, List<LanguageFactory> sorted, CallMedia media) {}
 
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
@@ -84,12 +88,22 @@ public class SipCallHandler {
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         var sorted = LanguageSelector.sorted(languageFactories);
+
         if (sorted.isEmpty()) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING, "No language factories registered, rejecting call {0}", req.getFrom());
             rejectNoLanguage(req);
+
             return;
         }
+
         if (sorted.size() == 1) {
-            acceptAndAnnounce(req, sorted.get(0));
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Only one language factory registered, playing immediately to {0}",
+                    req.getFrom());
+            acceptAndAnnounce(req, sorted.getFirst());
+
             return;
         }
         acceptAndPlayMenu(req, sorted);
@@ -100,14 +114,19 @@ public class SipCallHandler {
                 System.Logger.Level.WARNING,
                 "No language factories registered — rejecting call from [{0}] with 480",
                 req.getFrom());
-        req.createResponse(480).send();
+        req.createResponse(SipServletResponse.SC_TEMPORARLY_UNAVAILABLE).send();
     }
 
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
-        req.createResponse(200).send();
+        CallMedia media = sdpNegotiator.negotiate(req);
+        SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
+        response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
+        response.send();
+
         SipSession session = req.getSession();
         String sessionId = session.getId();
-        AudioPlayer player = audioPlayerFactory.get();
+        AudioPlayer player = new RtpAudioPlayer(media);
+
         Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
             try {
                 Thread.sleep(1_000);
@@ -115,23 +134,30 @@ public class SipCallHandler {
                 Thread.currentThread().interrupt();
                 return;
             }
-            playAnnouncementAndHangUp(session, player, factory);
+
+            playAnnouncementAndHangUp(session, player, factory, media);
         });
-        activeCalls.put(sessionId, new CallState(thread, List.of(factory)));
+
+        activeCalls.put(sessionId, new CallState(thread, List.of(factory), media));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
-        req.createResponse(200).send();
+        CallMedia media = sdpNegotiator.negotiate(req);
+        SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
+        response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
+        response.send();
+
         SipSession session = req.getSession();
         String sessionId = session.getId();
-        AudioPlayer player = audioPlayerFactory.get();
+        AudioPlayer player = new RtpAudioPlayer(media);
         Thread menuThread = Thread.ofVirtual()
                 .name("call-menu-" + sessionId)
-                .start(() -> runMenu(session, player, sorted, sessionId));
-        activeCalls.put(sessionId, new CallState(menuThread, sorted));
+                .start(() -> runMenu(session, player, sorted, sessionId, media));
+        activeCalls.put(sessionId, new CallState(menuThread, sorted, media));
     }
 
-    private void runMenu(SipSession session, AudioPlayer player, List<LanguageFactory> sorted, String sessionId) {
+    private void runMenu(
+            SipSession session, AudioPlayer player, List<LanguageFactory> sorted, String sessionId, CallMedia media) {
         try {
             runMenuLoop(player, sorted);
         } catch (InterruptedException e) {
@@ -139,8 +165,11 @@ public class SipCallHandler {
         } finally {
             activeCalls.remove(sessionId);
             LanguageFactory chosen = pendingSelections.remove(sessionId);
+
             if (chosen != null) {
-                playAnnouncementAndHangUp(session, player, chosen);
+                playAnnouncementAndHangUp(session, player, chosen, media);
+            } else {
+                closeMedia(media);
             }
         }
     }
@@ -174,7 +203,7 @@ public class SipCallHandler {
      * A second digit for the same session is ignored ({@code putIfAbsent}).
      */
     public void handleDtmf(SipServletRequest req) throws IOException {
-        req.createResponse(200).send();
+        req.createResponse(SipServletResponse.SC_OK).send();
         String sessionId = req.getSession().getId();
         CallState callState = activeCalls.get(sessionId);
         if (callState == null) {
@@ -193,22 +222,33 @@ public class SipCallHandler {
     }
 
     /**
-     * Handles BYE — interrupts any running menu thread, removes per-call state, and sends
-     * {@code 200 OK}.
+     * Handles BYE — interrupts any running menu thread, closes the RTP socket,
+     * removes per-call state, and sends {@code 200 OK}.
      */
     public void handleBye(SipServletRequest req) throws IOException {
         String sessionId = req.getSession().getId();
         CallState callState = activeCalls.remove(sessionId);
+
         if (callState != null) {
             callState.menuThread().interrupt();
+            closeMedia(callState.media());
         }
+
         pendingSelections.remove(sessionId);
-        req.createResponse(200).send();
+        req.createResponse(SipServletResponse.SC_OK).send();
     }
 
-    private static void playAnnouncementAndHangUp(SipSession session, AudioPlayer player, LanguageFactory factory) {
+    private static void playAnnouncementAndHangUp(
+            SipSession session, AudioPlayer player, LanguageFactory factory, CallMedia media) {
         TimeAnnouncement announcement = factory.createTimeAnnouncement(player, Clock.systemDefaultZone());
+
         try {
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Playing time announcement in [{0}] using [{1}] to {2}",
+                    factory.displayName(),
+                    announcement,
+                    session.getRemoteParty());
             announcement.announce();
         } catch (InterruptedException e) {
             // Caller hung up; the BYE handler closes the session.
@@ -217,8 +257,18 @@ public class SipCallHandler {
         } catch (IOException e) {
             LOGGER.log(
                     System.Logger.Level.WARNING, "Time announcement failed for language [{0}]", factory.displayName());
+        } finally {
+            closeMedia(media);
         }
+
+        LOGGER.log(System.Logger.Level.INFO, "Hanging up call to {0}", session.getRemoteParty());
         sendBye(session);
+    }
+
+    private static void closeMedia(CallMedia media) {
+        if (!media.localSocket().isClosed()) {
+            media.localSocket().close();
+        }
     }
 
     private static void sendBye(SipSession session) {
