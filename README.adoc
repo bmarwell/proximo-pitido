@@ -168,3 +168,31 @@ OPTIONS:   ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
 
 Logs: `war/target/wlp-usr/servers/proximo-pitido/logs/messages.log`
 
+== Optional system libraries
+
+Some features require native shared libraries installed on the host OS.
+Without them the feature is silently unavailable at runtime and a pure-Java fallback (where one exists) is used instead.
+
+[cols="1,2,2,2"]
+|===
+|Library |Debian / Ubuntu |Arch Linux |Feature
+
+|`libopus0`
+|`sudo apt install libopus0`
+|`sudo pacman -S opus`
+|OGG/Opus audio decoding — *required* for the bundled language packs (Opus is the only supported format for language plug-ins)
+
+|`libsoxr0`
+|`sudo apt install libsoxr0`
+|`sudo pacman -S libsoxr`
+|High-quality stereo-to-mono channel mixing (sample-rate-aware resampling).
+Falls back to the built-in Java mixer when absent.
+The FFM binding is not yet implemented; the library is detected but the Java path is used unconditionally for now.
+
+|`libg72x` _(future)_
+|not yet packaged — build from source
+|`yay -S libg72x` _(AUR)_
+|G.722 HD Voice (50–7 000 Hz) codec.
+Not yet implemented; `G722RtpCodec.isAvailable()` always returns `false`.
+|===
+
