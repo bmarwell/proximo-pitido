@@ -10,7 +10,6 @@
     <platform>microProfile-4.1</platform>
     <feature>mpConfig</feature>
     <feature>mpHealth</feature>
-    <feature>mpOpenApi</feature>
   </featureManager>
 
   <!--

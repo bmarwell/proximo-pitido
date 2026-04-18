@@ -14,21 +14,9 @@
 
 <!--
   IBM Web Extension descriptor for Open Liberty.
-
-  classloader delegation="PARENT_LAST": WEB-INF/lib is searched before Liberty's server
-  classloaders. Required so that the SLF4J provider (slf4j-jdk-platform-logging, in WEB-INF/lib)
-  is visible to the SLF4J ServiceLoader even when Liberty ships its own slf4j-api via a feature
-  (e.g. mpOpenApi / SmallRye). Without this, the provider is invisible and SLF4J falls back to
-  NOP logging, emitting a "No SLF4J providers were found" warning on startup.
-
-  context-root: the SIP application ignores the HTTP context root, but it is included for
-  completeness. SIP routing is governed by dar.properties, not the HTTP path.
+  context-root: the SIP application ignores the HTTP context root, but it is set for completeness.
+  SIP routing is governed by dar.properties, not the HTTP path.
 -->
-<web-ext
-  xmlns="http://websphere.ibm.com/xml/ns/javaee"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://websphere.ibm.com/xml/ns/javaee http://websphere.ibm.com/xml/ns/javaee/ibm-web-ext_1_1.xsd"
-  version="1.1">
+<web-ext>
   <context-root uri="/proximo-pitido"/>
-  <classloader delegation="PARENT_LAST"/>
 </web-ext>
