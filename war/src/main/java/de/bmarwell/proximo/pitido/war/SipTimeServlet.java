@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.war;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
+import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener;
 import java.io.IOException;
@@ -22,11 +23,13 @@ import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
+import javax.servlet.sip.SipFactory;
+import javax.servlet.sip.SipServlet;
 import javax.servlet.sip.SipServletRequest;
-import javax.servlet.sip.annotation.SipServlet;
+import javax.servlet.sip.SipServletResponse;
 
-@SipServlet(name = "SipTimeServlet", loadOnStartup = 1, applicationName = "Proximo Pitido")
-public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Serializable {
+@javax.servlet.sip.annotation.SipServlet(name = "SipTimeServlet", loadOnStartup = 1, applicationName = "Proximo Pitido")
+public class SipTimeServlet extends SipServlet implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -50,11 +53,92 @@ public class SipTimeServlet extends javax.servlet.sip.SipServlet implements Seri
                 "not yet implemented: [de.bmarwell.proximo.pitido.war.SipTimeServlet::doInvite].");
     }
 
+    /**
+     * Handles SIP responses. A {@code 401 Unauthorized} or {@code 407 Proxy Authentication Required}
+     * from the registrar triggers a re-REGISTER with Digest credentials.
+     * A {@code 200 OK} for a REGISTER confirms successful registration.
+     */
+    @Override
+    protected void doResponse(SipServletResponse response) throws ServletException, IOException {
+        int status = response.getStatus();
+        String method = response.getMethod();
+        LOGGER.log(System.Logger.Level.INFO, "SIP response [{0}] for method [{1}]", status, method);
+
+        if (!"REGISTER".equals(method)) {
+            return;
+        }
+        if (status == SipServletResponse.SC_UNAUTHORIZED
+                || status == SipServletResponse.SC_PROXY_AUTHENTICATION_REQUIRED) {
+            handleAuthChallenge(response);
+            return;
+        }
+        if (status == SipServletResponse.SC_OK) {
+            this.sipRegistrationService.markRegistered();
+            return;
+        }
+        LOGGER.log(System.Logger.Level.WARNING, "Unexpected REGISTER response [{0}]: {1}", status, response);
+    }
+
+    private void handleAuthChallenge(SipServletResponse response) {
+        SipFactory sipFactory = (SipFactory) getServletContext().getAttribute(SipFactory.class.getName());
+        if (isAlreadyAuthenticated(response)) {
+            handleAlreadyAuthedChallenge(response, sipFactory);
+            return;
+        }
+        this.sipRegistrationService.registerWithAuth(response, sipFactory);
+    }
+
+    private boolean isAlreadyAuthenticated(SipServletResponse response) {
+        var req = response.getRequest();
+        return req.getHeader("Authorization") != null || req.getHeader("Proxy-Authorization") != null;
+    }
+
+    private void handleAlreadyAuthedChallenge(SipServletResponse response, SipFactory sipFactory) {
+        SipDigestChallenge challenge = parseChallengeHeader(response);
+        if (challenge == null) {
+            LOGGER.log(System.Logger.Level.ERROR, "Auth rejected with no challenge header — check credentials");
+            return;
+        }
+        if (challenge.stale() && this.sipRegistrationService.canRetryAfterStale()) {
+            LOGGER.log(System.Logger.Level.WARNING, "Auth nonce was stale (consumed by prior session); retrying");
+            this.sipRegistrationService.resetAuthState();
+            this.sipRegistrationService.registerWithAuth(response, sipFactory);
+            return;
+        }
+        LOGGER.log(
+                System.Logger.Level.ERROR,
+                "REGISTER auth rejected (stale={0}) — check SIP_USER_ID / SIP_USER_PASSWORD",
+                challenge.stale());
+    }
+
+    private SipDigestChallenge parseChallengeHeader(SipServletResponse response) {
+        String wwwAuth = response.getHeader("WWW-Authenticate");
+        if (wwwAuth == null) {
+            wwwAuth = response.getHeader("Proxy-Authenticate");
+        }
+        if (wwwAuth == null) {
+            return null;
+        }
+        return SipDigestChallenge.parse(wwwAuth);
+    }
+
     @Override
     public void init(ServletConfig cfg) throws ServletException {
         super.init(cfg);
-        LOGGER.log(System.Logger.Level.INFO, "do init: {0}", cfg);
-        this.sipRegistrationService.register(getServletContext());
+        LOGGER.log(System.Logger.Level.INFO, "SipTimeServlet init: scheduling deferred REGISTER");
+
+        // Sending directly from init() fails: the SIP application router may not be fully
+        // initialized until after init() returns. A virtual thread with a short sleep defers
+        // the REGISTER until routing is ready, without blocking server startup.
+        Thread.ofVirtual().name("sip-initial-register").start(() -> {
+            try {
+                Thread.sleep(2_000L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            this.sipRegistrationService.register(getServletContext());
+        });
     }
 
     public void setLanguageFactories(Instance<LanguageFactory> languageFactories) {

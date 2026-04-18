@@ -12,78 +12,204 @@
  */
 package de.bmarwell.proximo.pitido.war.listener;
 
+import de.bmarwell.proximo.pitido.core.sip.DigestMd5Computer;
+import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
+import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
+import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.servlet.ServletContext;
 import javax.servlet.sip.Address;
 import javax.servlet.sip.ServletParseException;
 import javax.servlet.sip.SipFactory;
+import javax.servlet.sip.SipServletResponse;
+import javax.servlet.sip.URI;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+/**
+ * Orchestrates SIP REGISTER with the configured registrar using RFC 3261 Digest MD5 authentication.
+ *
+ * <p>State machine:
+ * <ul>
+ *   <li>0 = IDLE — ready to start a new registration cycle</li>
+ *   <li>1 = AUTH_IN_PROGRESS — authenticated REGISTER has been sent</li>
+ *   <li>2 = REGISTERED — 200 OK received; all further challenges are ignored</li>
+ * </ul>
+ *
+ * <p>Works with any RFC 3261-compliant SIP registrar (Deutsche Telekom, SIPGate, easybell, O2,
+ * Vodafone DSL, etc.). Configure via {@code server.env}; see README for env-var mapping.
+ */
 @ApplicationScoped
 public class SipRegistrationListener {
 
     private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
 
-    @Inject
-    @ConfigProperty(name = "sip.provider.host")
-    String host;
+    private final AtomicInteger regState = new AtomicInteger(0);
 
+    /**
+     * Allows exactly one stale-nonce retry per session. Some providers respond with
+     * {@code stale=true} on the first auth attempt when a prior session consumed the nonce.
+     * A second {@code stale=true} indicates something more fundamental is wrong; we give up.
+     */
+    private final AtomicBoolean staleRetryUsed = new AtomicBoolean(false);
+
+    /** SIP domain of the registrar, e.g. {@code tel.t-online.de} or {@code sip.sipgate.de}. Maps to {@code SIP_REGISTRAR}. */
+    @Inject
+    @ConfigProperty(name = "sip.registrar")
+    String registrar;
+
+    /** SIP subscriber ID / phone number used to build the SIP URI. Maps to {@code SIP_SIPID}. */
+    @Inject
+    @ConfigProperty(name = "sip.sipid")
+    String sipId;
+
+    /** Authentication username (often an e-mail address). Maps to {@code SIP_USER_ID}. */
     @Inject
     @ConfigProperty(name = "sip.user.id")
-    String userId;
+    String loginUserId;
 
+    /** Authentication password. Maps to {@code SIP_USER_PASSWORD}. */
     @Inject
-    @ConfigProperty(name = "sip.user.domain")
-    String domain;
+    @ConfigProperty(name = "sip.user.password")
+    String loginPassword;
 
     @Inject
     @ConfigProperty(name = "sip.registration.expires", defaultValue = "3600")
     int expires;
 
+    @Inject
+    SrvDnsResolver srvDnsResolver;
+
+    @Inject
+    DigestMd5Computer digestComputer;
+
+    @Inject
+    LocalSipHostProvider localSipHostProvider;
+
+    /**
+     * Sends the initial (unauthenticated) REGISTER request. The registrar will respond with
+     * {@code 401 Unauthorized}; the Digest challenge is handled in {@link #registerWithAuth}.
+     */
     public void register(ServletContext servletContext) {
-        // Here you would use the SipFactory to create a REGISTER request
-        // and send it to your provider (e.g., tel.t-online.de)
-        // using your username and password from mpConfig.
         SipFactory sipFactory = (SipFactory) servletContext.getAttribute(SipFactory.class.getName());
-        LOGGER.log(
-                System.Logger.Level.INFO,
-                "Registering SIP user ID: [{0}@{1}] via [{2}]",
-                this.userId,
-                this.domain,
-                sipFactory);
+        LOGGER.log(System.Logger.Level.INFO, "Sending initial REGISTER for sip:[{0}@{1}]", this.sipId, this.registrar);
 
         var applicationSession = sipFactory.createApplicationSession();
-        Objects.requireNonNull(applicationSession.getApplicationName());
-        var fromUri = sipFactory.createSipURI(this.userId, this.domain);
+        Objects.requireNonNull(applicationSession.getApplicationName(), "applicationName must not be null");
+        var fromUri = sipFactory.createSipURI(this.sipId, this.registrar);
 
         try {
-            var requestURI = sipFactory.createURI("sip:" + this.domain);
+            var requestURI = buildRequestUri(sipFactory);
             var registerRequest = sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
+            registerRequest.setExpires(this.expires);
+            registerRequest.setRequestURI(requestURI);
+            registerRequest.setAddressHeader("Contact", buildContactAddress(sipFactory));
+
             LOGGER.log(
-                    System.Logger.Level.INFO,
-                    "Session: {0}, FromToUri: {1}, RequestUri: {2}, request: {3}, applicationName: {4}",
+                    System.Logger.Level.DEBUG,
+                    "REGISTER request: session=[{0}] fromTo=[{1}] requestUri=[{2}]",
                     applicationSession,
                     fromUri,
-                    requestURI,
-                    registerRequest,
-                    applicationSession.getApplicationName());
-            registerRequest.setExpires(this.expires);
-
-            // Critical for some providers:
-            // The 'Contact' header tells them where the server is physically located
-            Address contact = sipFactory.createAddress(fromUri);
-            registerRequest.setAddressHeader("Contact", contact);
-
-            registerRequest.setRequestURI(requestURI);
-
+                    requestURI);
             registerRequest.send();
         } catch (ServletParseException | IOException sipEx) {
-            LOGGER.log(System.Logger.Level.ERROR, "Registration failed", sipEx);
-        } catch (NullPointerException npe) {
-            LOGGER.log(System.Logger.Level.ERROR, "Registration failed due to NPE", npe);
+            LOGGER.log(System.Logger.Level.ERROR, "Initial REGISTER failed", sipEx);
         }
+    }
+
+    /**
+     * Re-sends REGISTER with Digest credentials in response to a {@code 401} or {@code 407} challenge.
+     *
+     * <p>Uses {@code sipFactory.createRequest(origRequest, true)} to preserve the original Call-ID —
+     * required by RFC 3261 §10.2. A new Call-ID causes some registrars to return {@code stale=true}
+     * indefinitely.
+     *
+     * <p>Computes the Digest hash manually because Liberty's {@code addAuthHeader()} uses the full
+     * Request-URI (SRV-resolved hostname) as the Digest URI, but the correct URI is
+     * {@code sip:<registrar-domain>} (the unauthenticated REGISTER target).
+     *
+     * <p>Protected by {@link #regState} so only one auth attempt is in flight at a time.
+     */
+    public void registerWithAuth(SipServletResponse challenge, SipFactory sipFactory) {
+        if (!regState.compareAndSet(0, 1)) {
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "Auth REGISTER already in flight or registered (state={0}), ignoring [{1}] challenge",
+                    regState.get(),
+                    challenge.getStatus());
+            return;
+        }
+
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Handling [{0}] challenge, re-registering with credentials",
+                challenge.getStatus());
+
+        try {
+            var origRequest = challenge.getRequest();
+            var registerRequest = sipFactory.createRequest(origRequest, true);
+            registerRequest.setHeader("Authorization", buildAuthHeader(challenge));
+            registerRequest.setExpires(this.expires);
+            registerRequest.setRequestURI(buildRequestUri(sipFactory));
+            registerRequest.setAddressHeader("Contact", buildContactAddress(sipFactory));
+
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "Sending authenticated REGISTER (Digest MD5, uri=sip:{0})",
+                    this.registrar);
+            registerRequest.send();
+        } catch (ServletParseException | IOException sipEx) {
+            regState.set(0);
+            LOGGER.log(System.Logger.Level.ERROR, "Authenticated REGISTER failed", sipEx);
+        }
+    }
+
+    /** Marks registration as successful (state = REGISTERED). */
+    public void markRegistered() {
+        regState.set(2);
+        LOGGER.log(System.Logger.Level.INFO, "Registration state: REGISTERED");
+    }
+
+    /**
+     * Returns {@code true} the first time a stale-nonce retry is requested; {@code false} on
+     * subsequent calls. Prevents infinite retry loops when the registrar keeps returning stale.
+     */
+    public boolean canRetryAfterStale() {
+        return staleRetryUsed.compareAndSet(false, true);
+    }
+
+    /**
+     * Resets AUTH_IN_PROGRESS → IDLE so a fresh auth cycle can begin.
+     * Uses CAS(1, 0) so that the REGISTERED (2) state is never accidentally cleared.
+     */
+    public void resetAuthState() {
+        regState.compareAndSet(1, 0);
+    }
+
+    private URI buildRequestUri(SipFactory sipFactory) throws ServletParseException {
+        String sipServer = srvDnsResolver.resolve(this.registrar);
+        return sipFactory.createURI("sip:" + sipServer + ":5060;transport=tcp");
+    }
+
+    private Address buildContactAddress(SipFactory sipFactory) {
+        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId, localSipHostProvider.get()));
+    }
+
+    private String buildAuthHeader(SipServletResponse challengeResponse) {
+        String wwwAuth = challengeResponse.getHeader("WWW-Authenticate");
+        if (wwwAuth == null) {
+            wwwAuth = challengeResponse.getHeader("Proxy-Authenticate");
+        }
+        if (wwwAuth == null) {
+            throw new IllegalArgumentException("No WWW-Authenticate / Proxy-Authenticate in challenge");
+        }
+        LOGGER.log(System.Logger.Level.DEBUG, "WWW-Authenticate challenge: [{0}]", wwwAuth);
+        var challenge = SipDigestChallenge.parse(wwwAuth);
+        return digestComputer.buildAuthorizationHeader(
+                this.loginUserId, this.loginPassword, challenge, "sip:" + this.registrar);
     }
 }

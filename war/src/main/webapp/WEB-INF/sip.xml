@@ -6,4 +6,10 @@
 
   <app-name>Proximo Pitido</app-name>
   <display-name>Proximo Pitido</display-name>
+  <!--
+    Servlet registration and loadOnStartup are handled via the @SipServlet annotation.
+    REGISTER routing is controlled via dar.properties (sipApplicationRouter in server.xml):
+    REGISTER is omitted from the DAR so outgoing REGISTERs are forwarded to the network
+    instead of looping back through application composition (which would produce a local 405).
+  -->
 </sip-app>

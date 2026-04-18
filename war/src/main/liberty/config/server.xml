@@ -13,13 +13,30 @@
     <feature>mpOpenApi</feature>
   </featureManager>
 
+  <!--
+    SIP_LOCAL_HOST (server.env): LAN IPv4 the SIP endpoint binds to.
+    Must be a real network interface IP (not loopback) so Liberty can establish
+    outbound TCP connections to the registrar. Defaults to "*" (auto), but "*"
+    resolves to 127.0.1.1 on many Linux systems — breaking outbound TCP.
+    SIP_PUBLIC_HOST (server.env): public IP advertised in the Contact header.
+    Port 5060 must be forwarded on the router: external 5060 → SIP_LOCAL_HOST:5060.
+  -->
+  <variable name="sip.bind.host" value="${env.SIP_LOCAL_HOST}" defaultValue="*" />
   <sipEndpoint id="defaultSipEndpoint"
-    host="*"
+    host="${sip.bind.host}"
     sipUDPPort="5060"
     sipTCPPort="5060"
     sipTLSPort="5061"
   />
   <httpEndpoint id="defaultHttpEndpoint" host="*" httpPort="9080" />
+
+  <!--
+    Configure the Default Application Router (DAR) with an explicit method list.
+    REGISTER is omitted so outgoing REGISTER requests are forwarded to the network
+    instead of being looped back through application composition.
+    See war/src/main/liberty/config/dar.properties.
+  -->
+  <sipApplicationRouter sipDarConfiguration="${server.config.dir}/dar.properties" />
 
   <cdi enableImplicitBeanArchives="false" />
 

@@ -1,3 +1,61 @@
 = Próximo Pitido – time announcement
 
-WebSphere Liberty SIP Servlet – Retro-Time Announcement en Español: ‚Al próximo pitido es…‘ (maybe).
+WebSphere Liberty SIP Servlet – Retro-Time Announcement en Español: ‚Al próximo pitido es…' (maybe).
+
+== Overview
+
+A Java 25 / JakartaEE 8 application running on Open Liberty that registers itself as a callable SIP phone number with a configurable SIP registrar on startup.
+Works with any RFC 3261-compliant provider (Deutsche Telekom, SIPGate, easybell, O2, Vodafone DSL, etc.).
+Eventually it will answer incoming calls with a time announcement ("Zeitansage").
+
+== SIP Registration
+
+On startup the app performs a SIP REGISTER handshake with the configured registrar:
+
+. `SipTimeServlet.init()` schedules a 2-second deferred REGISTER (virtual thread) to allow the Liberty SIP container and DAR router to initialise first.
+. `SipRegistrationListener.register()` uses `SrvDnsResolver` to find the registrar's actual host via a JNDI `_sip._tcp` SRV lookup, then sends an unauthenticated REGISTER over TCP.
+. The registrar responds `401 Unauthorized` with a Digest MD5 challenge.
+. `SipRegistrationListener.registerWithAuth()` reuses the original request's Call-ID (`sipFactory.createRequest(origRequest, true)`) — required by RFC 3261 §10.2 — and delegates Digest computation to `DigestMd5Computer`.
+. A `200 OK` confirms successful registration; the state machine moves to `REGISTERED`.
+
+=== Digest auth details
+
+* *Algorithm*: MD5 with `qop=auth`
+* *Digest URI*: `sip:<registrar-domain>` (the registrar domain — _not_ the SRV-resolved hostname)
+* *HA1*: `MD5(username:realm:password)`
+* *HA2*: `MD5(REGISTER:sip:<registrar-domain>)`
+* *Why manual?*: Liberty's `addAuthHeader()` uses the SRV-resolved hostname as the Digest URI, causing a hash mismatch.
+
+=== Configuration (`server.env`)
+
+[cols="1,1,2"]
+|===
+|Env var |MP Config property |Description
+
+|`SIP_REGISTRAR`      |`sip.registrar`      |SIP domain of the registrar (e.g. `tel.t-online.de`, `sip.sipgate.de`)
+|`SIP_SIPID`          |`sip.sipid`          |Your SIP subscriber ID / phone number
+|`SIP_USER_ID`        |`sip.user.id`        |Auth username (often an e-mail address)
+|`SIP_USER_PASSWORD`  |`sip.user.password`  |Auth password
+|`SIP_LOCAL_HOST`     |`sip.local.host`     |LAN IP Liberty binds the SIP endpoint to
+|`SIP_PUBLIC_HOST`    |`sip.public.host`    |Public IP advertised in the Contact header (auto-detected if absent)
+|===
+
+`server.env` is intentionally excluded from version control (contains secrets).
+
+=== Known quirks
+
+* Liberty `sipEndpoint host="*"` resolves to `127.0.1.1` on this system — bind to the LAN IP explicitly via `SIP_LOCAL_HOST`.
+* Fritz!Box SIP ALG intercepts UDP port 5060 — use TCP transport.
+* Liberty's SIP stack does *not* follow SRV records; `SrvDnsResolver` uses JNDI `DnsContextFactory` instead.
+* Do *not* declare `<servlet>` in `sip.xml` — it overrides `@SipServlet(loadOnStartup=1)`.
+* The DAR (`dar.properties`) must _not_ include REGISTER, or Liberty creates both client and server transactions causing a 405 loop.
+* Auth re-REGISTER must reuse the original Call-ID (`sipFactory.createRequest(origRequest, true)`); a new Call-ID causes some registrars to return `stale=true` indefinitely.
+
+== Running
+
+[source,bash]
+----
+./mvnw liberty:run -am -pl war
+----
+
+Logs: `war/target/wlp-usr/servers/proximo-pitido/logs/messages.log`
