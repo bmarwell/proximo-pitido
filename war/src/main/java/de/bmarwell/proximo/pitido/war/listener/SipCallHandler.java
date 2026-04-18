@@ -34,7 +34,7 @@ import javax.servlet.sip.SipServletRequest;
  *
  * <p>Language selection: if exactly one {@link LanguageFactory} is present on the classpath,
  * the announcement plays immediately. With two or more, the selection menu cycles through all
- * available languages in order of {@link LanguageFactory#getDefaultOrder()}, or as configured.
+ * available languages in order of {@link LanguageFactory#defaultOrder()}, or as configured.
  * The caller may interrupt at any point by pressing a digit.
  *
  * <p>Audio interruption: when a DTMF digit arrives, the active {@link AudioPlayer} is interrupted

@@ -26,7 +26,7 @@ import java.util.Locale;
  * No changes to the core or war modules are required.
  *
  * <p>When multiple languages are present, the language-selection menu is built from all
- * discovered factories, sorted by {@link #getDefaultOrder()} unless overridden by configuration.
+ * discovered factories, sorted by {@link #defaultOrder()} unless overridden by configuration.
  *
  * <p>Use a fully-qualified {@link Locale} (language <em>and</em> region) wherever a language
  * variant is specific to a region.
@@ -52,7 +52,7 @@ public interface LanguageFactory {
      * <p>The locale is used for identification, sorting fallback, and display — not for
      * number or date formatting (each implementation controls its own audio logic).
      */
-    Locale getLocale();
+    Locale locale();
 
     /**
      * Returns a human-readable display name in the language itself, used in the selection menu,
@@ -63,7 +63,7 @@ public interface LanguageFactory {
      * Examples: {@code "Deutsch"}, {@code "English"}, {@code "Español (España)"},
      * {@code "Español (Río Platense)"}.
      */
-    String getDisplayName();
+    String displayName();
 
     /**
      * Returns the default position of this language in the selection menu.
@@ -73,7 +73,7 @@ public interface LanguageFactory {
      * even without explicit configuration.
      * The configured order (if any) takes precedence over this default.
      */
-    int getDefaultOrder();
+    int defaultOrder();
 
     /**
      * Creates a {@link TimeAnnouncement} for the active call, backed by the given player
