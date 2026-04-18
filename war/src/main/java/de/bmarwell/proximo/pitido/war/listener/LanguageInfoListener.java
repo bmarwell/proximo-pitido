@@ -42,5 +42,4 @@ public class LanguageInfoListener implements ServletContextListener {
                 this.languageFactories.stream().count(),
                 this.languageFactories.stream().toList());
     }
-
 }

@@ -75,6 +75,39 @@
           <userDirectory>${project.build.directory}/wlp-usr</userDirectory>
         </configuration>
       </plugin>
+
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <configuration combine.self="override">
+          <!-- cleanthat 2.25 crashes with InvocationTargetException on Java record types
+               when compiled with Java 25 (cleanthat bug). Provide a full java config here
+               that matches the parent but omits cleanthat for this module. -->
+          <java>
+            <importOrder />
+            <removeUnusedImports />
+            <palantirJavaFormat>
+              <version>${dependency.palantir.version}</version>
+            </palantirJavaFormat>
+            <licenseHeader>
+              <content><![CDATA[
+/*
+ * Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the European Commission - subsequent
+ * versions of the EUPL (the "Licence");
+ * You may not use this work except in compliance with the Licence.
+ * You may obtain a copy of the Licence at:
+ *
+ * ${PROJECT_HOME}/LICENSE
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
+ * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the Licence for the specific language governing permissions and limitations under the Licence.
+ */
+]]></content>
+            </licenseHeader>
+          </java>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 

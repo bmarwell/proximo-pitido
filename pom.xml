@@ -18,6 +18,9 @@
     <!-- plugin dependencies -->
     <dependency.palantir.version>2.86.0</dependency.palantir.version>
     <dependency.cleanthat.version>2.25</dependency.cleanthat.version>
+
+    <!-- default empty; overridden at runtime by jacoco-maven-plugin prepare-agent -->
+    <argLine />
   </properties>
 
   <dependencyManagement>
@@ -70,8 +73,38 @@
         <artifactId>java</artifactId>
         <version>${dependency.cleanthat.version}</version>
       </dependency>
+
+      <!-- test dependency BOMs -->
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>6.0.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.mockito</groupId>
+        <artifactId>mockito-bom</artifactId>
+        <version>5.18.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
+
+  <!-- Test dependencies inherited by every child module. -->
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
   <build>
     <pluginManagement>
@@ -102,8 +135,20 @@
 
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>3.10.0</version>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>3.5.5</version>
+          <configuration>
+            <!-- @{argLine} picks up any value set by jacoco-maven-plugin at runtime.
+                 The mockito-core jar is used as a Java agent so that Mockito can
+                 instrument classes on modern JDKs without extra opens flags. -->
+            <argLine>${argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -170,6 +215,21 @@
                 </requireMavenVersion>
               </rules>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <!-- Resolves each dependency to a property named groupId:artifactId:type,
+                 e.g. ${org.mockito:mockito-core:jar}, for use in surefire argLine. -->
+            <id>set-agent-properties</id>
+            <goals>
+              <goal>properties</goal>
+            </goals>
           </execution>
         </executions>
       </plugin>

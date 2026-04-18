@@ -58,9 +58,9 @@ public class GermanLanguageFactory implements LanguageFactory {
     @Override
     public String toString() {
         return new StringJoiner(", ", GermanLanguageFactory.class.getSimpleName() + "[", "]")
-            .add("locale=" + locale())
-            .add("displayName='" + displayName() + "'")
-            .add("defaultOrder=" + defaultOrder())
-            .toString();
+                .add("locale=" + locale())
+                .add("displayName='" + displayName() + "'")
+                .add("defaultOrder=" + defaultOrder())
+                .toString();
     }
 }
