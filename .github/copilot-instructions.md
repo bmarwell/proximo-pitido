@@ -147,6 +147,8 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
 6. **Correct module placement** — pure-Java logic (no servlet/SIP container classes) belongs in `core`. Servlet/SIP-container-dependent code belongs in `war`.
 7. **Empty lines around control-flow statements** — `if`, `try`, and `return` must be preceded by a blank line, *unless* they are the first statement in their enclosing block.
    A closing brace of an `if` or `try` block must be followed by a blank line, *unless* it is the last statement in its enclosing block.
+8. **`this.` prefix for instance fields** — always qualify instance field access with `this.` (e.g. `this.socket`, `this.remoteRtp`).
+   Do *not* use `this.` when calling instance methods.
    Example:
    ```java
    var sorted = LanguageSelector.sorted(languageFactories);
