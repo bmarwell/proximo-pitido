@@ -68,8 +68,8 @@ public class WavPcmDecoder implements PcmDecoder {
             int channels = fmt.getChannels();
 
             return new WavPcmStream(raw, channels);
-        } catch (UnsupportedAudioFileException e) {
-            throw new IOException("Not a valid WAV file", e);
+        } catch (UnsupportedAudioFileException unsupportedAudioFileException) {
+            throw new IOException("Not a valid WAV file", unsupportedAudioFileException);
         }
     }
 

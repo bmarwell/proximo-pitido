@@ -81,8 +81,8 @@ public class OggOpusPcmDecoder implements PcmDecoder {
     static {
         try {
             libOpus = Native.load("opus", LibOpus.class);
-        } catch (UnsatisfiedLinkError e) {
-            loadError = new IOException("libopus not found. Install it with: apt install libopus0", e);
+        } catch (UnsatisfiedLinkError linkError) {
+            loadError = new IOException("libopus not found. Install it with: apt install libopus0", linkError);
         }
     }
 

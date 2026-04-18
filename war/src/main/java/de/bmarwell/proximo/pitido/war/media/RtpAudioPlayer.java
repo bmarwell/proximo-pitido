@@ -141,7 +141,8 @@ public class RtpAudioPlayer implements AudioPlayer {
     }
 
     private InputStream openResource(String resourcePath) throws IOException {
-        InputStream stream = RtpAudioPlayer.class.getResourceAsStream(resourcePath);
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        InputStream stream = classLoader.getResourceAsStream(resourcePath);
 
         if (stream == null) {
             throw new IOException("Audio resource not found on classpath: " + resourcePath);

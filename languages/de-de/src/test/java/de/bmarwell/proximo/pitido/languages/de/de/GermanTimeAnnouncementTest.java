@@ -88,7 +88,7 @@ class GermanTimeAnnouncementTest {
         Thread thread = Thread.ofVirtual().start(() -> {
             try {
                 announcement.announce();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {
                 // ignored

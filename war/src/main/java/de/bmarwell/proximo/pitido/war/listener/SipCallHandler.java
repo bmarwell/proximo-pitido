@@ -105,7 +105,7 @@ public class SipCallHandler {
 
         try {
             Thread.sleep(1_000);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
             return;
         }
@@ -143,7 +143,7 @@ public class SipCallHandler {
         Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
             try {
                 Thread.sleep(1_000);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
                 return;
             }
@@ -174,7 +174,7 @@ public class SipCallHandler {
         try {
             Thread.sleep(1_000);
             runMenuLoop(player, sorted);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException interruptedException) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
         } finally {
             activeCalls.remove(sessionId);
@@ -201,7 +201,7 @@ public class SipCallHandler {
         try {
             LanguageSelectionAnnouncement announcement = factory.createLanguageSelectionAnnouncement(player);
             announcement.playSelectionPhrase(slot);
-        } catch (IOException e) {
+        } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.WARNING,
                     "Could not play selection phrase for [{0}] at slot {1} — skipping",
@@ -268,13 +268,17 @@ public class SipCallHandler {
                     System.Logger.Level.DEBUG,
                     "Announcement complete; played {0} file(s)",
                     receipt.fileNames().size());
-        } catch (InterruptedException e) {
+        } catch (InterruptedException interruptedException) {
             // Caller hung up; the BYE handler closes the session.
             Thread.currentThread().interrupt();
             return;
-        } catch (IOException e) {
+        } catch (IOException ioException) {
             LOGGER.log(
-                    System.Logger.Level.WARNING, "Time announcement failed for language [{0}]", factory.displayName());
+                    System.Logger.Level.WARNING,
+                    "Time announcement failed for language [{0}]: {1}",
+                    factory.displayName(),
+                    ioException.getMessage(),
+                    ioException);
         } finally {
             closeMedia(media);
         }
@@ -295,8 +299,8 @@ public class SipCallHandler {
         }
         try {
             session.createRequest("BYE").send();
-        } catch (IOException e) {
-            LOGGER.log(System.Logger.Level.WARNING, "Failed to send BYE after time announcement");
+        } catch (IOException ioException) {
+            LOGGER.log(System.Logger.Level.WARNING, "Failed to send BYE after time announcement", ioException);
         }
     }
 
@@ -321,7 +325,7 @@ public class SipCallHandler {
                         .orElse(-1);
             }
             return Integer.parseInt(body.strip());
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             return -1;
         }
     }
