@@ -143,19 +143,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     @Override
     public void init(ServletConfig cfg) throws ServletException {
         super.init(cfg);
-        LOGGER.log(System.Logger.Level.INFO, "SipTimeServlet init: scheduling deferred REGISTER");
-
-        // Sending directly from init() fails: the SIP application router may not be fully
-        // initialized until after init() returns. A virtual thread with a short sleep defers
-        // the REGISTER until routing is ready, without blocking server startup.
-        Thread.ofVirtual().name("sip-initial-register").start(() -> {
-            try {
-                Thread.sleep(2_000L);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            this.sipRegistrationService.register(getServletContext());
-        });
+        LOGGER.log(
+                System.Logger.Level.INFO, "SipTimeServlet init: registration is scheduled by SipRegistrationListener");
     }
 }

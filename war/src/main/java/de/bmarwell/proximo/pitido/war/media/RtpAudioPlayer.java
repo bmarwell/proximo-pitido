@@ -14,23 +14,28 @@ package de.bmarwell.proximo.pitido.war.media;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.Random;
 
 /**
  * Sends audio to the remote caller as RTP packets over UDP.
  *
- * <p>This initial implementation ignores the {@code resourcePath} parameter and generates
- * a 1 kHz sine-wave tone encoded in G.711 A-law (PCMA, payload type 8) instead.
- * MP3 decoding and playback of real audio files will be added once the call-acceptance
- * signalling is confirmed to work end-to-end.
+ * <p>Audio files are loaded from the classpath.
+ * Supported formats:
+ * <ul>
+ *   <li>{@code .opus} — Opus codec in an OGG container (preferred); requires system {@code libopus0}</li>
+ *   <li>{@code .wav} — WAV PCM (deprecated; use Opus instead)</li>
+ *   <li>{@code .flac} — FLAC (not yet implemented; throws {@link UnsupportedOperationException})</li>
+ * </ul>
  *
  * <p>RTP packet format:
  * <ul>
  *   <li>Version 2, no padding, no extension, CC = 0</li>
- *   <li>Payload type 8 (PCMA)</li>
+ *   <li>Payload type 8 (PCMA / G.711 A-law)</li>
  *   <li>20 ms packets, 160 samples at 8 000 Hz, sent at 50 packets/second</li>
  *   <li>Sequence number and timestamp increment per packet</li>
  *   <li>SSRC is chosen randomly at construction time</li>
@@ -48,15 +53,6 @@ public class RtpAudioPlayer implements AudioPlayer {
 
     /** Samples per 20 ms RTP packet. */
     private static final int SAMPLES_PER_PACKET = 160;
-
-    /** Packets per second = SAMPLE_RATE / SAMPLES_PER_PACKET. */
-    private static final int PACKETS_PER_SECOND = SAMPLE_RATE / SAMPLES_PER_PACKET;
-
-    /** Tone frequency in Hz for the generated beep. */
-    private static final double TONE_HZ = 1_000.0;
-
-    /** Amplitude scale (0.0–1.0) to avoid encoder clipping. */
-    private static final double AMPLITUDE = 0.5;
 
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
@@ -80,42 +76,99 @@ public class RtpAudioPlayer implements AudioPlayer {
     }
 
     /**
-     * Generates one second of a 1 kHz PCMA tone and sends it as RTP packets.
+     * Opens the classpath resource at {@code resourcePath}, decodes it to 8 kHz mono PCM,
+     * encodes each 20 ms frame to G.711 A-law, and sends it as an RTP packet.
      *
-     * <p>The {@code resourcePath} parameter is accepted for API compatibility but is currently
-     * ignored; a generated sine-wave beep is always played instead.
-     * Playback stops immediately when the thread is interrupted.
+     * <p>Playback stops immediately when the thread is interrupted.
      *
-     * @param resourcePath ignored; reserved for future MP3 playback support
-     * @throws IOException          if a UDP send fails
+     * @param resourcePath classpath path of the audio file (e.g. {@code /audio/de/012.opus})
+     * @throws IOException          if the resource cannot be opened or decoded
      * @throws InterruptedException if the calling thread is interrupted mid-playback
      */
     @Override
     public void playBlocking(String resourcePath) throws IOException, InterruptedException {
-        LOGGER.log(System.Logger.Level.DEBUG, "RTP: sending 1 s tone to {0} (resource={1})", remoteRtp, resourcePath);
+        LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
 
-        for (int i = 0; i < PACKETS_PER_SECOND; i++) {
-            if (Thread.currentThread().isInterrupted()) {
-                throw new InterruptedException("RTP playback interrupted");
+        try (InputStream rawStream = openResource(resourcePath);
+                PcmStream pcm = selectDecoder(resourcePath).open(rawStream)) {
+            short[] frameBuf = new short[SAMPLES_PER_PACKET];
+
+            while (true) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new InterruptedException("RTP playback interrupted");
+                }
+
+                int read = readFrame(pcm, frameBuf);
+
+                if (read == -1) {
+                    break;
+                }
+
+                if (read < SAMPLES_PER_PACKET) {
+                    // Zero-pad the last partial frame to a full 20 ms packet.
+                    Arrays.fill(frameBuf, read, SAMPLES_PER_PACKET, (short) 0);
+                }
+
+                sendRtpPacket(encodePcma(frameBuf));
+                Thread.sleep(20);
             }
-
-            byte[] payload = generatePcmaPacket();
-            sendRtpPacket(payload);
-            Thread.sleep(20);
         }
     }
 
-    private byte[] generatePcmaPacket() {
-        byte[] samples = new byte[SAMPLES_PER_PACKET];
+    /**
+     * Reads exactly {@link #SAMPLES_PER_PACKET} samples from {@code pcm}, handling short reads.
+     * Returns -1 on immediate end-of-stream.
+     */
+    private int readFrame(PcmStream pcm, short[] buf) throws IOException {
+        int total = 0;
 
-        for (int i = 0; i < SAMPLES_PER_PACKET; i++) {
-            long sampleIndex = (timestamp + i) % SAMPLE_RATE;
-            double angle = 2.0 * Math.PI * TONE_HZ * sampleIndex / SAMPLE_RATE;
-            short pcm = (short) (Math.sin(angle) * Short.MAX_VALUE * AMPLITUDE);
-            samples[i] = linearToAlaw(pcm);
+        while (total < SAMPLES_PER_PACKET) {
+            int n = pcm.readSamples(buf, total, SAMPLES_PER_PACKET - total);
+
+            if (n == -1) {
+                return total == 0 ? -1 : total;
+            }
+
+            total += n;
         }
 
-        return samples;
+        return total;
+    }
+
+    private InputStream openResource(String resourcePath) throws IOException {
+        InputStream stream = RtpAudioPlayer.class.getResourceAsStream(resourcePath);
+
+        if (stream == null) {
+            throw new IOException("Audio resource not found on classpath: " + resourcePath);
+        }
+
+        return stream;
+    }
+
+    private PcmDecoder selectDecoder(String resourcePath) {
+        if (resourcePath.endsWith(".wav")) {
+            return new WavPcmDecoder();
+        }
+
+        if (resourcePath.endsWith(".opus")) {
+            return new OggOpusPcmDecoder();
+        }
+
+        if (resourcePath.endsWith(".flac")) {
+            return new FlacPcmDecoder();
+        }
+
+        throw new IllegalArgumentException("Unsupported audio format: " + resourcePath);
+    }
+
+    private byte[] encodePcma(short[] samples) {
+        byte[] pcma = new byte[samples.length];
+
+        for (int i = 0; i < samples.length; i++) {
+            pcma[i] = linearToAlaw(samples[i]);
+        }
+
+        return pcma;
     }
 
     private void sendRtpPacket(byte[] payload) throws IOException {

@@ -61,6 +61,12 @@
       <version>1.0.0-SNAPSHOT</version>
       <scope>runtime</scope>
     </dependency>
+
+    <!-- OGG Opus audio decoding via system libopus (apt install libopus0). -->
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

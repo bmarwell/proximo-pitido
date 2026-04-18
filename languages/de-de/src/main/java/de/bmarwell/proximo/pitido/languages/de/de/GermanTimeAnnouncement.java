@@ -17,6 +17,7 @@ import de.bmarwell.proximo.pitido.api.PlaybackReceipt;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -96,6 +97,7 @@ public class GermanTimeAnnouncement implements TimeAnnouncement {
         ZonedDateTime withDelta = now.truncatedTo(ChronoUnit.SECONDS).plusSeconds(7);
         int remainder = withDelta.getSecond() % 10;
         int toAdd;
+
         if (remainder == 0) {
             toAdd = 0;
         } else {
@@ -112,7 +114,11 @@ public class GermanTimeAnnouncement implements TimeAnnouncement {
     }
 
     private void waitUntil(ZonedDateTime target) throws InterruptedException {
-        long millis = target.toInstant().toEpochMilli() - this.clock.instant().toEpochMilli();
+        // Use the real wall clock to compute how long to wait, not this.clock.
+        // The injected clock determines *what time to announce*; the wall clock determines
+        // *when we have actually reached that time*.
+        // This keeps tests with Clock.fixed() fast: target is in the past → millis ≤ 0 → no sleep.
+        long millis = target.toInstant().toEpochMilli() - Instant.now().toEpochMilli();
 
         if (millis > 0) {
             Thread.sleep(millis);

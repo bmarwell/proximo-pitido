@@ -21,6 +21,8 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.enterprise.context.ApplicationScoped;
+import javax.enterprise.context.Initialized;
+import javax.enterprise.event.Observes;
 import javax.inject.Inject;
 import javax.servlet.ServletContext;
 import javax.servlet.sip.Address;
@@ -91,11 +93,56 @@ public class SipRegistrationListener {
     LocalSipHostProvider localSipHostProvider;
 
     /**
+     * The servlet context, stored by the CDI {@code @Initialized} observer once CDI is fully ready.
+     * Declared {@code volatile} because it is written on the observer thread and read on a virtual
+     * thread in {@link #scheduleRegistration()}.
+     */
+    private volatile ServletContext servletContext;
+
+    /**
+     * Triggered by CDI when the {@code ApplicationScoped} context is fully initialised.
+     *
+     * <p>In a WAR deployment, the CDI 2.0 spec (section 6.7.3) passes the {@link ServletContext}
+     * as the event payload — cast only when needed.
+     * This is the correct hook because CDI proxies are usable from this point on, so the
+     * virtual thread spawned by {@link #scheduleRegistration()} can safely call {@code this.register()}.
+     */
+    void onApplicationContextInitialized(@Observes @Initialized(ApplicationScoped.class) Object event) {
+        if (event instanceof ServletContext sc) {
+            this.servletContext = sc;
+        }
+
+        scheduleRegistration();
+    }
+
+    /**
+     * Spawns a virtual thread that waits 2 seconds before sending the initial REGISTER.
+     *
+     * <p>The delay is required because the Liberty SIP application router initialises concurrently
+     * with CDI startup; sending a SIP request immediately can fail because routing is not yet ready.
+     *
+     * <p>Note: {@code this} captured in the lambda is the real bean instance, not a CDI proxy,
+     * because this method is called from the observer (which receives the actual bean).
+     */
+    private void scheduleRegistration() {
+        Thread.ofVirtual().name("sip-initial-register").start(() -> {
+            try {
+                Thread.sleep(2_000L);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            register();
+        });
+    }
+
+    /**
      * Sends the initial (unauthenticated) REGISTER request. The registrar will respond with
      * {@code 401 Unauthorized}; the Digest challenge is handled in {@link #registerWithAuth}.
      */
-    public void register(ServletContext servletContext) {
-        SipFactory sipFactory = (SipFactory) servletContext.getAttribute(SipFactory.class.getName());
+    public void register() {
+        SipFactory sipFactory = (SipFactory) this.servletContext.getAttribute(SipFactory.class.getName());
         LOGGER.log(System.Logger.Level.INFO, "Sending initial REGISTER for sip:[{0}@{1}]", this.sipId, this.registrar);
 
         var applicationSession = sipFactory.createApplicationSession();
