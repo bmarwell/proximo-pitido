@@ -1,0 +1,8 @@
+# JVM options for Open Liberty — Próximo Pitido server
+#
+# --enable-native-access: required for de.bmarwell.proximo.pitido.core, which uses
+# the Foreign Function and Memory (FFM) API (java.lang.foreign.SymbolLookup,
+# java.lang.foreign.Arena) in LibsoxrChannelMixer to probe for libsoxr.so.0.
+# ALL-UNNAMED covers the case where Liberty's OSGi classloader bypasses JPMS named
+# modules and our JARs land in the unnamed module.
+--enable-native-access=ALL-UNNAMED

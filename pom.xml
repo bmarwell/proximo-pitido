@@ -46,6 +46,19 @@
         <version>2.0.2</version>
         <scope>provided</scope>
       </dependency>
+      <!-- Transitive deps of cdi-api that named JPMS modules must declare explicitly. -->
+      <dependency>
+        <groupId>javax.inject</groupId>
+        <artifactId>javax.inject</artifactId>
+        <version>1</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>jakarta.annotation</groupId>
+        <artifactId>jakarta.annotation-api</artifactId>
+        <version>1.3.5</version>
+        <scope>provided</scope>
+      </dependency>
 
       <!-- mpConfig -->
       <dependency>
