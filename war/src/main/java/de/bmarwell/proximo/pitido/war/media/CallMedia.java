@@ -25,5 +25,6 @@ import java.net.InetSocketAddress;
  * @param remoteRtp   the remote endpoint's RTP address and port, from the SDP {@code c=} and
  *                    {@code m=audio} lines
  * @param sdpAnswer   the fully formatted SDP answer body to include in the 200 OK response
+ * @param codec       the negotiated RTP codec; determines payload type, encoding, and clock rate
  */
-public record CallMedia(DatagramSocket localSocket, InetSocketAddress remoteRtp, String sdpAnswer) {}
+public record CallMedia(DatagramSocket localSocket, InetSocketAddress remoteRtp, String sdpAnswer, RtpCodec codec) {}

@@ -41,7 +41,13 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
     private static final System.Logger LOGGER = System.getLogger(OggOpusPcmDecoder.class.getName());
 
-    /** 8 kHz decoder sample rate — matches RTP/PCMA requirement. */
+    /** 8 kHz decoder sample rate — matches RTP/PCMA requirement.
+     *
+     * <p>TODO: make this configurable via {@code RtpCodec.inputSampleRate()} so that wideband
+     * codecs (e.g. G.722 at 16 kHz) receive the correct PCM rate from the decode pipeline.
+     * The Opus decoder supports multiple output rates; it would simply need to be re-created
+     * with the target rate instead of 8 000.
+     */
     private static final int SAMPLE_RATE = 8_000;
 
     /** Maximum decoded samples for one Opus frame (120 ms × 8 000 Hz). */

@@ -17,6 +17,10 @@ import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.servlet.sip.SipServletRequest;
@@ -25,11 +29,14 @@ import javax.servlet.sip.SipServletRequest;
  * Performs SDP offer/answer negotiation for incoming INVITE requests.
  *
  * <p>Parses the SDP offer from the INVITE body to extract the remote RTP endpoint,
- * allocates a local UDP socket for sending RTP, and builds the SDP answer string
- * to include in the 200 OK response.
+ * allocates a local UDP socket for sending RTP, selects the best mutually supported codec,
+ * and builds the SDP answer string to include in the 200 OK response.
  *
- * <p>Only G.711 A-law (PCMA, payload type 8) is supported as codec.
- * The SDP answer advertises {@code sendonly} direction since this application is a
+ * <p>Codec preference is defined by {@link #PREFERRED_CODECS}.
+ * The first codec from that list whose payload type appears in the SDP offer is selected.
+ * If no preferred codec is offered, PCMA is used as the unconditional fallback.
+ *
+ * <p>The SDP answer advertises {@code sendonly} direction since this application is a
  * speaking clock that transmits audio but never expects to receive it.
  *
  * <p>The returned {@link CallMedia} record's {@link CallMedia#localSocket()} must be
@@ -40,7 +47,14 @@ public class SdpNegotiator {
 
     private static final System.Logger LOGGER = System.getLogger(SdpNegotiator.class.getName());
 
-    private static final int PCMA_PAYLOAD_TYPE = 8;
+    /**
+     * Codecs offered in descending preference order.
+     * The first codec whose payload type appears in the SDP offer is selected.
+     *
+     * <p>G.722 is not listed here yet — add {@link G722RtpCodec} once its encoder is implemented.
+     */
+    private static final List<RtpCodec> PREFERRED_CODECS = List.of(PcmaRtpCodec.INSTANCE);
+
     private static final int PTIME_MS = 20;
 
     @Inject
@@ -65,6 +79,7 @@ public class SdpNegotiator {
 
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
+        RtpCodec codec = selectCodec(parseOfferedPayloadTypes(sdpOffer));
 
         DatagramSocket localSocket = new DatagramSocket(0);
         int localPort = localSocket.getLocalPort();
@@ -72,16 +87,17 @@ public class SdpNegotiator {
 
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "SDP negotiation: local RTP {0}:{1} → remote RTP {2}:{3}",
+                "SDP negotiation: local RTP {0}:{1} → remote RTP {2}:{3} — codec [{4}]",
                 localIp,
                 localPort,
                 remoteIp,
-                remotePort);
+                remotePort,
+                codec.sdpName());
 
-        String sdpAnswer = buildSdpAnswer(localIp, localPort);
+        String sdpAnswer = buildSdpAnswer(localIp, localPort, codec);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
-        return new CallMedia(localSocket, remoteAddr, sdpAnswer);
+        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec);
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {
@@ -130,15 +146,69 @@ public class SdpNegotiator {
                 .orElseThrow(() -> new IllegalArgumentException("No m=audio line found in SDP offer"));
     }
 
-    private static String buildSdpAnswer(String localIp, int localPort) {
-        return "v=0\r\n"
-                + "o=proximo-pitido 0 0 IN IP4 " + localIp + "\r\n"
-                + "s=-\r\n"
-                + "c=IN IP4 " + localIp + "\r\n"
-                + "t=0 0\r\n"
-                + "m=audio " + localPort + " RTP/AVP " + PCMA_PAYLOAD_TYPE + "\r\n"
-                + "a=rtpmap:" + PCMA_PAYLOAD_TYPE + " PCMA/8000\r\n"
-                + "a=ptime:" + PTIME_MS + "\r\n"
-                + "a=sendonly\r\n";
+    /**
+     * Extracts the offered RTP payload type integers from the {@code m=audio} line of the SDP offer.
+     * Returns {@code {8}} (PCMA) as default if the line cannot be parsed.
+     */
+    static Set<Integer> parseOfferedPayloadTypes(String sdp) {
+        return sdp.lines()
+                .filter(line -> line.startsWith("m=audio "))
+                .findFirst()
+                .map(line -> {
+                    String[] parts = line.split(" ");
+                    // m=audio <port> <proto> <pt1> [<pt2> ...]
+                    return Arrays.stream(parts, 3, parts.length)
+                            .map(Integer::parseInt)
+                            .collect(Collectors.toSet());
+                })
+                .orElse(Set.of(PcmaRtpCodec.INSTANCE.payloadType()));
+    }
+
+    /**
+     * Selects the best codec from {@link #PREFERRED_CODECS} that is present in the offered set.
+     * Falls back to {@link PcmaRtpCodec#INSTANCE} if no preferred codec is offered.
+     */
+    private static RtpCodec selectCodec(Set<Integer> offeredPayloadTypes) {
+        return PREFERRED_CODECS.stream()
+                .filter(codec -> offeredPayloadTypes.contains(codec.payloadType()))
+                .findFirst()
+                .orElse(PcmaRtpCodec.INSTANCE);
+    }
+
+    private static String buildSdpAnswer(String localIp, int localPort, RtpCodec codec) {
+        StringBuilder sdp = new StringBuilder();
+        sdp.append("v=0\r\n")
+                .append("o=proximo-pitido 0 0 IN IP4 ")
+                .append(localIp)
+                .append("\r\n")
+                .append("s=-\r\n")
+                .append("c=IN IP4 ")
+                .append(localIp)
+                .append("\r\n")
+                .append("t=0 0\r\n")
+                .append("m=audio ")
+                .append(localPort)
+                .append(" RTP/AVP ")
+                .append(codec.payloadType())
+                .append("\r\n")
+                .append("a=rtpmap:")
+                .append(codec.payloadType())
+                .append(" ")
+                .append(codec.sdpName())
+                .append("/")
+                .append(codec.rtpClockRate())
+                .append("\r\n");
+
+        if (!codec.fmtpParams().isEmpty()) {
+            sdp.append("a=fmtp:")
+                    .append(codec.payloadType())
+                    .append(" ")
+                    .append(codec.fmtpParams())
+                    .append("\r\n");
+        }
+
+        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendonly\r\n");
+
+        return sdp.toString();
     }
 }
