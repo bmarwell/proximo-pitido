@@ -62,16 +62,7 @@
       <scope>runtime</scope>
     </dependency>
 
-    <!-- OGG Opus audio decoding via system libopus (apt install libopus0). -->
-    <dependency>
-      <groupId>net.java.dev.jna</groupId>
-      <artifactId>jna</artifactId>
-    </dependency>
-    <!-- MIME-type detection for audio resource routing. -->
-    <dependency>
-      <groupId>org.apache.tika</groupId>
-      <artifactId>tika-core</artifactId>
-    </dependency>
+    <!-- OGG Opus audio decoding and MIME detection live in proximo-pitido-core. -->
   </dependencies>
 
   <build>

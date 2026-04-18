@@ -10,7 +10,7 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.war.media;
+package de.bmarwell.proximo.pitido.core.media;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -22,7 +22,7 @@ import java.io.IOException;
  * The last chunk of a file may be partially filled; the caller must zero-pad it to 160 samples
  * before encoding.
  */
-interface PcmStream extends Closeable {
+public interface PcmStream extends Closeable {
 
     /**
      * Reads up to {@code len} decoded PCM samples into {@code buf} starting at {@code off}.

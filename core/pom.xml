@@ -25,6 +25,17 @@
       <scope>provided</scope>
     </dependency>
 
+    <!-- OGG/Opus decoding via system libopus (apt install libopus0). -->
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+    </dependency>
+    <!-- MIME-type detection for audio resource routing. -->
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-core</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.eclipse.microprofile.config</groupId>
       <artifactId>microprofile-config-api</artifactId>

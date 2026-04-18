@@ -10,7 +10,7 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.war.media;
+package de.bmarwell.proximo.pitido.core.media;
 
 import com.sun.jna.Library;
 import com.sun.jna.Native;
