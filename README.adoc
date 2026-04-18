@@ -1,18 +1,60 @@
 = Próximo Pitido – time announcement
 
-WebSphere Liberty SIP Servlet – Retro-Time Announcement en Español: ‚Al próximo pitido es…' (maybe).
+WebSphere Liberty SIP Servlet – a retro-style speaking clock, named after the Spanish phrase
+_„Al próximo pitido serán las tres horas…"_ — _„At the next beep it will be three o'clock…"_
 
-== Overview
+== Why "Próximo Pitido"?
 
-A Java 25 / JakartaEE 8 application running on Open Liberty that registers itself as a callable SIP phone number with a configurable SIP registrar on startup.
-Works with any RFC 3261-compliant provider (Deutsche Telekom, SIPGate, easybell, O2, Vodafone DSL, etc.).
-Eventually it will answer incoming calls with a time announcement ("Zeitansage").
+The name is a nod to the analogue telephone speaking-clock services that existed in many countries
+before smartphones made them redundant.
+In Germany it was the _Zeitansage_ (dial 1191), in France _l'horloge parlante_ (dial 3699).
+The caller would hear a recorded voice counting down to a beep, then announcing the current time to
+the second.
+
+_Próximo pitido_ is the Spanish version of that countdown phrase.
+This project brings that experience to a self-hosted SIP number on a home DSL line.
+
+== Concept and call flow
+
+=== Single language
+
+If exactly one language implementation is available on the classpath, an incoming call is answered
+immediately and the time announcement plays straight away — no menu, no waiting.
+
+=== Multiple languages
+
+If two or more language implementations are present, the caller first hears the language-selection
+menu, cycling through the available options:
+
+----
+"Für Deutsch drücken Sie die 1."
+"Press 2 for English."
+"Para español marque el 3."
+...  (repeats from the beginning)
+----
+
+The caller can press the corresponding digit *at any time* — even mid-phrase — and playback stops
+immediately.
+The chosen language's time announcement then plays.
+
+=== Language ordering
+
+The order in which languages appear in the menu can be configured.
+If no explicit order is configured, a deterministic default order is used (defined by each
+`LanguageFactory` implementation via `getDefaultOrder()`), so the menu is always the same across
+restarts.
+
+=== Extensibility
+
+Languages are provided as CDI beans implementing `LanguageFactory` (SPI module).
+Adding a new language means adding a new CDI-visible implementation — no changes to the core or
+war modules are required.
 
 == SIP Registration
 
 On startup the app performs a SIP REGISTER handshake with the configured registrar:
 
-. `SipTimeServlet.init()` schedules a 2-second deferred REGISTER (virtual thread) to allow the Liberty SIP container and DAR router to initialise first.
+. `SipRegistrationServlet.init()` schedules a 2-second deferred REGISTER (virtual thread) to allow the Liberty SIP container and DAR router to initialise first.
 . `SipRegistrationListener.register()` uses `SrvDnsResolver` to find the registrar's actual host via a JNDI `_sip._tcp` SRV lookup, then sends an unauthenticated REGISTER over TCP.
 . The registrar responds `401 Unauthorized` with a Digest MD5 challenge.
 . `SipRegistrationListener.registerWithAuth()` reuses the original request's Call-ID (`sipFactory.createRequest(origRequest, true)`) — required by RFC 3261 §10.2 — and delegates Digest computation to `DigestMd5Computer`.
@@ -26,7 +68,89 @@ On startup the app performs a SIP REGISTER handshake with the configured registr
 * *HA2*: `MD5(REGISTER:sip:<registrar-domain>)`
 * *Why manual?*: Liberty's `addAuthHeader()` uses the SRV-resolved hostname as the Digest URI, causing a hash mismatch.
 
-=== Configuration (`server.env`)
+== Default Application Router (DAR)
+
+The DAR is one of the trickiest parts of Liberty SIP Servlet development and a common source of
+hard-to-diagnose bugs.
+Understanding it is essential before touching `dar.properties`.
+
+=== What the DAR does
+
+Every SIP message that arrives at (or is sent from) a Liberty SIP application passes through the
+*Default Application Router* before it reaches any servlet.
+The DAR decides which application — and which servlet within that application — should handle each
+message.
+Its configuration lives in `war/src/main/liberty/config/dar.properties`.
+
+Each line in `dar.properties` has the form:
+
+----
+METHOD: ("AppName", "RouteHeader", "Region", "Route", "Directive", "Order")
+----
+
+[cols="1,3"]
+|===
+|Field |Meaning
+
+|`AppName`
+|Name of the SIP application as declared in `@SipServlet(applicationName = "...")`.
+
+|`RouteHeader`
+|How the router identifies the target (usually `"DAR:From"` — route based on the From header).
+
+|`Region`
+|Routing region: `"ORIGINATING"`, `"TERMINATING"`, or `"NEUTRAL"`.
+For a simple UAS (like this app) `"NEUTRAL"` is correct.
+
+|`Route`
+|An additional SIP route to push onto the route set. Empty string `""` for none.
+
+|`Directive`
+|What to do after this application handles the message.
+`"NO_ROUTE"` means stop routing here — do not forward the message further.
+`"CONTINUE"` would pass it to the next application in the chain.
+
+|`Order`
+|Numeric position when multiple applications compete for the same method. `"0"` = first.
+|===
+
+=== Why REGISTER must *not* appear in dar.properties
+
+This is a critical gotcha that is easy to miss.
+
+When the app sends an outgoing REGISTER to the registrar, Liberty routes it through the DAR *on
+the way out* as well as on the way in.
+If `REGISTER` is listed in `dar.properties`, the DAR matches the outgoing REGISTER, creates a
+*server-side transaction* for it inside the app, and routes it back as an incoming request.
+The app has no `doRegister()` handler, so Liberty responds with `405 Method Not Allowed`.
+The registrar receives the `405` instead of the real `REGISTER` — registration never succeeds and
+the logs fill up with a 405 loop.
+
+The fix: simply *omit* `REGISTER` from `dar.properties`.
+Unlisted methods pass through Liberty to the network without triggering application composition.
+
+=== INFO (DTMF) must be listed
+
+SIP INFO messages are used to carry DTMF digits during a call (RFC 2976).
+When a caller presses a key during the language-selection menu, the digit arrives as a SIP INFO
+request.
+If `INFO` is not listed in `dar.properties`, Liberty will not route it to the application and the
+keypress is silently dropped.
+
+=== Full current dar.properties
+
+[source,properties]
+----
+# REGISTER intentionally omitted — see explanation above.
+INVITE:    ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+BYE:       ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+ACK:       ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+CANCEL:    ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+INFO:      ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+OPTIONS:   ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
+----
+
+== Configuration (`server.env`)
 
 [cols="1,1,2"]
 |===
@@ -42,14 +166,14 @@ On startup the app performs a SIP REGISTER handshake with the configured registr
 
 `server.env` is intentionally excluded from version control (contains secrets).
 
-=== Known quirks
+== Known quirks
 
 * Liberty `sipEndpoint host="*"` resolves to `127.0.1.1` on this system — bind to the LAN IP explicitly via `SIP_LOCAL_HOST`.
 * Fritz!Box SIP ALG intercepts UDP port 5060 — use TCP transport.
 * Liberty's SIP stack does *not* follow SRV records; `SrvDnsResolver` uses JNDI `DnsContextFactory` instead.
 * Do *not* declare `<servlet>` in `sip.xml` — it overrides `@SipServlet(loadOnStartup=1)`.
-* The DAR (`dar.properties`) must _not_ include REGISTER, or Liberty creates both client and server transactions causing a 405 loop.
 * Auth re-REGISTER must reuse the original Call-ID (`sipFactory.createRequest(origRequest, true)`); a new Call-ID causes some registrars to return `stale=true` indefinitely.
+* `SipFactory` and `SipProvider` are `null` if accessed directly in `init()` — the 2-second virtual thread delay is necessary.
 
 == Running
 
@@ -59,3 +183,4 @@ On startup the app performs a SIP REGISTER handshake with the configured registr
 ----
 
 Logs: `war/target/wlp-usr/servers/proximo-pitido/logs/messages.log`
+
