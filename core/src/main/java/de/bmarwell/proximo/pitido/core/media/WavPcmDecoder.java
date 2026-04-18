@@ -27,7 +27,8 @@ import org.apache.tika.mime.MediaType;
  * Decodes WAV audio to 8 kHz mono 16-bit PCM.
  *
  * <p>The WAV files used by this application are 8 kHz, 16-bit, stereo (two channels).
- * Stereo samples are mixed to mono by averaging the left and right channels.
+ * Stereo samples are mixed to mono using the ITU-R BS.775 −3 dB coefficient (1/√channels),
+ * which matches broadcast-standard practice and sounds louder than a plain average.
  *
  * @deprecated WAV is a legacy format kept for backwards compatibility.
  *     New audio resources should use the Opus codec in an OGG container ({@code .opus}).
@@ -112,7 +113,15 @@ public class WavPcmDecoder implements PcmDecoder {
             return count;
         }
 
-        /** Mixes all channels to mono by averaging. Little-endian 16-bit PCM. */
+        /**
+         * Mixes all channels to mono using the ITU-R BS.775 −3 dB coefficient (1/√channels).
+         * Little-endian 16-bit PCM.
+         *
+         * <p>This produces better perceived loudness than a simple arithmetic average (−6 dB),
+         * matching broadcast-standard stereo-to-mono downmix practice.
+         * Result is clamped to the {@code short} range to guard against rare clipping on
+         * maximally loud multi-channel content.
+         */
         private short mixChannels() {
             int sum = 0;
 
@@ -122,7 +131,9 @@ public class WavPcmDecoder implements PcmDecoder {
                 sum += (short) ((hi << 8) | lo);
             }
 
-            return (short) (sum / this.channels);
+            int mixed = (int) (sum / Math.sqrt(this.channels));
+
+            return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
         }
 
         @Override
