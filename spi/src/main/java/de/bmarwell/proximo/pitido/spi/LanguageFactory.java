@@ -15,6 +15,7 @@ package de.bmarwell.proximo.pitido.spi;
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.api.LanguageSelectionAnnouncement;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
+import java.time.Clock;
 import java.util.Locale;
 
 /**
@@ -75,10 +76,17 @@ public interface LanguageFactory {
     int getDefaultOrder();
 
     /**
-     * Creates a {@link TimeAnnouncement} for the active call, backed by the given player.
-     * Called once per incoming call after the language has been selected.
+     * Creates a {@link TimeAnnouncement} for the active call, backed by the given player
+     * and reading the current time from the given clock.
+     *
+     * <p>Pass {@link java.time.Clock#systemDefaultZone()} (or a zone-specific clock) in
+     * production.
+     * In tests, pass {@link java.time.Clock#fixed(java.time.Instant, java.time.ZoneId)} to
+     * pin the announced time to a known value, making assertions deterministic.
+     *
+     * <p>Called once per incoming call after the language has been selected.
      */
-    TimeAnnouncement createTimeAnnouncement(AudioPlayer audioPlayer);
+    TimeAnnouncement createTimeAnnouncement(AudioPlayer audioPlayer, Clock clock);
 
     /**
      * Creates a {@link LanguageSelectionAnnouncement} for use in the language-selection menu.
