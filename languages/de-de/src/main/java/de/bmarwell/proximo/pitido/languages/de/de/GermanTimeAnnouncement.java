@@ -14,7 +14,7 @@ package de.bmarwell.proximo.pitido.languages.de.de;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.api.PlaybackReceipt;
-import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
+import de.bmarwell.proximo.pitido.spi.AbstractTimeAnnouncement;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
@@ -45,16 +45,20 @@ import java.util.List;
  *
  * <p>All resource paths are relative to the classpath root, inside this module's jar.
  */
-public class GermanTimeAnnouncement implements TimeAnnouncement {
+public class GermanTimeAnnouncement extends AbstractTimeAnnouncement {
 
     static final String AUDIO_BASE = "de/bmarwell/proximo/pitido/languages/de/de/audio/de/";
 
-    private final AudioPlayer audioPlayer;
     private final Clock clock;
 
     public GermanTimeAnnouncement(AudioPlayer audioPlayer, Clock clock) {
-        this.audioPlayer = audioPlayer;
+        super(audioPlayer);
         this.clock = clock;
+    }
+
+    @Override
+    protected String audioBase() {
+        return AUDIO_BASE;
     }
 
     /**
@@ -105,12 +109,6 @@ public class GermanTimeAnnouncement implements TimeAnnouncement {
         }
 
         return withDelta.plusSeconds(toAdd);
-    }
-
-    private void play(List<String> played, String fileName) throws IOException, InterruptedException {
-        String path = AUDIO_BASE + fileName;
-        this.audioPlayer.playBlocking(path);
-        played.add(path);
     }
 
     private void waitUntil(ZonedDateTime target) throws InterruptedException {

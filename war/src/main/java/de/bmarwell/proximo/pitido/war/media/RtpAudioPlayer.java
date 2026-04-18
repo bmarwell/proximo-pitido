@@ -90,7 +90,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
 
         try (InputStream rawStream = openResource(resourcePath);
-                PcmStream pcm = selectDecoder(resourcePath).open(rawStream)) {
+                PcmStream pcm = PcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
             short[] frameBuf = new short[SAMPLES_PER_PACKET];
 
             while (true) {
@@ -143,22 +143,6 @@ public class RtpAudioPlayer implements AudioPlayer {
         }
 
         return stream;
-    }
-
-    private PcmDecoder selectDecoder(String resourcePath) {
-        if (resourcePath.endsWith(".wav")) {
-            return new WavPcmDecoder();
-        }
-
-        if (resourcePath.endsWith(".opus")) {
-            return new OggOpusPcmDecoder();
-        }
-
-        if (resourcePath.endsWith(".flac")) {
-            return new FlacPcmDecoder();
-        }
-
-        throw new IllegalArgumentException("Unsupported audio format: " + resourcePath);
     }
 
     private byte[] encodePcma(short[] samples) {
