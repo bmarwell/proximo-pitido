@@ -22,5 +22,11 @@
       <artifactId>jakarta.enterprise.cdi-api</artifactId>
       <scope>compile</scope>
     </dependency>
+    <dependency>
+      <groupId>de.bmarwell.proximo.pitido</groupId>
+      <artifactId>proximo-pitido-test-support</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 </project>

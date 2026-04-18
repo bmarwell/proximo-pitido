@@ -259,7 +259,11 @@ public class SipCallHandler {
                     factory.displayName(),
                     announcement,
                     session.getRemoteParty());
-            announcement.announce();
+            var receipt = announcement.announce();
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "Announcement complete; played {0} file(s)",
+                    receipt.fileNames().size());
         } catch (InterruptedException e) {
             // Caller hung up; the BYE handler closes the session.
             Thread.currentThread().interrupt();

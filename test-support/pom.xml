@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.1.0 https://maven.apache.org/xsd/maven-4.1.0.xsd">
+  <modelVersion>4.1.0</modelVersion>
+
+  <parent>
+    <groupId>de.bmarwell.proximo.pitido</groupId>
+  </parent>
+
+  <artifactId>proximo-pitido-test-support</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+
+  <name>Proximo Pitido :: Test Support</name>
+
+  <description>Test helpers shared across modules: RecordingAudioPlayer and other test doubles.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>de.bmarwell.proximo.pitido</groupId>
+      <artifactId>proximo-pitido-api</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- cleanthat crashes on some Java 25 constructs; disable it for this module. -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <configuration combine.self="override">
+          <pom>
+            <sortPom>
+              <spaceBeforeCloseEmptyElement>true</spaceBeforeCloseEmptyElement>
+            </sortPom>
+          </pom>
+
+          <java>
+            <importOrder />
+            <removeUnusedImports />
+
+            <palantirJavaFormat>
+              <version>${dependency.palantir.version}</version>
+            </palantirJavaFormat>
+
+            <licenseHeader>
+              <content><![CDATA[
+/*
+ * Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the European Commission - subsequent
+ * versions of the EUPL (the "Licence");
+ * You may not use this work except in compliance with the Licence.
+ * You may obtain a copy of the Licence at:
+ *
+ * $\{PROJECT_HOME}/LICENSE
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
+ * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the Licence for the specific language governing permissions and limitations under the Licence.
+ */
+]]></content>
+            </licenseHeader>
+          </java>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

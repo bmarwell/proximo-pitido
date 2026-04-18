@@ -33,8 +33,13 @@ public interface TimeAnnouncement {
     /**
      * Plays the time announcement to completion, or until the calling thread is interrupted.
      *
+     * <p>Returns a {@link PlaybackReceipt} listing every resource path submitted to the
+     * {@link AudioPlayer} in playback order.
+     * The receipt is intended for testing on headless servers where audio hardware is absent.
+     *
+     * @return receipt of the audio files played, in order; never {@code null}
      * @throws IOException          on any I/O or RTP streaming error
      * @throws InterruptedException if interrupted; stop playback and propagate
      */
-    void announce() throws IOException, InterruptedException;
+    PlaybackReceipt announce() throws IOException, InterruptedException;
 }

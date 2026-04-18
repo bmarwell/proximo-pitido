@@ -307,6 +307,7 @@
     <subproject>api</subproject>
     <subproject>spi</subproject>
     <subproject>core</subproject>
+    <subproject>test-support</subproject>
     <subproject>languages</subproject>
     <subproject>war</subproject>
   </subprojects>
