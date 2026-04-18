@@ -56,6 +56,7 @@ public class RtpAudioPlayer implements AudioPlayer {
 
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
+    private final PcmDecoderFactory pcmDecoderFactory;
     private final int ssrc;
     private int seqNumber;
     private long timestamp;
@@ -63,11 +64,13 @@ public class RtpAudioPlayer implements AudioPlayer {
     /**
      * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
      *
-     * @param callMedia the negotiated call media; the socket must still be open
+     * @param callMedia        the negotiated call media; the socket must still be open
+     * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
      */
-    public RtpAudioPlayer(CallMedia callMedia) {
+    public RtpAudioPlayer(CallMedia callMedia, PcmDecoderFactory pcmDecoderFactory) {
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();
+        this.pcmDecoderFactory = pcmDecoderFactory;
 
         Random rng = new Random();
         this.ssrc = rng.nextInt();
@@ -90,7 +93,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
 
         try (InputStream rawStream = openResource(resourcePath);
-                PcmStream pcm = PcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
+                PcmStream pcm = this.pcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
             short[] frameBuf = new short[SAMPLES_PER_PACKET];
 
             while (true) {

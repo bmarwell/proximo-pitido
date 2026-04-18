@@ -18,6 +18,7 @@ import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
 import de.bmarwell.proximo.pitido.core.LanguageSelector;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import de.bmarwell.proximo.pitido.war.media.CallMedia;
+import de.bmarwell.proximo.pitido.war.media.PcmDecoderFactory;
 import de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer;
 import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
@@ -67,6 +68,9 @@ public class SipCallHandler {
 
     @Inject
     SdpNegotiator sdpNegotiator;
+
+    @Inject
+    PcmDecoderFactory pcmDecoderFactory;
 
     /** Holds per-call state while a call is active. */
     private record CallState(Thread menuThread, List<LanguageFactory> sorted, CallMedia media) {}
@@ -134,7 +138,7 @@ public class SipCallHandler {
 
         SipSession session = req.getSession();
         String sessionId = session.getId();
-        AudioPlayer player = new RtpAudioPlayer(media);
+        AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
 
         Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
             try {
@@ -158,7 +162,7 @@ public class SipCallHandler {
 
         SipSession session = req.getSession();
         String sessionId = session.getId();
-        AudioPlayer player = new RtpAudioPlayer(media);
+        AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Thread menuThread = Thread.ofVirtual()
                 .name("call-menu-" + sessionId)
                 .start(() -> runMenu(session, player, sorted, sessionId, media));
