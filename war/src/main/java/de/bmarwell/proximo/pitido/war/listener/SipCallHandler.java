@@ -24,6 +24,8 @@ import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -60,14 +62,18 @@ import javax.servlet.sip.SipSession;
  * <p>Per-call state ({@link CallState}) is stored in {@link #activeCalls}, keyed by
  * {@link SipSession#getId()}, and cleaned up on BYE or Liberty shutdown.
  *
- * <p>The announcement loop runs indefinitely until the caller hangs up (BYE) or Liberty shuts
- * down.
+ * <p>The announcement loop runs until the caller hangs up (BYE), Liberty shuts down, or the
+ * per-call maximum duration of two minutes has elapsed.
+ * On timeout the server sends BYE to free the SIP line.
  * On shutdown, {@link #onShutdown()} sends BYE to all active calls and interrupts their threads.
  */
 @ApplicationScoped
 public class SipCallHandler {
 
     private static final System.Logger LOGGER = System.getLogger(SipCallHandler.class.getName());
+
+    /** Maximum duration of a single call before the server hangs up. */
+    private static final Duration CALL_MAX_DURATION = Duration.ofMinutes(2);
 
     @Inject
     Instance<LanguageFactory> languageFactories;
@@ -294,11 +300,13 @@ public class SipCallHandler {
      *
      * <p>Interrupted on BYE received (via {@link #handleBye}) or Liberty shutdown
      * (via {@link #onShutdown()}).
+     * Also exits when the call has exceeded {@link #CALL_MAX_DURATION}; in that case a BYE is
+     * sent to the caller to release the SIP line.
      *
      * <p>Each iteration waits for the next announcement slot ({@code second % 10 == 2}), then
      * plays one full announcement cycle.
      * I/O errors in a single cycle are logged and the loop continues;
-     * only an {@link InterruptedException} exits the loop.
+     * only an {@link InterruptedException} or a timeout exits the loop.
      *
      * <p>On exit, removes this call from {@link #activeCalls} and closes the media socket.
      */
@@ -310,9 +318,16 @@ public class SipCallHandler {
                 factory.displayName(),
                 session.getRemoteParty());
 
+        Instant deadline = Instant.now().plus(CALL_MAX_DURATION);
+
         try {
-            while (true) {
+            while (Instant.now().isBefore(deadline)) {
                 waitForNextAnnouncementSlot();
+
+                if (Instant.now().isAfter(deadline)) {
+                    break;
+                }
+
                 TimeAnnouncement announcement = factory.createTimeAnnouncement(player, Clock.systemDefaultZone());
 
                 try {
@@ -330,6 +345,12 @@ public class SipCallHandler {
                             ioException);
                 }
             }
+
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Maximum call duration reached for session [{0}] — hanging up",
+                    sessionId);
+            sendBye(session);
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
             LOGGER.log(System.Logger.Level.DEBUG, "Announcement loop interrupted for session [{0}]", sessionId);
