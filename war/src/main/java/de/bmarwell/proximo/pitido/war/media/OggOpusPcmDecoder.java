@@ -20,6 +20,9 @@ import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.Locale;
+import javax.enterprise.context.ApplicationScoped;
+import org.apache.tika.mime.MediaType;
 
 /**
  * Decodes Opus audio stored in an OGG container to 8 kHz mono 16-bit PCM.
@@ -33,7 +36,8 @@ import java.util.Deque;
  * <p>The first two OGG logical bitstream packets (OpusHead and OpusTags) are silently skipped
  * as required by RFC 7845.
  */
-class OggOpusPcmDecoder implements PcmDecoder {
+@ApplicationScoped
+public class OggOpusPcmDecoder implements PcmDecoder {
 
     private static final System.Logger LOGGER = System.getLogger(OggOpusPcmDecoder.class.getName());
 
@@ -80,6 +84,18 @@ class OggOpusPcmDecoder implements PcmDecoder {
         } catch (UnsatisfiedLinkError e) {
             loadError = new IOException("libopus not found. Install it with: apt install libopus0", e);
         }
+    }
+
+    @Override
+    public boolean supports(String resourcePath, MediaType mimeType) {
+        String lower = resourcePath.toLowerCase(Locale.ROOT);
+
+        if (lower.endsWith(".opus") || lower.endsWith(".ogg")) {
+            return true;
+        }
+
+        return MediaType.audio("ogg").equals(mimeType)
+                || MediaType.audio("opus").equals(mimeType);
     }
 
     @Override

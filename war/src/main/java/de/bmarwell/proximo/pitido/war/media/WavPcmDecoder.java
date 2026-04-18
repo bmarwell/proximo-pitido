@@ -14,10 +14,13 @@ package de.bmarwell.proximo.pitido.war.media;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
+import javax.enterprise.context.ApplicationScoped;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
+import org.apache.tika.mime.MediaType;
 
 /**
  * Decodes WAV audio to 8 kHz mono 16-bit PCM.
@@ -30,11 +33,24 @@ import javax.sound.sampled.UnsupportedAudioFileException;
  *     WAV support will not be removed but will not receive further attention.
  */
 @Deprecated
-class WavPcmDecoder implements PcmDecoder {
+@ApplicationScoped
+public class WavPcmDecoder implements PcmDecoder {
 
     private static final System.Logger LOGGER = System.getLogger(WavPcmDecoder.class.getName());
 
     private static final int REQUIRED_SAMPLE_RATE = 8_000;
+
+    @Override
+    public boolean supports(String resourcePath, MediaType mimeType) {
+        String lower = resourcePath.toLowerCase(Locale.ROOT);
+
+        if (lower.endsWith(".wav")) {
+            return true;
+        }
+
+        return MediaType.audio("wav").equals(mimeType)
+                || MediaType.audio("x-wav").equals(mimeType);
+    }
 
     @Override
     public PcmStream open(InputStream in) throws IOException {

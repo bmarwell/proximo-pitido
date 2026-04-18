@@ -67,6 +67,11 @@
       <groupId>net.java.dev.jna</groupId>
       <artifactId>jna</artifactId>
     </dependency>
+    <!-- MIME-type detection for audio resource routing. -->
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-core</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

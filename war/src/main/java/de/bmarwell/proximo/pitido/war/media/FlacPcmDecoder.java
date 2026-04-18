@@ -14,6 +14,9 @@ package de.bmarwell.proximo.pitido.war.media;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
+import javax.enterprise.context.ApplicationScoped;
+import org.apache.tika.mime.MediaType;
 
 /**
  * Stub FLAC decoder. FLAC support has not yet been implemented.
@@ -27,7 +30,20 @@ import java.io.InputStream;
  *   &lt;/dependency&gt;
  * </pre>
  */
-class FlacPcmDecoder implements PcmDecoder {
+@ApplicationScoped
+public class FlacPcmDecoder implements PcmDecoder {
+
+    @Override
+    public boolean supports(String resourcePath, MediaType mimeType) {
+        String lower = resourcePath.toLowerCase(Locale.ROOT);
+
+        if (lower.endsWith(".flac")) {
+            return true;
+        }
+
+        return MediaType.audio("flac").equals(mimeType)
+                || MediaType.audio("x-flac").equals(mimeType);
+    }
 
     @Override
     public PcmStream open(InputStream in) throws IOException {
