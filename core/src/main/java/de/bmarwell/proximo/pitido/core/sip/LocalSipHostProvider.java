@@ -39,6 +39,9 @@ public class LocalSipHostProvider {
     @ConfigProperty(name = "sip.public.host")
     Optional<String> configuredHost;
 
+    /** CDI no-args constructor. */
+    public LocalSipHostProvider() {}
+
     /** Returns the address to advertise in the SIP {@code Contact} header. */
     public String get() {
         return configuredHost.orElseGet(this::detectLocalAddress);

@@ -22,18 +22,21 @@ module de.bmarwell.proximo.pitido.core {
     // Internal project modules
     requires transitive de.bmarwell.proximo.pitido.spi;
 
-    // CDI 2.0 (javax namespace) — provided by the Liberty container at runtime
-    requires jakarta.enterprise.cdi.api;
+    // CDI 2.0 (javax namespace) — provided by the Liberty container at runtime.
+    // Transitive because @ApplicationScoped is a runtime-visible annotation on exported types;
+    // consumers seeing those types must be able to read the annotation class.
+    requires transitive jakarta.enterprise.cdi.api;
     requires java.annotation; // javax.annotation.PostConstruct / @PreDestroy
     requires javax.inject; // @Inject
 
     // JDK platform modules
-    requires java.naming; // javax.naming.* — JNDI SRV DNS lookup
+    requires java.naming; // javax.naming.* — JNDI SRV DNS lookup (package-private use only)
     requires java.desktop; // javax.sound.sampled.* — WAV decoding
 
     // Third-party compile dependencies
     requires com.sun.jna; // JNA — libopus bindings (OggOpusPcmDecoder)
-    requires org.apache.tika.core; // MIME-type detection (PcmDecoderFactory)
+    // Transitive because MediaType appears in the exported PcmDecoder.supports() signature.
+    requires transitive org.apache.tika.core;
 
     // MicroProfile Config — provided by Liberty; annotation-only use (@ConfigProperty)
     requires static microprofile.config.api;

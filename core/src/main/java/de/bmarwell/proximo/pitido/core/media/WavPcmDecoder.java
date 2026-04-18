@@ -55,6 +55,9 @@ public class WavPcmDecoder implements PcmDecoder {
 
     private ChannelMixer activeChannelMixer;
 
+    /** CDI no-args constructor. */
+    public WavPcmDecoder() {}
+
     @PostConstruct
     void selectChannelMixer() {
         this.activeChannelMixer = this.channelMixers.stream()

@@ -40,6 +40,9 @@ public class SrvDnsResolver {
 
     private volatile String cachedHost;
 
+    /** CDI no-args constructor. */
+    public SrvDnsResolver() {}
+
     /**
      * Returns the SIP server hostname for the given domain, using a cached result after the first call.
      * Falls back to the domain itself if the SRV lookup fails.
@@ -82,8 +85,8 @@ public class SrvDnsResolver {
         return result;
     }
 
-    /** Overridable for testing — allows injecting a mock {@link DirContext}. */
-    protected DirContext createDirContext() throws NamingException {
+    /** Package-private for testing — allows injecting a mock {@link DirContext}. */
+    DirContext createDirContext() throws NamingException {
         var env = new Hashtable<String, String>();
         env.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
         env.put("java.naming.provider.url", "dns:");

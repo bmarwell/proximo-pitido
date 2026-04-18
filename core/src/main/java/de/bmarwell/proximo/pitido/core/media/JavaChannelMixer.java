@@ -28,6 +28,9 @@ import javax.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class JavaChannelMixer implements ChannelMixer {
 
+    /** CDI no-args constructor. */
+    public JavaChannelMixer() {}
+
     @Override
     public boolean isAvailable() {
         return true;

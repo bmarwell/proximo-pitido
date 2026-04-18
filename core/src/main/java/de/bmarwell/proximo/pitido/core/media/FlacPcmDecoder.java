@@ -33,6 +33,9 @@ import org.apache.tika.mime.MediaType;
 @ApplicationScoped
 public class FlacPcmDecoder implements PcmDecoder {
 
+    /** CDI no-args constructor. */
+    public FlacPcmDecoder() {}
+
     @Override
     public boolean supports(String resourcePath, MediaType mimeType) {
         String lower = resourcePath.toLowerCase(Locale.ROOT);

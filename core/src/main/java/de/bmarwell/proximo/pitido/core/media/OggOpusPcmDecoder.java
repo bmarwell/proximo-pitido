@@ -92,6 +92,9 @@ public class OggOpusPcmDecoder implements PcmDecoder {
         }
     }
 
+    /** CDI no-args constructor. */
+    public OggOpusPcmDecoder() {}
+
     @Override
     public boolean supports(String resourcePath, MediaType mimeType) {
         String lower = resourcePath.toLowerCase(Locale.ROOT);

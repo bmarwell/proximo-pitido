@@ -48,6 +48,9 @@ public class PcmDecoderFactory {
     @Inject
     Instance<PcmDecoder> decoders;
 
+    /** CDI no-args constructor. */
+    public PcmDecoderFactory() {}
+
     /**
      * Returns a {@link PcmDecoder} suitable for the audio file at {@code resourcePath}.
      *

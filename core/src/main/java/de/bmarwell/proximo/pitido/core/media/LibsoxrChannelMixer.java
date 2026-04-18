@@ -68,8 +68,12 @@ public class LibsoxrChannelMixer implements ChannelMixer {
 
     private boolean libsoxrPresent = false;
 
+    /** CDI no-args constructor. */
+    public LibsoxrChannelMixer() {}
+
     /** Probes for {@code libsoxr.so.0} at startup so the detection cost is paid once. */
     @PostConstruct
+    @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
     void detectLibsoxr() {
         if (!FFM_IMPLEMENTED) {
             return;
