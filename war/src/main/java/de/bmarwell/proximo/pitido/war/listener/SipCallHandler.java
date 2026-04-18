@@ -24,9 +24,11 @@ import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.annotation.PreDestroy;
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
@@ -56,7 +58,11 @@ import javax.servlet.sip.SipSession;
  * {@link Thread#interrupt()} so that blocking playback stops promptly.
  *
  * <p>Per-call state ({@link CallState}) is stored in {@link #activeCalls}, keyed by
- * {@link SipSession#getId()}, and cleaned up on BYE or after the announcement completes.
+ * {@link SipSession#getId()}, and cleaned up on BYE or Liberty shutdown.
+ *
+ * <p>The announcement loop runs indefinitely until the caller hangs up (BYE) or Liberty shuts
+ * down.
+ * On shutdown, {@link #onShutdown()} sends BYE to all active calls and interrupts their threads.
  */
 @ApplicationScoped
 public class SipCallHandler {
@@ -73,7 +79,7 @@ public class SipCallHandler {
     PcmDecoderFactory pcmDecoderFactory;
 
     /** Holds per-call state while a call is active. */
-    private record CallState(Thread menuThread, List<LanguageFactory> sorted, CallMedia media) {}
+    private record CallState(SipSession session, Thread menuThread, List<LanguageFactory> sorted, CallMedia media) {}
 
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
@@ -154,10 +160,10 @@ public class SipCallHandler {
                 return;
             }
 
-            playAnnouncementAndHangUp(session, player, factory, media);
+            playAnnouncementLoop(session, player, factory, sessionId, media);
         });
 
-        activeCalls.put(sessionId, new CallState(thread, List.of(factory), media));
+        activeCalls.put(sessionId, new CallState(session, thread, List.of(factory), media));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
@@ -177,7 +183,7 @@ public class SipCallHandler {
         Thread menuThread = Thread.ofVirtual()
                 .name("call-menu-" + sessionId)
                 .start(() -> runMenu(session, player, sorted, sessionId, media));
-        activeCalls.put(sessionId, new CallState(menuThread, sorted, media));
+        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media));
     }
 
     private void runMenu(
@@ -188,12 +194,15 @@ public class SipCallHandler {
         } catch (InterruptedException interruptedException) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
         } finally {
-            activeCalls.remove(sessionId);
             LanguageFactory chosen = pendingSelections.remove(sessionId);
 
             if (chosen != null) {
-                playAnnouncementAndHangUp(session, player, chosen, media);
+                // Re-register with the current thread so @PreDestroy can interrupt the
+                // announcement loop and send BYE.
+                activeCalls.put(sessionId, new CallState(session, Thread.currentThread(), List.of(chosen), media));
+                playAnnouncementLoop(session, player, chosen, sessionId, media);
             } else {
+                activeCalls.remove(sessionId);
                 closeMedia(media);
             }
         }
@@ -263,7 +272,7 @@ public class SipCallHandler {
     }
 
     /**
-     * Handles BYE — interrupts any running menu thread, closes the RTP socket,
+     * Handles BYE — interrupts any running menu or announcement thread, closes the RTP socket,
      * removes per-call state, and sends {@code 200 OK}.
      */
     public void handleBye(SipServletRequest req) throws IOException {
@@ -280,39 +289,83 @@ public class SipCallHandler {
         req.createResponse(SipServletResponse.SC_OK).send();
     }
 
-    private static void playAnnouncementAndHangUp(
-            SipSession session, AudioPlayer player, LanguageFactory factory, CallMedia media) {
-        TimeAnnouncement announcement = factory.createTimeAnnouncement(player, Clock.systemDefaultZone());
+    /**
+     * Plays the time announcement repeatedly until interrupted.
+     *
+     * <p>Interrupted on BYE received (via {@link #handleBye}) or Liberty shutdown
+     * (via {@link #onShutdown()}).
+     *
+     * <p>Each iteration waits for the next announcement slot ({@code second % 10 == 2}), then
+     * plays one full announcement cycle.
+     * I/O errors in a single cycle are logged and the loop continues;
+     * only an {@link InterruptedException} exits the loop.
+     *
+     * <p>On exit, removes this call from {@link #activeCalls} and closes the media socket.
+     */
+    private void playAnnouncementLoop(
+            SipSession session, AudioPlayer player, LanguageFactory factory, String sessionId, CallMedia media) {
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Starting announcement loop in [{0}] for {1}",
+                factory.displayName(),
+                session.getRemoteParty());
 
         try {
-            LOGGER.log(
-                    System.Logger.Level.INFO,
-                    "Playing time announcement in [{0}] using [{1}] to {2}",
-                    factory.displayName(),
-                    announcement,
-                    session.getRemoteParty());
-            var receipt = announcement.announce();
-            LOGGER.log(
-                    System.Logger.Level.DEBUG,
-                    "Announcement complete; played {0} file(s)",
-                    receipt.fileNames().size());
+            while (true) {
+                waitForNextAnnouncementSlot();
+                TimeAnnouncement announcement = factory.createTimeAnnouncement(player, Clock.systemDefaultZone());
+
+                try {
+                    var receipt = announcement.announce();
+                    LOGGER.log(
+                            System.Logger.Level.DEBUG,
+                            "Announcement complete; played {0} file(s)",
+                            receipt.fileNames().size());
+                } catch (IOException ioException) {
+                    LOGGER.log(
+                            System.Logger.Level.WARNING,
+                            "Time announcement failed for language [{0}]: {1}",
+                            factory.displayName(),
+                            ioException.getMessage(),
+                            ioException);
+                }
+            }
         } catch (InterruptedException interruptedException) {
-            // Caller hung up; the BYE handler closes the session.
             Thread.currentThread().interrupt();
-            return;
-        } catch (IOException ioException) {
-            LOGGER.log(
-                    System.Logger.Level.WARNING,
-                    "Time announcement failed for language [{0}]: {1}",
-                    factory.displayName(),
-                    ioException.getMessage(),
-                    ioException);
+            LOGGER.log(System.Logger.Level.DEBUG, "Announcement loop interrupted for session [{0}]", sessionId);
         } finally {
+            activeCalls.remove(sessionId);
             closeMedia(media);
         }
+    }
 
-        LOGGER.log(System.Logger.Level.INFO, "Hanging up call to {0}", session.getRemoteParty());
-        sendBye(session);
+    /**
+     * Blocks until the wall-clock second satisfies {@code second % 10 == 2}.
+     * Polls every 100 ms.
+     *
+     * @throws InterruptedException if the thread is interrupted while waiting
+     */
+    private static void waitForNextAnnouncementSlot() throws InterruptedException {
+        while (ZonedDateTime.now().getSecond() % 10 != 2) {
+            Thread.sleep(100);
+        }
+    }
+
+    /**
+     * Sends BYE to all active calls and interrupts their threads when Liberty shuts down.
+     * Called automatically by CDI before the bean is destroyed.
+     */
+    @PreDestroy
+    public void onShutdown() {
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Liberty shutting down — sending BYE to {0} active call(s)",
+                activeCalls.size());
+        activeCalls.values().forEach(callState -> {
+            callState.menuThread().interrupt();
+            sendBye(callState.session());
+        });
+        activeCalls.clear();
     }
 
     private static void closeMedia(CallMedia media) {
@@ -328,7 +381,7 @@ public class SipCallHandler {
         try {
             session.createRequest("BYE").send();
         } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.WARNING, "Failed to send BYE after time announcement", ioException);
+            LOGGER.log(System.Logger.Level.WARNING, "Failed to send BYE on shutdown", ioException);
         }
     }
 
