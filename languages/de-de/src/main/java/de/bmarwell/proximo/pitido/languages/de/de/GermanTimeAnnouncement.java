@@ -19,16 +19,33 @@ import java.time.Clock;
 
 public class GermanTimeAnnouncement implements TimeAnnouncement {
 
+    /**
+     * Classpath resource path for the beep audio file.
+     * Used as a stand-in until full time-announcement audio is implemented.
+     */
+    static final String BEEP_RESOURCE = "de/bmarwell/proximo/pitido/languages/de/de/beep.mp3";
+
+    private static final long PAUSE_BETWEEN_BEEPS_MS = 2_000L;
+
+    private final AudioPlayer audioPlayer;
+
     public GermanTimeAnnouncement(AudioPlayer audioPlayer, Clock clock) {
-        // TODO: implement
-        throw new UnsupportedOperationException(
-                "not yet implemented: [de.bmarwell.proximo.pitido.languages.de.de.GermanTimeAnnouncement::GermanTimeAnnouncement].");
+        this.audioPlayer = audioPlayer;
     }
 
+    /**
+     * Plays the beep tone in a loop until the calling thread is interrupted.
+     * A 2-second pause is inserted between each play.
+     * This is a temporary stub; real time-announcement audio will replace it.
+     *
+     * @throws IOException          on any I/O or RTP streaming error
+     * @throws InterruptedException if interrupted; stops the loop and propagates
+     */
     @Override
     public void announce() throws IOException, InterruptedException {
-        // TODO: implement
-        throw new UnsupportedOperationException(
-                "not yet implemented: [de.bmarwell.proximo.pitido.languages.de.de.GermanTimeAnnouncement::announce].");
+        while (true) {
+            audioPlayer.playBlocking(BEEP_RESOURCE);
+            Thread.sleep(PAUSE_BETWEEN_BEEPS_MS);
+        }
     }
 }

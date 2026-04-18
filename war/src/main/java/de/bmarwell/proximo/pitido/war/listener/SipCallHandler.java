@@ -106,10 +106,18 @@ public class SipCallHandler {
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
         req.createResponse(200).send();
         SipSession session = req.getSession();
+        String sessionId = session.getId();
         AudioPlayer player = audioPlayerFactory.get();
-        Thread.ofVirtual()
-                .name("call-announce-" + session.getId())
-                .start(() -> playAnnouncementAndHangUp(session, player, factory));
+        Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
+            try {
+                Thread.sleep(1_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            playAnnouncementAndHangUp(session, player, factory);
+        });
+        activeCalls.put(sessionId, new CallState(thread, List.of(factory)));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
@@ -127,7 +135,7 @@ public class SipCallHandler {
         try {
             runMenuLoop(player, sorted);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            Thread.interrupted(); // consume interrupt; the chosen language is played in finally
         } finally {
             activeCalls.remove(sessionId);
             LanguageFactory chosen = pendingSelections.remove(sessionId);
@@ -202,10 +210,13 @@ public class SipCallHandler {
         TimeAnnouncement announcement = factory.createTimeAnnouncement(player, Clock.systemDefaultZone());
         try {
             announcement.announce();
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            // Caller hung up; the BYE handler closes the session.
+            Thread.currentThread().interrupt();
+            return;
+        } catch (IOException e) {
             LOGGER.log(
                     System.Logger.Level.WARNING, "Time announcement failed for language [{0}]", factory.displayName());
-            Thread.currentThread().interrupt();
         }
         sendBye(session);
     }

@@ -19,10 +19,18 @@ import javax.enterprise.context.Dependent;
 @Dependent
 public class DefaultAudioPlayer implements AudioPlayer {
 
+    private static final System.Logger LOGGER = System.getLogger(DefaultAudioPlayer.class.getName());
+
+    /**
+     * Stub implementation: logs the resource path and sleeps for an estimated playback duration.
+     * A real implementation will negotiate SDP from the active SIP call and stream audio via RTP.
+     *
+     * @param resourcePath classpath-relative path to the audio resource
+     * @throws InterruptedException if the calling thread is interrupted during the sleep
+     */
     @Override
     public void playBlocking(String resourcePath) throws IOException, InterruptedException {
-        // TODO: implement
-        throw new UnsupportedOperationException(
-                "not yet implemented: [de.bmarwell.proximo.pitido.core.DefaultAudioPlayer::playBlocking].");
+        LOGGER.log(System.Logger.Level.INFO, "Playing audio resource: {0}", resourcePath);
+        Thread.sleep(1_000);
     }
 }
