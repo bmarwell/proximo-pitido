@@ -57,7 +57,6 @@ public class SipTimeServlet extends SipServlet implements Serializable {
 
     @Override
     protected void doInvite(SipServletRequest req) throws ServletException, IOException {
-        LOGGER.log(Level.INFO, "Received INVITE from [{0}]", req.getFrom());
         sipCallHandler.handleInvite(req);
     }
 
@@ -147,7 +146,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     @Override
     public void init(ServletConfig cfg) throws ServletException {
         super.init(cfg);
-        LOGGER.log(
-                System.Logger.Level.INFO, "SipTimeServlet init: registration is scheduled by SipRegistrationListener");
+        LOGGER.log(Level.INFO, "SipTimeServlet initialised — scheduling SIP registration");
+        sipRegistrationService.scheduleRegistration(getServletContext());
     }
 }

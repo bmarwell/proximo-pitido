@@ -21,8 +21,6 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.enterprise.context.ApplicationScoped;
-import javax.enterprise.context.Initialized;
-import javax.enterprise.event.Observes;
 import javax.inject.Inject;
 import javax.servlet.ServletContext;
 import javax.servlet.sip.Address;
@@ -95,38 +93,30 @@ public class SipRegistrationListener {
     LocalSipHostProvider localSipHostProvider;
 
     /**
-     * The servlet context, stored by the CDI {@code @Initialized} observer once CDI is fully ready.
-     * Declared {@code volatile} because it is written on the observer thread and read on a virtual
-     * thread in {@link #scheduleRegistration()}.
+     * The servlet context, supplied by {@link de.bmarwell.proximo.pitido.war.SipTimeServlet#init}
+     * when Liberty's SIP stack calls {@code init()}.
+     * Declared {@code volatile} because it is written on Liberty's servlet init thread and read on a
+     * virtual thread in {@link #scheduleRegistration(ServletContext)}.
      */
     private volatile ServletContext servletContext;
 
     /**
-     * Triggered by CDI when the {@code ApplicationScoped} context is fully initialised.
+     * Spawns a virtual thread that waits {@value #INITIAL_REGISTER_DELAY_MILLIS} ms before
+     * sending the initial REGISTER.
      *
-     * <p>In a WAR deployment, the CDI 2.0 spec (section 6.7.3) passes the {@link ServletContext}
-     * as the event payload — cast only when needed.
-     * This is the correct hook because CDI proxies are usable from this point on, so the
-     * virtual thread spawned by {@link #scheduleRegistration()} can safely call {@code this.register()}.
+     * <p>Called from {@link de.bmarwell.proximo.pitido.war.SipTimeServlet#init} rather than from a
+     * CDI {@code @Initialized} observer.
+     * The CDI {@code @Initialized(ApplicationScoped.class)} event fires before Liberty sets
+     * {@code SipFactory} on the {@link ServletContext}; by the time {@code SipServlet.init()} is
+     * called, the SIP stack is further along and the factory becomes available sooner.
+     *
+     * <p>The short delay is still required because the Liberty SIP application router may finish
+     * its own initialisation concurrently with servlet init.
+     * {@link #registerWithStartupRetry()} retries indefinitely, so the thread will recover even if
+     * the factory is not available immediately after the delay.
      */
-    void onApplicationContextInitialized(@Observes @Initialized(ApplicationScoped.class) Object event) {
-        if (event instanceof ServletContext sc) {
-            this.servletContext = sc;
-        }
-
-        scheduleRegistration();
-    }
-
-    /**
-     * Spawns a virtual thread that waits 2 seconds before sending the initial REGISTER.
-     *
-     * <p>The delay is required because the Liberty SIP application router initialises concurrently
-     * with CDI startup; sending a SIP request immediately can fail because routing is not yet ready.
-     *
-     * <p>Note: {@code this} captured in the lambda is the real bean instance, not a CDI proxy,
-     * because this method is called from the observer (which receives the actual bean).
-     */
-    private void scheduleRegistration() {
+    public void scheduleRegistration(ServletContext sc) {
+        this.servletContext = sc;
         Thread.ofVirtual().name("sip-initial-register").start(() -> {
             try {
                 Thread.sleep(INITIAL_REGISTER_DELAY_MILLIS);
