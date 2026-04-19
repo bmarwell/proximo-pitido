@@ -25,10 +25,23 @@ class SipRegistrationListenerTest {
         var listener = new SipRegistrationListener();
 
         // when
-        listener.markRegistered();
+        listener.markRegistered(-1);
 
         // then
         assertTrue(listener.isRegistered());
+    }
+
+    @Test
+    void markRegistered_withGrantedExpires_setsRegisteredState() {
+        // given: registrar grants a shorter expiry (e.g. Deutsche Telekom grants 60 s)
+        var listener = new SipRegistrationListener();
+
+        // when
+        listener.markRegistered(60);
+
+        // then: still reaches REGISTERED state despite short granted expiry
+        assertTrue(listener.isRegistered());
+        assertFalse(listener.isIdle());
     }
 
     @Test
@@ -37,7 +50,7 @@ class SipRegistrationListenerTest {
         var listener = new SipRegistrationListener();
 
         // when
-        listener.markRegistered();
+        listener.markRegistered(-1);
 
         // then: state is REGISTERED, no background thread was launched (would loop forever)
         assertTrue(listener.isRegistered());
@@ -48,7 +61,7 @@ class SipRegistrationListenerTest {
     void resetForReRegistration_fromRegistered_resetsToIdle() {
         // given
         var listener = new SipRegistrationListener();
-        listener.markRegistered();
+        listener.markRegistered(-1);
 
         // when
         listener.resetForReRegistration();
@@ -62,7 +75,7 @@ class SipRegistrationListenerTest {
     void resetForReRegistration_allowsStaleRetryAgain() {
         // given: a previous registration cycle consumed the stale-retry allowance
         var listener = new SipRegistrationListener();
-        listener.markRegistered();
+        listener.markRegistered(-1);
         listener.canRetryAfterStale(); // consumes the allowance
 
         // when
