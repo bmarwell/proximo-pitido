@@ -50,6 +50,8 @@ import java.util.Random;
 public class RtpAudioPlayer implements AudioPlayer {
 
     private static final System.Logger LOGGER = System.getLogger(RtpAudioPlayer.class.getName());
+    private static final int DECODE_PIPELINE_SAMPLE_RATE = 8_000;
+    private static final int RTP_PACKETS_PER_SECOND = 50;
 
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
@@ -70,10 +72,6 @@ public class RtpAudioPlayer implements AudioPlayer {
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
         this.codec = callMedia.codec();
-
-        // TODO: when the decode pipeline supports configurable sample rates, pass
-        // codec.inputSampleRate() to PcmDecoderFactory so decoders target the correct rate.
-        // Currently the pipeline always outputs 8 kHz; this matters for G.722 (needs 16 kHz).
 
         Random rng = new Random();
         this.ssrc = rng.nextInt();
@@ -98,26 +96,30 @@ public class RtpAudioPlayer implements AudioPlayer {
 
         try (InputStream rawStream = openResource(resourcePath);
                 PcmStream pcm = this.pcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
-            int samplesPerPacket = this.codec.samplesPerFrame();
-            short[] frameBuf = new short[samplesPerPacket];
+            int decoderSamplesPerPacket = DECODE_PIPELINE_SAMPLE_RATE / RTP_PACKETS_PER_SECOND;
+            int codecInputRate = this.codec.inputSampleRate();
+            short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
+            short[] codecFrameBuf = new short[this.codec.samplesPerFrame()];
+            validateFrameSizing(codecInputRate, decoderSamplesPerPacket, codecFrameBuf.length);
 
             while (true) {
                 if (Thread.currentThread().isInterrupted()) {
                     throw new InterruptedException("RTP playback interrupted");
                 }
 
-                int read = readFrame(pcm, frameBuf, samplesPerPacket);
+                int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
 
                 if (read == -1) {
                     break;
                 }
 
-                if (read < samplesPerPacket) {
+                if (read < decoderSamplesPerPacket) {
                     // Zero-pad the last partial frame to a full 20 ms packet.
-                    Arrays.fill(frameBuf, read, samplesPerPacket, (short) 0);
+                    Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
                 }
 
-                sendRtpPacket(this.codec.encode(frameBuf));
+                adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf, codecInputRate);
+                sendRtpPacket(this.codec.encode(codecFrameBuf));
                 Thread.sleep(20);
             }
         }
@@ -152,6 +154,63 @@ public class RtpAudioPlayer implements AudioPlayer {
         }
 
         return stream;
+    }
+
+    private static void validateFrameSizing(int codecInputRate, int decoderSamplesPerPacket, int codecSamplesPerPacket)
+            throws IOException {
+        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE) {
+            if (codecSamplesPerPacket != decoderSamplesPerPacket) {
+                throw new IOException("Codec frame size mismatch for 8 kHz pipeline: expected "
+                        + decoderSamplesPerPacket + " samples, got: " + codecSamplesPerPacket);
+            }
+
+            return;
+        }
+
+        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE * 2) {
+            if (codecSamplesPerPacket != decoderSamplesPerPacket * 2) {
+                throw new IOException("Codec frame size mismatch for 16 kHz pipeline: expected "
+                        + (decoderSamplesPerPacket * 2) + " samples, got: " + codecSamplesPerPacket);
+            }
+
+            return;
+        }
+
+        throw new IOException("Unsupported codec input sample rate: " + codecInputRate
+                + " Hz (decoder pipeline currently provides only " + DECODE_PIPELINE_SAMPLE_RATE + " Hz)");
+    }
+
+    private static void adaptPcmFrameForCodec(short[] decoderFrameBuf, short[] codecFrameBuf, int codecInputRate) {
+        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE) {
+            System.arraycopy(decoderFrameBuf, 0, codecFrameBuf, 0, decoderFrameBuf.length);
+            return;
+        }
+
+        upsample8kTo16k(decoderFrameBuf, codecFrameBuf);
+    }
+
+    /**
+     * Upsamples one 20 ms mono frame from 8 kHz (160 samples) to 16 kHz (320 samples).
+     *
+     * <p>Uses linear interpolation:
+     * each source sample is copied, and the inserted sample between two points is the mean of
+     * current and next source sample.
+     * The final inserted sample repeats the last source sample.
+     */
+    private static void upsample8kTo16k(short[] source8k, short[] target16k) {
+        for (int sourceIndex = 0; sourceIndex < source8k.length; sourceIndex++) {
+            int targetIndex = sourceIndex * 2;
+            short currentSample = source8k[sourceIndex];
+            target16k[targetIndex] = currentSample;
+
+            short nextSample = currentSample;
+
+            if (sourceIndex + 1 < source8k.length) {
+                nextSample = source8k[sourceIndex + 1];
+            }
+
+            target16k[targetIndex + 1] = (short) ((currentSample + nextSample) / 2);
+        }
     }
 
     private void sendRtpPacket(byte[] payload) throws IOException {
