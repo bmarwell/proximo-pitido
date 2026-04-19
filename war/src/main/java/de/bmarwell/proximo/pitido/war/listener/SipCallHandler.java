@@ -105,10 +105,10 @@ public class SipCallHandler {
     /**
      * Handles an incoming INVITE.
      * Rejects with {@code 480 Temporarily Unavailable} when no language factory is registered.
-     * Answers with {@code 200 OK} otherwise (after a short pre-accept pause), then plays the time
-     * announcement (single language) or the language-selection menu (multiple languages) on a virtual
-     * thread.
-     * A further pause after accepting gives the caller's handset time to connect before audio begins.
+     * Sends {@code 180 Ringing} immediately to free the Liberty SIP thread, then processes the
+     * call on a virtual thread: waits one second, negotiates SDP, and plays the time announcement
+     * (single language) or the language-selection menu (multiple languages).
+     * The one-second pre-accept pause gives the caller's handset time to connect before audio begins.
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
@@ -120,6 +120,13 @@ public class SipCallHandler {
             return;
         }
 
+        req.createResponse(SipServletResponse.SC_RINGING).send();
+
+        String sessionId = req.getSession().getId();
+        Thread.ofVirtual().name("call-invite-" + sessionId).start(() -> processAcceptedInvite(req, sorted));
+    }
+
+    private void processAcceptedInvite(SipServletRequest req, List<LanguageFactory> sorted) {
         try {
             Thread.sleep(1_000);
         } catch (InterruptedException interruptedException) {
@@ -127,13 +134,17 @@ public class SipCallHandler {
             return;
         }
 
-        if (sorted.size() == 1) {
-            acceptAndAnnounce(req, sorted.getFirst());
+        try {
+            if (sorted.size() == 1) {
+                acceptAndAnnounce(req, sorted.getFirst());
 
-            return;
+                return;
+            }
+
+            acceptAndPlayMenu(req, sorted);
+        } catch (IOException ioException) {
+            LOGGER.log(System.Logger.Level.ERROR, "Failed to accept call from [{0}]", req.getFrom(), ioException);
         }
-
-        acceptAndPlayMenu(req, sorted);
     }
 
     private static void rejectNoLanguage(SipServletRequest req) throws IOException {

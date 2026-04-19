@@ -17,6 +17,7 @@ import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
 import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -50,6 +51,12 @@ public class SipRegistrationListener {
     private static final int INITIAL_REGISTER_DELAY_MILLIS = 2_000;
     private static final int STARTUP_RETRY_DELAY_MILLIS = 2_000;
 
+    /**
+     * Fraction of the configured {@code expires} interval at which the registration is renewed.
+     * Two thirds of {@code expires} leaves a comfortable margin before the registrar removes the binding.
+     */
+    private static final double RE_REGISTRATION_FACTOR = 2.0 / 3.0;
+
     private final AtomicInteger regState = new AtomicInteger(0);
 
     /**
@@ -81,7 +88,7 @@ public class SipRegistrationListener {
 
     @Inject
     @ConfigProperty(name = "sip.registration.expires", defaultValue = "3600")
-    int expires;
+    int expires = 3600;
 
     @Inject
     SrvDnsResolver srvDnsResolver;
@@ -290,10 +297,66 @@ public class SipRegistrationListener {
         }
     }
 
-    /** Marks registration as successful (state = REGISTERED). */
+    /** Marks registration as successful (state = REGISTERED) and schedules renewal. */
     public void markRegistered() {
         regState.set(2);
         LOGGER.log(System.Logger.Level.INFO, "Registration state: REGISTERED");
+        scheduleReRegistration();
+    }
+
+    /**
+     * Schedules a re-registration at {@value #RE_REGISTRATION_FACTOR} of the expires interval.
+     * Skipped when {@link #servletContext} is not yet set (e.g. in unit tests or before servlet init).
+     */
+    private void scheduleReRegistration() {
+        if (this.servletContext == null) {
+            return;
+        }
+
+        long delaySeconds = (long) (this.expires * RE_REGISTRATION_FACTOR);
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Re-registration scheduled in {0}s (expires={1}s)",
+                delaySeconds,
+                this.expires);
+        Thread.ofVirtual().name("sip-re-register").start(() -> {
+            try {
+                Thread.sleep(Duration.ofSeconds(delaySeconds));
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            resetForReRegistration();
+            registerWithStartupRetry();
+        });
+    }
+
+    /**
+     * Resets REGISTERED → IDLE so a fresh registration cycle can begin.
+     * Also clears the stale-nonce guard so the new cycle can handle a stale challenge.
+     * Package-private for use in tests.
+     */
+    void resetForReRegistration() {
+        regState.set(0);
+        staleRetryUsed.set(false);
+        LOGGER.log(System.Logger.Level.INFO, "Registration state reset to IDLE for re-registration");
+    }
+
+    /**
+     * Returns {@code true} when the registration state is IDLE (0).
+     * Package-private for use in tests.
+     */
+    boolean isIdle() {
+        return regState.get() == 0;
+    }
+
+    /**
+     * Returns {@code true} when the registration state is REGISTERED (2).
+     * Package-private for use in tests.
+     */
+    boolean isRegistered() {
+        return regState.get() == 2;
     }
 
     /**
