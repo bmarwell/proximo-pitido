@@ -19,9 +19,11 @@ import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
 import java.util.ListIterator;
 import java.util.Objects;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import javax.enterprise.concurrent.ManagedScheduledExecutorService;
 import javax.enterprise.context.ApplicationScoped;
@@ -62,6 +64,7 @@ public class SipRegistrationListener {
     private static final double RE_REGISTRATION_FACTOR = 2.0 / 3.0;
 
     private final AtomicInteger regState = new AtomicInteger(0);
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
     /**
      * Allows exactly one stale-nonce retry per session. Some providers respond with
@@ -114,6 +117,9 @@ public class SipRegistrationListener {
      */
     private volatile ServletContext servletContext;
 
+    private volatile ScheduledFuture<?> startupRegistrationTask;
+    private volatile ScheduledFuture<?> reRegistrationTask;
+
     /**
      * Schedules the initial REGISTER via the container's managed scheduler.
      * The {@value #INITIAL_REGISTER_DELAY_MILLIS} ms delay lets Liberty finish initialising the SIP
@@ -131,8 +137,9 @@ public class SipRegistrationListener {
      * the factory is not available immediately after the delay.
      */
     public void scheduleRegistration(ServletContext sc) {
+        this.shuttingDown.set(false);
         this.servletContext = sc;
-        this.managedScheduledExecutorService.schedule(
+        this.startupRegistrationTask = this.managedScheduledExecutorService.schedule(
                 this::registerWithStartupRetry, INITIAL_REGISTER_DELAY_MILLIS, TimeUnit.MILLISECONDS);
     }
 
@@ -172,6 +179,15 @@ public class SipRegistrationListener {
      */
     private void registerWithStartupRetry() {
         for (int attempt = 1; !Thread.currentThread().isInterrupted(); attempt++) {
+            if (this.shuttingDown.get()) {
+                return;
+            }
+
+            if (regState.get() == 2) {
+                LOGGER.log(System.Logger.Level.DEBUG, "Skipping REGISTER retry loop — state already REGISTERED");
+                return;
+            }
+
             SipFactory sipFactory = resolveSipFactory();
 
             if (sipFactory != null) {
@@ -415,7 +431,8 @@ public class SipRegistrationListener {
                 "Re-registration scheduled in {0}s (effective-expires={1}s)",
                 delaySeconds,
                 effectiveExpires);
-        this.managedScheduledExecutorService.schedule(
+        cancelTask(this.reRegistrationTask);
+        this.reRegistrationTask = this.managedScheduledExecutorService.schedule(
                 () -> {
                     resetForReRegistration();
                     registerWithStartupRetry();
@@ -467,6 +484,13 @@ public class SipRegistrationListener {
         regState.compareAndSet(1, 0);
     }
 
+    @PreDestroy
+    void onShutdown() {
+        this.shuttingDown.set(true);
+        cancelTask(this.startupRegistrationTask);
+        cancelTask(this.reRegistrationTask);
+    }
+
     private URI buildRequestUri(SipFactory sipFactory) throws ServletParseException {
         String sipServer = srvDnsResolver.resolve(this.registrar);
         return sipFactory.createURI("sip:" + sipServer + ":5060;transport=tcp");
@@ -488,5 +512,13 @@ public class SipRegistrationListener {
         var challenge = SipDigestChallenge.parse(wwwAuth);
         return digestComputer.buildAuthorizationHeader(
                 this.loginUserId, this.loginPassword, challenge, "sip:" + this.registrar);
+    }
+
+    private static void cancelTask(ScheduledFuture<?> task) {
+        if (task == null) {
+            return;
+        }
+
+        task.cancel(true);
     }
 }
