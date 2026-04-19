@@ -28,6 +28,11 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
+      <groupId>javax.enterprise.concurrent</groupId>
+      <artifactId>javax.enterprise.concurrent-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.eclipse.microprofile.config</groupId>
       <artifactId>microprofile-config-api</artifactId>
       <scope>provided</scope>

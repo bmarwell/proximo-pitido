@@ -30,7 +30,10 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Future;
 import javax.annotation.PreDestroy;
+import javax.annotation.Resource;
+import javax.enterprise.concurrent.ManagedExecutorService;
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
@@ -56,8 +59,8 @@ import javax.servlet.sip.SipSession;
  * {@link LanguageFactory#defaultOrder()}.
  * The caller may interrupt at any point by pressing a digit.
  *
- * <p>Audio interruption: when a DTMF digit arrives, the active menu thread is interrupted via
- * {@link Thread#interrupt()} so that blocking playback stops promptly.
+ * <p>Audio interruption: when a DTMF digit arrives, the active call's {@link Future} is cancelled
+ * with {@code mayInterruptIfRunning=true} so that blocking playback stops promptly.
  *
  * <p>Per-call state ({@link CallState}) is stored in {@link #activeCalls}, keyed by
  * {@link SipSession#getId()}, and cleaned up on BYE or Liberty shutdown.
@@ -65,7 +68,7 @@ import javax.servlet.sip.SipSession;
  * <p>The announcement loop runs until the caller hangs up (BYE), Liberty shuts down, or the
  * per-call maximum duration of two minutes has elapsed.
  * On timeout the server sends BYE to free the SIP line.
- * On shutdown, {@link #onShutdown()} sends BYE to all active calls and interrupts their threads.
+ * On shutdown, {@link #onShutdown()} sends BYE to all active calls and cancels their futures.
  */
 @ApplicationScoped
 public class SipCallHandler {
@@ -84,10 +87,13 @@ public class SipCallHandler {
     @Inject
     PcmDecoderFactory pcmDecoderFactory;
 
+    @Resource
+    ManagedExecutorService managedExecutorService;
+
     /** Holds per-call state while a call is active. */
     private record CallState(
             SipSession session,
-            Thread menuThread,
+            Future<?> callFuture,
             List<LanguageFactory> sorted,
             CallMedia media,
             Instant startTime,
@@ -96,8 +102,8 @@ public class SipCallHandler {
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
     /**
-     * Written by {@link #handleDtmf} before interrupting the menu thread;
-     * read by the menu thread's {@code finally} block to play the announcement.
+     * Written by {@link #handleDtmf} before cancelling the call future;
+     * read by the menu task's {@code finally} block to play the announcement.
      * {@link ConcurrentHashMap#putIfAbsent} ensures only the first digit wins.
      */
     private final ConcurrentHashMap<String, LanguageFactory> pendingSelections = new ConcurrentHashMap<>();
@@ -105,8 +111,8 @@ public class SipCallHandler {
     /**
      * Handles an incoming INVITE.
      * Rejects with {@code 480 Temporarily Unavailable} when no language factory is registered.
-     * Sends {@code 180 Ringing} immediately to free the Liberty SIP thread, then processes the
-     * call on a virtual thread: waits one second, negotiates SDP, and plays the time announcement
+     * Sends {@code 180 Ringing} immediately to free the Liberty SIP thread, then delegates to a
+     * managed executor task: waits one second, negotiates SDP, and plays the time announcement
      * (single language) or the language-selection menu (multiple languages).
      * The one-second pre-accept pause gives the caller's handset time to connect before audio begins.
      */
@@ -122,8 +128,7 @@ public class SipCallHandler {
 
         req.createResponse(SipServletResponse.SC_RINGING).send();
 
-        String sessionId = req.getSession().getId();
-        Thread.ofVirtual().name("call-invite-" + sessionId).start(() -> processAcceptedInvite(req, sorted));
+        this.managedExecutorService.execute(() -> processAcceptedInvite(req, sorted));
     }
 
     private void processAcceptedInvite(SipServletRequest req, List<LanguageFactory> sorted) {
@@ -174,7 +179,7 @@ public class SipCallHandler {
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
 
-        Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
+        Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try {
                 Thread.sleep(1_000);
             } catch (InterruptedException interruptedException) {
@@ -186,7 +191,8 @@ public class SipCallHandler {
         });
 
         activeCalls.put(
-                sessionId, new CallState(session, thread, List.of(factory), media, startTime, callerIdentitySummary));
+                sessionId,
+                new CallState(session, callFuture, List.of(factory), media, startTime, callerIdentitySummary));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
@@ -206,10 +212,9 @@ public class SipCallHandler {
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
-        Thread menuThread = Thread.ofVirtual()
-                .name("call-menu-" + sessionId)
-                .start(() -> runMenu(session, player, sorted, sessionId, media, startTime, callerIdentitySummary));
-        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media, startTime, callerIdentitySummary));
+        Future<?> callFuture = this.managedExecutorService.submit(
+                () -> runMenu(session, player, sorted, sessionId, media, startTime, callerIdentitySummary));
+        activeCalls.put(sessionId, new CallState(session, callFuture, sorted, media, startTime, callerIdentitySummary));
     }
 
     private void runMenu(
@@ -229,17 +234,8 @@ public class SipCallHandler {
             LanguageFactory chosen = pendingSelections.remove(sessionId);
 
             if (chosen != null) {
-                // Re-register with the current thread so @PreDestroy can interrupt the
-                // announcement loop and send BYE.
-                activeCalls.put(
-                        sessionId,
-                        new CallState(
-                                session,
-                                Thread.currentThread(),
-                                List.of(chosen),
-                                media,
-                                startTime,
-                                callerIdentitySummary));
+                // The same managed task continues into the announcement loop;
+                // the Future already stored in activeCalls covers this entire execution.
                 playAnnouncementLoop(session, player, chosen, sessionId, media, callerIdentitySummary);
             } else {
                 activeCalls.remove(sessionId);
@@ -308,11 +304,11 @@ public class SipCallHandler {
                 digit,
                 chosen.get().displayName());
         pendingSelections.putIfAbsent(sessionId, chosen.get());
-        callState.menuThread().interrupt();
+        callState.callFuture().cancel(true);
     }
 
     /**
-     * Handles BYE — interrupts any running menu or announcement thread, closes the RTP socket,
+     * Handles BYE — cancels any running menu or announcement task, closes the RTP socket,
      * removes per-call state, and sends {@code 200 OK}.
      */
     public void handleBye(SipServletRequest req) throws IOException {
@@ -325,7 +321,7 @@ public class SipCallHandler {
             return;
         }
 
-        callState.menuThread().interrupt();
+        callState.callFuture().cancel(true);
         closeMedia(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(System.Logger.Level.INFO, "Call ended — duration {0}s", callDuration.toSeconds());
@@ -422,7 +418,7 @@ public class SipCallHandler {
     }
 
     /**
-     * Sends BYE to all active calls and interrupts their threads when Liberty shuts down.
+     * Cancels all active call tasks and sends BYE when Liberty shuts down.
      * Called automatically by CDI before the bean is destroyed.
      */
     @PreDestroy
@@ -432,7 +428,7 @@ public class SipCallHandler {
                 "Liberty shutting down — sending BYE to {0} active call(s)",
                 activeCalls.size());
         activeCalls.values().forEach(callState -> {
-            callState.menuThread().interrupt();
+            callState.callFuture().cancel(true);
             sendBye(callState.session());
         });
         activeCalls.clear();

@@ -17,10 +17,12 @@ import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
 import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.annotation.Resource;
+import javax.enterprise.concurrent.ManagedScheduledExecutorService;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.servlet.ServletContext;
@@ -99,6 +101,9 @@ public class SipRegistrationListener {
     @Inject
     LocalSipHostProvider localSipHostProvider;
 
+    @Resource
+    ManagedScheduledExecutorService managedScheduledExecutorService;
+
     /**
      * The servlet context, supplied by {@link de.bmarwell.proximo.pitido.war.SipTimeServlet#init}
      * when Liberty's SIP stack calls {@code init()}.
@@ -108,8 +113,9 @@ public class SipRegistrationListener {
     private volatile ServletContext servletContext;
 
     /**
-     * Spawns a virtual thread that waits {@value #INITIAL_REGISTER_DELAY_MILLIS} ms before
-     * sending the initial REGISTER.
+     * Schedules the initial REGISTER via the container's managed scheduler.
+     * The {@value #INITIAL_REGISTER_DELAY_MILLIS} ms delay lets Liberty finish initialising the SIP
+     * application router before the first request goes out.
      *
      * <p>Called from {@link de.bmarwell.proximo.pitido.war.SipTimeServlet#init} rather than from a
      * CDI {@code @Initialized} observer.
@@ -124,16 +130,8 @@ public class SipRegistrationListener {
      */
     public void scheduleRegistration(ServletContext sc) {
         this.servletContext = sc;
-        Thread.ofVirtual().name("sip-initial-register").start(() -> {
-            try {
-                Thread.sleep(INITIAL_REGISTER_DELAY_MILLIS);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            registerWithStartupRetry();
-        });
+        this.managedScheduledExecutorService.schedule(
+                this::registerWithStartupRetry, INITIAL_REGISTER_DELAY_MILLIS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -319,17 +317,13 @@ public class SipRegistrationListener {
                 "Re-registration scheduled in {0}s (expires={1}s)",
                 delaySeconds,
                 this.expires);
-        Thread.ofVirtual().name("sip-re-register").start(() -> {
-            try {
-                Thread.sleep(Duration.ofSeconds(delaySeconds));
-            } catch (InterruptedException interruptedException) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            resetForReRegistration();
-            registerWithStartupRetry();
-        });
+        this.managedScheduledExecutorService.schedule(
+                () -> {
+                    resetForReRegistration();
+                    registerWithStartupRetry();
+                },
+                delaySeconds,
+                TimeUnit.SECONDS);
     }
 
     /**
