@@ -37,6 +37,64 @@ import java.util.List;
  *
  * <p>Each instance is intended for a single {@code announce()} call.
  * {@link de.bmarwell.proximo.pitido.spi.LanguageFactory} creates a fresh instance per call.
+ *
+ * <h2>Implementing a new language module</h2>
+ *
+ * <p>The key steps for a new language implementation are:
+ * <ol>
+ *   <li>Bundle all audio clips as classpath resources under a dedicated package path.</li>
+ *   <li>Implement {@link #audioBase()} to return that path (ending with {@code "/"}).</li>
+ *   <li>Call {@link #play(String)} for each speech segment in the announcement.</li>
+ *   <li>Use {@link #playSilenceUntil(java.time.Instant)} to fill timed gaps between strokes.</li>
+ *   <li>Return {@link #buildReceipt()} from {@code announce()}.</li>
+ * </ol>
+ *
+ * <h2>Timed gaps and the RTP jitter buffer</h2>
+ *
+ * <p><strong>Never use {@code Thread.sleep()} to create gaps between audio segments.</strong>
+ * On a real SIP call, audio is carried by an RTP stream.
+ * RTP receivers keep a small jitter buffer (typically 100–300 ms) to absorb network jitter.
+ * When no RTP packets arrive for more than ~200 ms, the jitter buffer is flushed and the
+ * next packet is played back immediately upon arrival.
+ * This means a {@code Thread.sleep(1000)} between two audio files does not produce an audible
+ * 1-second gap — all three stroke sounds collapse into a single burst.
+ *
+ * <p>Instead, use {@link #playSilenceUntil(java.time.Instant)} for any gap that must be
+ * perceptible to the caller.
+ * It delegates to {@link AudioPlayer#playSilence(Duration)}, which in production sends
+ * zero-valued PCMA/PCMU packets at the normal 20 ms cadence, keeping the jitter buffer
+ * active and rendering the gap as true audible silence.
+ *
+ * <p>The typical pattern for a three-stroke announcement where the final stroke must land
+ * at an exact wall-clock instant {@code T}:
+ * <pre>
+ * Instant strokeTime = ...; // exact wall-clock instant for stroke 3
+ *
+ * play("announcement.opus");  // "At the third stroke …"
+ * play("time_phrase.opus");   // "… twelve hours, ten minutes, twenty seconds …"
+ * playSilenceUntil(strokeTime.minusSeconds(2));  // wait until T−2 s
+ * play("stroke1.opus");
+ * playSilenceUntil(strokeTime.minusSeconds(1));  // wait until T−1 s
+ * play("stroke2.opus");
+ * playSilenceUntil(strokeTime);                  // wait until T
+ * play("stroke3.opus");
+ * </pre>
+ *
+ * <p>The silence packets also advance the RTP timestamp correctly so that the receiving
+ * side perceives the gaps at the right proportion of real time, even after a clock drift
+ * or a late-arriving packet.
+ *
+ * <h2>Announcement timing</h2>
+ *
+ * <p>Choose {@code T} to be at least as far in the future as the total expected speech
+ * duration plus a safety margin (typically 2 s after the last syllable).
+ * Generating audio for every 5-second value (e.g. "five seconds", "ten seconds", …,
+ * "fifty-five seconds") keeps the maximum silence between the end of speech and the first
+ * stroke below 6 s.
+ * Prefer 10-second boundaries (:00, :10, :20, …) when they fit within the silence budget —
+ * they sound cleaner to the caller and require no fractional-second audio files.
+ * Fall back to 5-second boundaries only when the 10-second boundary would exceed the
+ * maximum acceptable gap.
  */
 public abstract class AbstractTimeAnnouncement implements TimeAnnouncement {
 
