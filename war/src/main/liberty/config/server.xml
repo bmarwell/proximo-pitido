@@ -60,7 +60,7 @@
     consoleLogLevel="INFO"
     consoleFormat="TBASIC"
     traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=debug:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=info"
-    hideMessage="CWOWB1009W"
+    hideMessage="CWOWB1009W,CWSCT0017E"
     isoDateFormat="true"
   />
 </server>
