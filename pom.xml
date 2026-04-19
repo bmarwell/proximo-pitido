@@ -340,6 +340,7 @@
   <subprojects>
     <subproject>api</subproject>
     <subproject>spi</subproject>
+    <subproject>codecs</subproject>
     <subproject>core</subproject>
     <subproject>test-support</subproject>
     <subproject>languages</subproject>

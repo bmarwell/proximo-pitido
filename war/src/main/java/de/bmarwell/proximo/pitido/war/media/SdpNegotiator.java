@@ -12,6 +12,8 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import java.io.IOException;
 import java.net.DatagramSocket;

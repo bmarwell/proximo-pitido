@@ -13,8 +13,9 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
-import de.bmarwell.proximo.pitido.core.media.PcmDecoderFactory;
-import de.bmarwell.proximo.pitido.core.media.PcmStream;
+import de.bmarwell.proximo.pitido.codecs.input.PcmDecoderFactory;
+import de.bmarwell.proximo.pitido.codecs.input.PcmStream;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.DatagramPacket;
@@ -170,9 +171,9 @@ public class RtpAudioPlayer implements AudioPlayer {
         packet[11] = (byte) (ssrc & 0xFF);
         System.arraycopy(payload, 0, packet, 12, payload.length);
 
-        socket.send(new DatagramPacket(packet, packet.length, remoteRtp));
+        this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
-        seqNumber = (seqNumber + 1) & 0xFFFF;
+        this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
         timestamp += this.codec.rtpTimestampIncrement();
     }
 }

@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 

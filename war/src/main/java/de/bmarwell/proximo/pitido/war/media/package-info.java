@@ -24,8 +24,10 @@
  *       produces SDP answers for SIP {@code INVITE} exchanges</li>
  * </ul>
  *
- * <p>Classes that are reusable outside a SIP container — PCM decoders, MIME-type detection,
- * audio format abstractions — belong in
- * {@code de.bmarwell.proximo.pitido.core.media} in the {@code proximo-pitido-core} module.
+ * <p>Classes that are reusable outside a SIP container are split into dedicated codec modules:
+ * {@code de.bmarwell.proximo.pitido.codecs.input} in {@code proximo-pitido-codecs-input}
+ * (PCM decoders and channel mixers), and
+ * {@code de.bmarwell.proximo.pitido.codecs.sip} in {@code proximo-pitido-codecs-sip}
+ * (RTP codec descriptors and encoders).
  */
 package de.bmarwell.proximo.pitido.war.media;

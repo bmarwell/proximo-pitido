@@ -4,21 +4,13 @@
 
   <parent>
     <groupId>de.bmarwell.proximo.pitido</groupId>
-    <artifactId>proximo-pitido</artifactId>
   </parent>
 
-  <artifactId>proximo-pitido-core</artifactId>
+  <artifactId>proximo-pitido-codecs-input</artifactId>
 
-  <name>Proximo Pitido :: Core</name>
+  <name>Proximo Pitido :: codecs :: input</name>
 
   <dependencies>
-    <dependency>
-      <groupId>de.bmarwell.proximo.pitido</groupId>
-      <artifactId>proximo-pitido-spi</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
-
     <dependency>
       <groupId>jakarta.enterprise</groupId>
       <artifactId>jakarta.enterprise.cdi-api</artifactId>
@@ -32,7 +24,10 @@
       <groupId>jakarta.annotation</groupId>
       <artifactId>jakarta.annotation-api</artifactId>
     </dependency>
-
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-core</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.eclipse.microprofile.config</groupId>
       <artifactId>microprofile-config-api</artifactId>
@@ -76,5 +71,4 @@
       </plugin>
     </plugins>
   </build>
-
 </project>
