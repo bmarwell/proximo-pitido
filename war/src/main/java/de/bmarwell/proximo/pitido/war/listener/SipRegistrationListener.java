@@ -50,8 +50,7 @@ public class SipRegistrationListener {
 
     private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
     private static final int INITIAL_REGISTER_DELAY_MILLIS = 2_000;
-    private static final int STARTUP_RETRY_DELAY_MILLIS = 1_000;
-    private static final int MAX_STARTUP_RETRIES = 10;
+    private static final int STARTUP_RETRY_DELAY_MILLIS = 2_000;
 
     private final AtomicInteger regState = new AtomicInteger(0);
 
@@ -157,8 +156,25 @@ public class SipRegistrationListener {
         sendInitialRegister(sipFactory);
     }
 
+    /**
+     * Retries {@link #resolveSipFactory()} in a loop until the factory becomes available,
+     * then sends the initial REGISTER.
+     *
+     * <p>The Liberty SIP stack may take considerably longer to initialise than CDI on loaded
+     * systems.
+     * Rather than aborting after a fixed number of attempts, this method retries indefinitely
+     * until the SipFactory is available or the virtual thread is interrupted.
+     * The virtual thread is a daemon thread, so it does not prevent JVM shutdown.
+     *
+     * <p>Logging:
+     * <ul>
+     *   <li>Attempt 1: INFO — SipFactory not yet ready.</li>
+     *   <li>Attempts 2–N: DEBUG — suppressed to avoid log spam.</li>
+     *   <li>Every tenth attempt: WARNING — Liberty SIP stack may be unusually slow.</li>
+     * </ul>
+     */
     private void registerWithStartupRetry() {
-        for (int attempt = 1; attempt <= MAX_STARTUP_RETRIES; attempt++) {
+        for (int attempt = 1; !Thread.currentThread().isInterrupted(); attempt++) {
             SipFactory sipFactory = resolveSipFactory();
 
             if (sipFactory != null) {
@@ -166,19 +182,7 @@ public class SipRegistrationListener {
                 return;
             }
 
-            LOGGER.log(
-                    System.Logger.Level.INFO,
-                    "Initial REGISTER delayed: SipFactory not ready (attempt {0}/{1})",
-                    attempt,
-                    MAX_STARTUP_RETRIES);
-
-            if (attempt == MAX_STARTUP_RETRIES) {
-                LOGGER.log(
-                        System.Logger.Level.ERROR,
-                        "Initial REGISTER aborted after {0} attempts: SipFactory not available",
-                        MAX_STARTUP_RETRIES);
-                return;
-            }
+            logSipFactoryNotReady(attempt);
 
             try {
                 Thread.sleep(STARTUP_RETRY_DELAY_MILLIS);
@@ -187,6 +191,26 @@ public class SipRegistrationListener {
                 return;
             }
         }
+    }
+
+    private static void logSipFactoryNotReady(int attempt) {
+        if (attempt == 1) {
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "SipFactory not ready — waiting for Liberty SIP stack to initialise (retry interval: {0}ms)",
+                    STARTUP_RETRY_DELAY_MILLIS);
+            return;
+        }
+
+        if (attempt % 10 == 0) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "SipFactory still not available after {0} attempts — Liberty SIP stack may be slow to start",
+                    attempt);
+            return;
+        }
+
+        LOGGER.log(System.Logger.Level.DEBUG, "SipFactory not ready yet (attempt {0})", attempt);
     }
 
     private SipFactory resolveSipFactory() {
