@@ -73,9 +73,11 @@ public class SdpNegotiator {
      *                     the local UDP socket cannot be created
      */
     public CallMedia negotiate(SipServletRequest invite) throws IOException {
+        String callId = invite.getSession().getId();
         String sdpOffer = readSdpBody(invite);
 
-        LOGGER.log(System.Logger.Level.DEBUG, "SDP offer:{0}{1}", System.lineSeparator(), sdpOffer);
+        LOGGER.log(
+                System.Logger.Level.DEBUG, "{0}SDP offer:{1}{2}", callPrefix(callId), System.lineSeparator(), sdpOffer);
 
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
@@ -87,7 +89,8 @@ public class SdpNegotiator {
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
-                "SDP negotiation: local RTP {0}:{1} → remote RTP {2}:{3} — codec [{4}]",
+                "{0}SDP negotiation: local RTP {1}:{2} → remote RTP {3}:{4} — codec [{5}]",
+                callPrefix(callId),
                 localIp,
                 localPort,
                 remoteIp,
@@ -216,5 +219,9 @@ public class SdpNegotiator {
         sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendonly\r\n");
 
         return sdp.toString();
+    }
+
+    private static String callPrefix(String callId) {
+        return "[callId=" + callId + "] ";
     }
 }

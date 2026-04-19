@@ -120,10 +120,15 @@ public class SipCallHandler {
      * The one-second pre-accept pause gives the caller's handset time to connect before audio begins.
      */
     public void handleInvite(SipServletRequest req) throws IOException {
-        LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
+        String callId = req.getSession().getId();
+        LOGGER.log(System.Logger.Level.DEBUG, "{0}Incoming call from [{1}]", callPrefix(callId), req.getFrom());
 
         if (this.sipCallBlacklist.isBlacklisted(req)) {
-            LOGGER.log(System.Logger.Level.INFO, "Rejecting blacklisted call from [{0}]", req.getFrom());
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "{0}Rejecting blacklisted call from [{1}]",
+                    callPrefix(callId),
+                    req.getFrom());
             req.createResponse(SipServletResponse.SC_FORBIDDEN).send();
 
             return;
@@ -132,17 +137,17 @@ public class SipCallHandler {
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
-            rejectNoLanguage(req);
+            rejectNoLanguage(req, callId);
 
             return;
         }
 
         req.createResponse(SipServletResponse.SC_RINGING).send();
 
-        this.managedExecutorService.execute(() -> processAcceptedInvite(req, sorted));
+        this.managedExecutorService.execute(() -> processAcceptedInvite(req, sorted, callId));
     }
 
-    private void processAcceptedInvite(SipServletRequest req, List<LanguageFactory> sorted) {
+    private void processAcceptedInvite(SipServletRequest req, List<LanguageFactory> sorted, String callId) {
         try {
             Thread.sleep(1_000);
         } catch (InterruptedException interruptedException) {
@@ -159,33 +164,43 @@ public class SipCallHandler {
 
             acceptAndPlayMenu(req, sorted);
         } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.ERROR, "Failed to accept call from [{0}]", req.getFrom(), ioException);
+            LOGGER.log(
+                    System.Logger.Level.ERROR,
+                    "{0}Failed to accept call from [{1}]",
+                    callPrefix(callId),
+                    req.getFrom(),
+                    ioException);
         }
     }
 
-    private static void rejectNoLanguage(SipServletRequest req) throws IOException {
+    private static void rejectNoLanguage(SipServletRequest req, String callId) throws IOException {
         LOGGER.log(
-                System.Logger.Level.DEBUG, "Rejecting call from [{0}] with 480 — no language factories", req.getFrom());
+                System.Logger.Level.DEBUG,
+                "{0}Rejecting call from [{1}] with 480 — no language factories",
+                callPrefix(callId),
+                req.getFrom());
         LOGGER.log(
                 System.Logger.Level.WARNING,
-                "No language factories registered — rejecting incoming call with 480 Temporarily Unavailable");
+                "{0}No language factories registered — rejecting incoming call with 480 Temporarily Unavailable",
+                callPrefix(callId));
         req.createResponse(SipServletResponse.SC_TEMPORARLY_UNAVAILABLE).send();
     }
 
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
-        LOGGER.log(System.Logger.Level.DEBUG, "Accepting call from [{0}]", req.getFrom());
+        SipSession session = req.getSession();
+        String sessionId = session.getId();
+        LOGGER.log(System.Logger.Level.DEBUG, "{0}Accepting call from [{1}]", callPrefix(sessionId), req.getFrom());
         CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Call accepted — language [{0}], codec [{1}]",
+                "{0}Call accepted — language [{1}], codec [{2}]",
+                callPrefix(sessionId),
                 factory.displayName(),
                 media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
         response.send();
 
-        SipSession session = req.getSession();
-        String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
@@ -207,19 +222,20 @@ public class SipCallHandler {
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
-        LOGGER.log(System.Logger.Level.DEBUG, "Accepting call from [{0}]", req.getFrom());
+        SipSession session = req.getSession();
+        String sessionId = session.getId();
+        LOGGER.log(System.Logger.Level.DEBUG, "{0}Accepting call from [{1}]", callPrefix(sessionId), req.getFrom());
         CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Call accepted — language-selection menu ({0} languages), codec [{1}]",
+                "{0}Call accepted — language-selection menu ({1} languages), codec [{2}]",
+                callPrefix(sessionId),
                 sorted.size(),
                 media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
         response.send();
 
-        SipSession session = req.getSession();
-        String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
@@ -238,7 +254,7 @@ public class SipCallHandler {
             String callerIdentitySummary) {
         try {
             Thread.sleep(1_000);
-            runMenuLoop(player, sorted);
+            runMenuLoop(player, sorted, sessionId);
         } catch (InterruptedException interruptedException) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
         } finally {
@@ -255,15 +271,16 @@ public class SipCallHandler {
         }
     }
 
-    private static void runMenuLoop(AudioPlayer player, List<LanguageFactory> sorted) throws InterruptedException {
+    private static void runMenuLoop(AudioPlayer player, List<LanguageFactory> sorted, String sessionId)
+            throws InterruptedException {
         while (true) {
             for (int slot = 1; slot <= sorted.size(); slot++) {
-                playSelectionPhrase(player, sorted.get(slot - 1), slot);
+                playSelectionPhrase(player, sorted.get(slot - 1), slot, sessionId);
             }
         }
     }
 
-    private static void playSelectionPhrase(AudioPlayer player, LanguageFactory factory, int slot)
+    private static void playSelectionPhrase(AudioPlayer player, LanguageFactory factory, int slot, String sessionId)
             throws InterruptedException {
         try {
             LanguageSelectionAnnouncement announcement = factory.createLanguageSelectionAnnouncement(player);
@@ -271,7 +288,8 @@ public class SipCallHandler {
         } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.WARNING,
-                    "Could not play selection phrase for [{0}] at slot {1} — skipping",
+                    "{0}Could not play selection phrase for [{1}] at slot {2} — skipping",
+                    callPrefix(sessionId),
                     factory.displayName(),
                     slot,
                     ioException);
@@ -296,22 +314,29 @@ public class SipCallHandler {
         int digit = parseDtmfDigit(req);
 
         if (digit < 1) {
-            LOGGER.log(System.Logger.Level.DEBUG, "DTMF digit unrecognised or out of range — ignoring");
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "{0}DTMF digit unrecognised or out of range — ignoring",
+                    callPrefix(sessionId));
             return;
         }
 
-        LOGGER.log(System.Logger.Level.DEBUG, "DTMF digit [{0}] received for session [{1}]", digit, sessionId);
+        LOGGER.log(System.Logger.Level.DEBUG, "{0}DTMF digit [{1}] received", callPrefix(sessionId), digit);
         Optional<LanguageFactory> chosen = LanguageSelector.fromDigit(callState.sorted(), digit);
 
         if (chosen.isEmpty()) {
             LOGGER.log(
-                    System.Logger.Level.DEBUG, "DTMF digit [{0}] does not match any language slot — ignoring", digit);
+                    System.Logger.Level.DEBUG,
+                    "{0}DTMF digit [{1}] does not match any language slot — ignoring",
+                    callPrefix(sessionId),
+                    digit);
             return;
         }
 
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "DTMF digit [{0}] selected language [{1}]",
+                "{0}DTMF digit [{1}] selected language [{2}]",
+                callPrefix(sessionId),
                 digit,
                 chosen.get().displayName());
         pendingSelections.putIfAbsent(sessionId, chosen.get());
@@ -324,7 +349,7 @@ public class SipCallHandler {
      */
     public void handleBye(SipServletRequest req) throws IOException {
         String sessionId = req.getSession().getId();
-        LOGGER.log(System.Logger.Level.DEBUG, "BYE received from [{0}]", req.getFrom());
+        LOGGER.log(System.Logger.Level.DEBUG, "{0}BYE received from [{1}]", callPrefix(sessionId), req.getFrom());
         CallState callState = activeCalls.remove(sessionId);
 
         if (callState == null) {
@@ -335,7 +360,11 @@ public class SipCallHandler {
         callState.callFuture().cancel(true);
         closeMedia(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
-        LOGGER.log(System.Logger.Level.INFO, "Call ended — duration {0}s", callDuration.toSeconds());
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "{0}Call ended — duration {1}s",
+                callPrefix(sessionId),
+                callDuration.toSeconds());
         pendingSelections.remove(sessionId);
         req.createResponse(SipServletResponse.SC_OK).send();
     }
@@ -364,13 +393,13 @@ public class SipCallHandler {
             String callerIdentitySummary) {
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Announcement loop starting — call [{0}], language [{1}]",
-                sessionId,
+                "{0}Announcement loop starting — language [{1}]",
+                callPrefix(sessionId),
                 factory.displayName());
         LOGGER.log(
                 System.Logger.Level.DEBUG,
-                "Announcement loop context: call=[{0}], codec=[{1}], caller={2}",
-                sessionId,
+                "{0}Announcement loop context: codec=[{1}], caller={2}",
+                callPrefix(sessionId),
                 media.codec().sdpName(),
                 callerIdentitySummary);
 
@@ -390,12 +419,14 @@ public class SipCallHandler {
                     var receipt = announcement.announce();
                     LOGGER.log(
                             System.Logger.Level.DEBUG,
-                            "Announcement complete; played {0} file(s)",
+                            "{0}Announcement complete; played {1} file(s)",
+                            callPrefix(sessionId),
                             receipt.fileNames().size());
                 } catch (IOException ioException) {
                     LOGGER.log(
                             System.Logger.Level.WARNING,
-                            "Time announcement failed for language [{0}]: {1}",
+                            "{0}Time announcement failed for language [{1}]: {2}",
+                            callPrefix(sessionId),
                             factory.displayName(),
                             ioException.getMessage(),
                             ioException);
@@ -403,13 +434,11 @@ public class SipCallHandler {
             }
 
             LOGGER.log(
-                    System.Logger.Level.INFO,
-                    "Maximum call duration reached for session [{0}] — hanging up",
-                    sessionId);
+                    System.Logger.Level.INFO, "{0}Maximum call duration reached — hanging up", callPrefix(sessionId));
             sendBye(session);
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
-            LOGGER.log(System.Logger.Level.DEBUG, "Announcement loop interrupted for session [{0}]", sessionId);
+            LOGGER.log(System.Logger.Level.DEBUG, "{0}Announcement loop interrupted", callPrefix(sessionId));
         } finally {
             activeCalls.remove(sessionId);
             closeMedia(media);
@@ -490,8 +519,16 @@ public class SipCallHandler {
         try {
             session.createRequest("BYE").send();
         } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.WARNING, "Failed to send BYE on shutdown", ioException);
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "{0}Failed to send BYE on shutdown",
+                    callPrefix(session.getId()),
+                    ioException);
         }
+    }
+
+    private static String callPrefix(String callId) {
+        return "[callId=" + callId + "] ";
     }
 
     /**
