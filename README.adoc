@@ -47,6 +47,7 @@ Adding a new language means adding a new CDI-visible implementation — no chang
 On startup the app performs a SIP REGISTER handshake with the configured registrar:
 
 . `SipRegistrationServlet.init()` schedules a 2-second deferred REGISTER (virtual thread) to allow the Liberty SIP container and DAR router to initialise first.
+. If `SipFactory` is not yet available in the servlet context, `SipRegistrationListener` retries startup registration with short backoff instead of failing with a startup `NullPointerException`.
 . `SipRegistrationListener.register()` uses `SrvDnsResolver` to find the registrar's actual host via a JNDI `_sip._tcp` SRV lookup, then sends an unauthenticated REGISTER over TCP.
 . The registrar responds `401 Unauthorized` with a Digest MD5 challenge.
 . `SipRegistrationListener.registerWithAuth()` reuses the original request's Call-ID (`sipFactory.createRequest(origRequest, true)`) — required by RFC 3261 §10.2 — and delegates Digest computation to `DigestMd5Computer`.
@@ -195,4 +196,3 @@ The FFM binding is not yet implemented; the library is detected but the Java pat
 |G.722 HD Voice (50–7 000 Hz) codec.
 Not yet implemented; `G722RtpCodec.isAvailable()` always returns `false`.
 |===
-

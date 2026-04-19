@@ -49,6 +49,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class SipRegistrationListener {
 
     private static final System.Logger LOGGER = System.getLogger(SipRegistrationListener.class.getName());
+    private static final int INITIAL_REGISTER_DELAY_MILLIS = 2_000;
+    private static final int STARTUP_RETRY_DELAY_MILLIS = 1_000;
+    private static final int MAX_STARTUP_RETRIES = 10;
 
     private final AtomicInteger regState = new AtomicInteger(0);
 
@@ -127,13 +130,13 @@ public class SipRegistrationListener {
     private void scheduleRegistration() {
         Thread.ofVirtual().name("sip-initial-register").start(() -> {
             try {
-                Thread.sleep(2_000L);
+                Thread.sleep(INITIAL_REGISTER_DELAY_MILLIS);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 return;
             }
 
-            register();
+            registerWithStartupRetry();
         });
     }
 
@@ -142,7 +145,65 @@ public class SipRegistrationListener {
      * {@code 401 Unauthorized}; the Digest challenge is handled in {@link #registerWithAuth}.
      */
     public void register() {
-        SipFactory sipFactory = (SipFactory) this.servletContext.getAttribute(SipFactory.class.getName());
+        SipFactory sipFactory = resolveSipFactory();
+
+        if (sipFactory == null) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Cannot send initial REGISTER yet: ServletContext or SipFactory is not ready");
+            return;
+        }
+
+        sendInitialRegister(sipFactory);
+    }
+
+    private void registerWithStartupRetry() {
+        for (int attempt = 1; attempt <= MAX_STARTUP_RETRIES; attempt++) {
+            SipFactory sipFactory = resolveSipFactory();
+
+            if (sipFactory != null) {
+                sendInitialRegister(sipFactory);
+                return;
+            }
+
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Initial REGISTER delayed: SipFactory not ready (attempt {0}/{1})",
+                    attempt,
+                    MAX_STARTUP_RETRIES);
+
+            if (attempt == MAX_STARTUP_RETRIES) {
+                LOGGER.log(
+                        System.Logger.Level.ERROR,
+                        "Initial REGISTER aborted after {0} attempts: SipFactory not available",
+                        MAX_STARTUP_RETRIES);
+                return;
+            }
+
+            try {
+                Thread.sleep(STARTUP_RETRY_DELAY_MILLIS);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private SipFactory resolveSipFactory() {
+        if (this.servletContext == null) {
+            return null;
+        }
+
+        Object sipFactoryAttribute = this.servletContext.getAttribute(SipFactory.class.getName());
+
+        if (!(sipFactoryAttribute instanceof SipFactory sipFactory)) {
+            return null;
+        }
+
+        return sipFactory;
+    }
+
+    private void sendInitialRegister(SipFactory sipFactory) {
         LOGGER.log(System.Logger.Level.INFO, "Sending initial REGISTER for sip:[{0}@{1}]", this.sipId, this.registrar);
 
         var applicationSession = sipFactory.createApplicationSession();
