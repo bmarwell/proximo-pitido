@@ -14,6 +14,8 @@ package de.bmarwell.proximo.pitido.war.listener;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
@@ -42,6 +44,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class SipCallBlacklist {
 
     private static final System.Logger LOGGER = System.getLogger(SipCallBlacklist.class.getName());
+    private static final Pattern PHONE_NUMBER_PATTERN = Pattern.compile("^\\+?[0-9]{3,20}$");
+    private static final Pattern SIP_USER_PATTERN = Pattern.compile("sip:([^@>;]+)");
 
     @Inject
     @ConfigProperty(name = "sip.blacklist.from.users", defaultValue = "")
@@ -96,7 +100,15 @@ public class SipCallBlacklist {
             }
         }
 
-        return false;
+        if (isTrustedPhoneCaller(req)) {
+            return false;
+        }
+
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "Blacklisted call from [{0}] — caller is not a trusted phone identity",
+                req.getFrom());
+        return true;
     }
 
     private boolean isBlockedUserAgent(String userAgent) {
@@ -105,6 +117,52 @@ public class SipCallBlacklist {
 
     private boolean isBlockedFromUser(String user) {
         return this.fromUsers.contains(user);
+    }
+
+    private static boolean isTrustedPhoneCaller(SipServletRequest req) {
+        if (hasAssertedPhoneIdentity(req)) {
+            return true;
+        }
+
+        Address from = req.getFrom();
+
+        if (!(from != null && from.getURI() instanceof SipURI sipUri)) {
+            return false;
+        }
+
+        String user = sipUri.getUser();
+
+        if (user == null || !isPhoneNumber(user)) {
+            return false;
+        }
+
+        String userParam = sipUri.getParameter("user");
+
+        if (userParam == null) {
+            return false;
+        }
+
+        return "phone".equalsIgnoreCase(userParam);
+    }
+
+    private static boolean hasAssertedPhoneIdentity(SipServletRequest req) {
+        String pAssertedIdentity = req.getHeader("P-Asserted-Identity");
+
+        if (pAssertedIdentity == null || pAssertedIdentity.isBlank()) {
+            return false;
+        }
+
+        Matcher matcher = SIP_USER_PATTERN.matcher(pAssertedIdentity);
+
+        if (!matcher.find()) {
+            return false;
+        }
+
+        return isPhoneNumber(matcher.group(1));
+    }
+
+    private static boolean isPhoneNumber(String candidate) {
+        return PHONE_NUMBER_PATTERN.matcher(candidate).matches();
     }
 
     private static List<String> parseCommaSeparated(String value) {
