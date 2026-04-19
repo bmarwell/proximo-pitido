@@ -87,6 +87,9 @@ public class SipCallHandler {
     @Inject
     PcmDecoderFactory pcmDecoderFactory;
 
+    @Inject
+    SipCallBlacklist sipCallBlacklist;
+
     @Resource
     ManagedExecutorService managedExecutorService;
 
@@ -118,6 +121,14 @@ public class SipCallHandler {
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
+
+        if (this.sipCallBlacklist.isBlacklisted(req)) {
+            LOGGER.log(System.Logger.Level.INFO, "Rejecting blacklisted call from [{0}]", req.getFrom());
+            req.createResponse(SipServletResponse.SC_FORBIDDEN).send();
+
+            return;
+        }
+
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
