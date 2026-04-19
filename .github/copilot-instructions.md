@@ -172,6 +172,45 @@ Applies to all prose: `README.adoc`, Javadoc, inline comments, and IDE spell-che
    acceptAndPlayMenu(req, sorted);
    ```
 
+## Unit test style
+
+Write only the tests needed to verify the change.
+Use JUnit 5 and Mockito (already on the classpath).
+One test class per production class under test.
+
+Structure every test method body with three comment labels:
+
+```java
+// given
+// … set up preconditions …
+
+// when
+// … call the code under test …
+
+// then
+// … assert the expected outcome …
+```
+
+Example:
+
+```java
+@Test
+void resetForReRegistration_fromRegistered_resetsToIdle() {
+    // given
+    var listener = new SipRegistrationListener();
+    listener.markRegistered();
+
+    // when
+    listener.resetForReRegistration();
+
+    // then
+    assertTrue(listener.isIdle());
+}
+```
+
+Use Mockito only when there is no simpler alternative.
+Prefer plain instantiation and package-private helpers over deep mock graphs.
+
 ## Key files
 
 - `war/src/main/java/.../war/media/RtpAudioPlayer.java` — RTP/PCMA sender over UDP; one instance per call
