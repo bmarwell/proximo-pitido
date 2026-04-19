@@ -145,7 +145,8 @@ public class SipCallHandler {
         CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Call accepted — language [{0}], codec [{1}]",
+                "Call from [{0}] accepted — language [{1}], codec [{2}]",
+                req.getFrom(),
                 factory.displayName(),
                 media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
