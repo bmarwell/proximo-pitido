@@ -84,6 +84,19 @@ class SipCallBlacklistTest {
         assertFalse(result);
     }
 
+    @Test
+    void blocksKnownPolycomBotByFromUser() {
+        // given
+        var blacklist = blacklist("13216220427", "");
+        var request = mockRequest("13216220427", "PolycomSoundPointIP-SPIP_335-UA/3.3.1.0907");
+
+        // when
+        boolean result = blacklist.isBlacklisted(request);
+
+        // then
+        assertTrue(result);
+    }
+
     private static SipServletRequest mockRequest(String fromUser, String userAgent) {
         var req = mock(SipServletRequest.class);
         var sipUri = mock(SipURI.class);
