@@ -107,6 +107,7 @@ public class SipCallHandler {
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
+        logCallerIdentityDebug(req);
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
@@ -145,8 +146,7 @@ public class SipCallHandler {
         CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Call from [{0}] accepted — language [{1}], codec [{2}]",
-                req.getFrom(),
+                "Call accepted — language [{0}], codec [{1}]",
                 factory.displayName(),
                 media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
@@ -406,6 +406,39 @@ public class SipCallHandler {
         if (!media.localSocket().isClosed()) {
             media.localSocket().close();
         }
+    }
+
+    private static void logCallerIdentityDebug(SipServletRequest req) {
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "Caller identity: from=[{0}], to=[{1}], requestUri=[{2}], callId=[{3}], pAssertedIdentity=[{4}],"
+                        + " remotePartyId=[{5}], pPreferredIdentity=[{6}], privacy=[{7}], diversion=[{8}],"
+                        + " historyInfo=[{9}], contact=[{10}], via=[{11}], userAgent=[{12}]",
+                req.getFrom(),
+                req.getTo(),
+                req.getRequestURI(),
+                normaliseHeader(req.getHeader("Call-ID")),
+                normaliseHeader(req.getHeader("P-Asserted-Identity")),
+                normaliseHeader(req.getHeader("Remote-Party-ID")),
+                normaliseHeader(req.getHeader("P-Preferred-Identity")),
+                normaliseHeader(req.getHeader("Privacy")),
+                normaliseHeader(req.getHeader("Diversion")),
+                normaliseHeader(req.getHeader("History-Info")),
+                normaliseHeader(req.getHeader("Contact")),
+                normaliseHeader(req.getHeader("Via")),
+                normaliseHeader(req.getHeader("User-Agent")));
+    }
+
+    private static String normaliseHeader(String value) {
+        if (value == null) {
+            return "<absent>";
+        }
+
+        if (value.isBlank()) {
+            return "<blank>";
+        }
+
+        return value;
     }
 
     private static void sendBye(SipSession session) {
