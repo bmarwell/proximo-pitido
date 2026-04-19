@@ -14,6 +14,7 @@ package de.bmarwell.proximo.pitido.api;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.StringJoiner;
 
 /**
  * A receipt of every audio resource submitted for playback during a single time announcement.
@@ -43,22 +44,20 @@ public record PlaybackReceipt(List<PlayedResource> resources) {
     }
 
     /**
-     * Returns a human-readable summary of every played resource, showing per-entry start offset,
-     * duration, and the gap since the previous entry ended.
+     * Returns a compact, single-line summary of every played resource.
      *
-     * <p>Offsets are relative to the start of the first resource.
-     * Example output (one line per resource):
+     * <p>Each entry is formatted as {@code name(durationMs)}.
+     * Gaps larger than 20 ms between consecutive entries are shown as {@code ~Nms~} immediately
+     * before the entry that follows the gap.
+     * Example:
      * <pre>
-     * PlaybackReceipt[
-     *   +0ms     announcement.opus  dur=1240ms
-     *   +1240ms  014.opus           dur=156ms   gap=+0ms
-     *   +8500ms  stroke1.opus       dur=82ms    gap=+7104ms
-     *   +9330ms  stroke2.opus       dur=81ms    gap=+748ms
-     *   +10160ms stroke3.opus       dur=80ms    gap=+749ms
-     * ]
+     * PlaybackReceipt[announcement.opus(1240ms), 014.opus(156ms), 130_minutes.opus(892ms),
+     *   220_seconds.opus(712ms), ~7104ms~, stroke1.opus(82ms), ~748ms~, stroke2.opus(81ms),
+     *   ~749ms~, stroke3.opus(80ms)]
      * </pre>
+     * (Line breaks above are for readability; actual output is a single line.)
      *
-     * @return formatted multi-line string; never {@code null}
+     * @return single-line formatted string; never {@code null}
      */
     @Override
     public String toString() {
@@ -66,30 +65,21 @@ public record PlaybackReceipt(List<PlayedResource> resources) {
             return "PlaybackReceipt[]";
         }
 
-        Instant callStart = this.resources.get(0).start();
-        StringBuilder sb = new StringBuilder("PlaybackReceipt[\n");
-
-        Instant previousEnd = callStart;
+        StringJoiner sj = new StringJoiner(", ", "PlaybackReceipt[", "]");
+        Instant previousEnd = this.resources.get(0).start();
 
         for (PlayedResource entry : this.resources) {
-            long offsetMs = entry.start().toEpochMilli() - callStart.toEpochMilli();
-            long durationMs = entry.duration().toMillis();
             long gapMs = entry.start().toEpochMilli() - previousEnd.toEpochMilli();
-            String shortName = shortName(entry.resourceName());
 
-            sb.append(String.format("  +%-8d %-30s dur=%dms", offsetMs, shortName, durationMs));
-
-            if (entry.start() != callStart) {
-                sb.append(String.format("  gap=%+dms", gapMs));
+            if (gapMs > 20) {
+                sj.add("~" + gapMs + "ms~");
             }
 
-            sb.append('\n');
+            sj.add(shortName(entry.resourceName()) + "(" + entry.duration().toMillis() + "ms)");
             previousEnd = entry.end();
         }
 
-        sb.append(']');
-
-        return sb.toString();
+        return sj.toString();
     }
 
     private static String shortName(String resourceName) {
