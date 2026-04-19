@@ -295,28 +295,52 @@ public class SipRegistrationListener {
         }
     }
 
-    /** Marks registration as successful (state = REGISTERED) and schedules renewal. */
-    public void markRegistered() {
+    /**
+     * Marks registration as successful (state = REGISTERED) and schedules renewal.
+     *
+     * @param grantedExpires the {@code Expires} value from the registrar's {@code 200 OK} response,
+     *     or {@code -1} if the registrar did not include an {@code Expires} header (the configured
+     *     {@code sip.registration.expires} value is used as the fallback).
+     */
+    public void markRegistered(int grantedExpires) {
         regState.set(2);
-        LOGGER.log(System.Logger.Level.INFO, "Registration state: REGISTERED");
-        scheduleReRegistration();
+        int effectiveExpires = grantedExpires > 0 ? grantedExpires : this.expires;
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Registration state: REGISTERED (granted-expires={0}s, effective-expires={1}s)",
+                grantedExpires,
+                effectiveExpires);
+
+        if (grantedExpires > 0 && grantedExpires < this.expires) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Registrar granted a shorter expiry ({0}s) than configured ({1}s) — re-registration will use the granted value",
+                    grantedExpires,
+                    this.expires);
+        }
+
+        scheduleReRegistration(effectiveExpires);
     }
 
     /**
-     * Schedules a re-registration at {@value #RE_REGISTRATION_FACTOR} of the expires interval.
-     * Skipped when {@link #servletContext} is not yet set (e.g. in unit tests or before servlet init).
+     * Schedules a re-registration at {@value #RE_REGISTRATION_FACTOR} of the effective expires
+     * interval.
+     * Skipped when {@link #servletContext} is not yet set (e.g. in unit tests or before servlet
+     * init).
+     *
+     * @param effectiveExpires the expiry interval in seconds actually granted by the registrar
      */
-    private void scheduleReRegistration() {
+    private void scheduleReRegistration(int effectiveExpires) {
         if (this.servletContext == null) {
             return;
         }
 
-        long delaySeconds = (long) (this.expires * RE_REGISTRATION_FACTOR);
+        long delaySeconds = (long) (effectiveExpires * RE_REGISTRATION_FACTOR);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Re-registration scheduled in {0}s (expires={1}s)",
+                "Re-registration scheduled in {0}s (effective-expires={1}s)",
                 delaySeconds,
-                this.expires);
+                effectiveExpires);
         this.managedScheduledExecutorService.schedule(
                 () -> {
                     resetForReRegistration();
