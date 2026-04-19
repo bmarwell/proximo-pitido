@@ -1,8 +1,11 @@
 # JVM options for Open Liberty — Próximo Pitido server
 #
-# --enable-native-access: granted to codec modules.
-# codecs.input currently uses the Foreign Function and Memory (FFM) API
-# (java.lang.foreign.SymbolLookup, java.lang.foreign.Arena) in
-# LibsoxrChannelMixer and OggOpusPcmDecoder.
-# codecs.sip is included as requested so SIP codecs can use FFM when needed.
---enable-native-access=de.bmarwell.proximo.pitido.codecs.input,de.bmarwell.proximo.pitido.codecs.sip
+# --enable-native-access: granted to ALL-UNNAMED because Liberty's OSGi classloader
+# loads application JARs onto the classpath at runtime.
+# Even though codecs/input and codecs/sip carry module-info.java (compile-time named
+# modules), the JVM sees them as part of the unnamed module under Liberty's OSGi bundle
+# classloading — named module identifiers are not visible at runtime in this deployment
+# model.
+# Using ALL-UNNAMED is therefore the correct value; module-info.java still enforces
+# encapsulation and dependency declarations at compile time.
+--enable-native-access=ALL-UNNAMED
