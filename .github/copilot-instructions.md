@@ -216,7 +216,7 @@ Prefer plain instantiation and package-private helpers over deep mock graphs.
 - `war/src/main/java/.../war/media/RtpAudioPlayer.java` — RTP/PCMA sender over UDP; one instance per call
 - `war/src/main/java/.../war/media/package-info.java` — documents that only SIP/RTP session-coupled classes belong here
 - `core/src/main/java/.../core/media/PcmDecoderFactory.java` — `@ApplicationScoped` CDI bean; selects decoder via Tika MIME + extension
-- `core/src/main/java/.../core/media/OggOpusPcmDecoder.java` — preferred decoder (OGG/Opus via libopus JNA)
+- `codecs/input/src/main/java/.../codecs/input/OggOpusPcmDecoder.java` — preferred decoder (OGG/Opus via libopus FFM)
 - `core/src/main/java/.../core/media/WavPcmDecoder.java` — deprecated WAV decoder
 - `war/src/main/java/.../listener/SipCallHandler.java` — `@ApplicationScoped` CDI bean; owns all call-session logic
 - `war/src/main/java/.../listener/SipRegistrationListener.java` — REGISTER orchestration, state machine
@@ -228,4 +228,3 @@ Prefer plain instantiation and package-private helpers over deep mock graphs.
 - `war/src/main/liberty/config/dar.properties` — DAR routing (REGISTER absent intentionally, INFO present for DTMF)
 - `war/src/main/liberty/config/server.env` — **secrets**, never commit
 - `war/src/main/webapp/WEB-INF/sip.xml` — minimal (app-name + display-name only)
-
