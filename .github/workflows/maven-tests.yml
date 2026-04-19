@@ -1,0 +1,42 @@
+name: Maven tests
+
+on:
+  workflow_dispatch: {}
+  push: {}
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: github.ref_name == 'main' || github.event_name != 'push' && github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [25]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Run unit and integration tests
+        shell: bash
+        run: >
+          ./mvnw
+          --show-version
+          --errors
+          --batch-mode
+          --no-transfer-progress
+          verify
+          -DtrimStackTrace=false
+          -Dspotless.skip=true
