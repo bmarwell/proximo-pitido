@@ -1,0 +1,60 @@
+name: CodeQL
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "23 2 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - java-kotlin
+          - actions
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Set up JDK
+        if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+
+      - name: Build for CodeQL
+        if: matrix.language == 'java-kotlin'
+        shell: bash
+        run: >
+          ./mvnw
+          --batch-mode
+          --no-transfer-progress
+          -DskipTests
+          -Dspotless.skip=true
+          compile
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
