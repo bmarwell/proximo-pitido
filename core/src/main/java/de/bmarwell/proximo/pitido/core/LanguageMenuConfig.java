@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.core;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.SequencedMap;
@@ -52,7 +53,7 @@ public final class LanguageMenuConfig {
      */
     public static SequencedMap<Integer, String> parse(String config) {
         if (config == null || config.isBlank()) {
-            return new LinkedHashMap<>();
+            return Collections.unmodifiableSequencedMap(new LinkedHashMap<>());
         }
 
         String[] entries = Arrays.stream(config.split(","))
@@ -84,7 +85,7 @@ public final class LanguageMenuConfig {
             result.put(index + 1, normalise(entries[index]));
         }
 
-        return result;
+        return Collections.unmodifiableSequencedMap(result);
     }
 
     private static SequencedMap<Integer, String> parseExplicit(String[] entries) {
@@ -109,7 +110,7 @@ public final class LanguageMenuConfig {
             }
         }
 
-        return result;
+        return Collections.unmodifiableSequencedMap(result);
     }
 
     /** Normalises a locale tag string to canonical BCP 47 form. */

@@ -87,9 +87,9 @@ public record PlaybackReceipt(List<PlayedResource> resources) {
 
         if (slash >= 0) {
             return resourceName.substring(slash + 1);
-        } else {
-            return resourceName;
         }
+
+        return resourceName;
     }
 
     /**

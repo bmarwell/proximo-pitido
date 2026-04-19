@@ -116,6 +116,7 @@ public class RtpAudioPlayer implements AudioPlayer {
             }
 
             this.lastPacketSentAt = Instant.now();
+            // Throttle to the 20 ms RTP packet cadence so the remote end is not flooded.
             Thread.sleep(20);
         }
     }
