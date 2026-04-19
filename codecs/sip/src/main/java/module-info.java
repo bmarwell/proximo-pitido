@@ -3,6 +3,13 @@
  *
  * <p>This module contains codec-level SIP media concerns that are independent of
  * any specific SIP servlet container lifecycle.
+ *
+ * <h2>Native access</h2>
+ * {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec} uses the Foreign Function and
+ * Memory (FFM) API ({@code java.lang.foreign}) to call {@code libspandsp.so} directly for
+ * G.722 ADPCM encoding.
+ * At runtime the JVM must be started with
+ * {@code --enable-native-access=de.bmarwell.proximo.pitido.codecs.sip}.
  */
 module de.bmarwell.proximo.pitido.codecs.sip {
     // CDI 2.0 (javax namespace) — provided by the Liberty container at runtime.
