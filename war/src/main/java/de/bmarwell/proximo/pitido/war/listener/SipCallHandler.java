@@ -86,7 +86,12 @@ public class SipCallHandler {
 
     /** Holds per-call state while a call is active. */
     private record CallState(
-            SipSession session, Thread menuThread, List<LanguageFactory> sorted, CallMedia media, Instant startTime) {}
+            SipSession session,
+            Thread menuThread,
+            List<LanguageFactory> sorted,
+            CallMedia media,
+            Instant startTime,
+            String callerIdentitySummary) {}
 
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
@@ -107,7 +112,6 @@ public class SipCallHandler {
      */
     public void handleInvite(SipServletRequest req) throws IOException {
         LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
-        logCallerIdentityDebug(req);
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
@@ -157,6 +161,7 @@ public class SipCallHandler {
         String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
+        String callerIdentitySummary = buildCallerIdentitySummary(req);
 
         Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
             try {
@@ -166,10 +171,11 @@ public class SipCallHandler {
                 return;
             }
 
-            playAnnouncementLoop(session, player, factory, sessionId, media);
+            playAnnouncementLoop(session, player, factory, sessionId, media, callerIdentitySummary);
         });
 
-        activeCalls.put(sessionId, new CallState(session, thread, List.of(factory), media, startTime));
+        activeCalls.put(
+                sessionId, new CallState(session, thread, List.of(factory), media, startTime, callerIdentitySummary));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
@@ -188,10 +194,11 @@ public class SipCallHandler {
         String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
+        String callerIdentitySummary = buildCallerIdentitySummary(req);
         Thread menuThread = Thread.ofVirtual()
                 .name("call-menu-" + sessionId)
-                .start(() -> runMenu(session, player, sorted, sessionId, media, startTime));
-        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media, startTime));
+                .start(() -> runMenu(session, player, sorted, sessionId, media, startTime, callerIdentitySummary));
+        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media, startTime, callerIdentitySummary));
     }
 
     private void runMenu(
@@ -200,7 +207,8 @@ public class SipCallHandler {
             List<LanguageFactory> sorted,
             String sessionId,
             CallMedia media,
-            Instant startTime) {
+            Instant startTime,
+            String callerIdentitySummary) {
         try {
             Thread.sleep(1_000);
             runMenuLoop(player, sorted);
@@ -213,8 +221,15 @@ public class SipCallHandler {
                 // Re-register with the current thread so @PreDestroy can interrupt the
                 // announcement loop and send BYE.
                 activeCalls.put(
-                        sessionId, new CallState(session, Thread.currentThread(), List.of(chosen), media, startTime));
-                playAnnouncementLoop(session, player, chosen, sessionId, media);
+                        sessionId,
+                        new CallState(
+                                session,
+                                Thread.currentThread(),
+                                List.of(chosen),
+                                media,
+                                startTime,
+                                callerIdentitySummary));
+                playAnnouncementLoop(session, player, chosen, sessionId, media, callerIdentitySummary);
             } else {
                 activeCalls.remove(sessionId);
                 closeMedia(media);
@@ -323,13 +338,23 @@ public class SipCallHandler {
      * <p>On exit, removes this call from {@link #activeCalls} and closes the media socket.
      */
     private void playAnnouncementLoop(
-            SipSession session, AudioPlayer player, LanguageFactory factory, String sessionId, CallMedia media) {
-        LOGGER.log(System.Logger.Level.INFO, "Announcement loop starting — language [{0}]", factory.displayName());
+            SipSession session,
+            AudioPlayer player,
+            LanguageFactory factory,
+            String sessionId,
+            CallMedia media,
+            String callerIdentitySummary) {
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "Announcement loop starting — call [{0}], language [{1}]",
+                sessionId,
+                factory.displayName());
         LOGGER.log(
                 System.Logger.Level.DEBUG,
-                "Announcement loop starting — language [{0}], remote [{1}]",
-                factory.displayName(),
-                session.getRemoteParty());
+                "Announcement loop context: call=[{0}], codec=[{1}], caller={2}",
+                sessionId,
+                media.codec().sdpName(),
+                callerIdentitySummary);
 
         Instant deadline = Instant.now().plus(CALL_MAX_DURATION);
 
@@ -408,12 +433,11 @@ public class SipCallHandler {
         }
     }
 
-    private static void logCallerIdentityDebug(SipServletRequest req) {
-        LOGGER.log(
-                System.Logger.Level.DEBUG,
-                "Caller identity: from=[{0}], to=[{1}], requestUri=[{2}], callId=[{3}], pAssertedIdentity=[{4}],"
-                        + " remotePartyId=[{5}], pPreferredIdentity=[{6}], privacy=[{7}], diversion=[{8}],"
-                        + " historyInfo=[{9}], contact=[{10}], via=[{11}], userAgent=[{12}]",
+    private static String buildCallerIdentitySummary(SipServletRequest req) {
+        return String.format(
+                "from=[%s], to=[%s], requestUri=[%s], callId=[%s], pAssertedIdentity=[%s], remotePartyId=[%s], "
+                        + "pPreferredIdentity=[%s], privacy=[%s], diversion=[%s], historyInfo=[%s], contact=[%s], "
+                        + "via=[%s], userAgent=[%s]",
                 req.getFrom(),
                 req.getTo(),
                 req.getRequestURI(),

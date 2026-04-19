@@ -39,10 +39,26 @@
 
   <cdi enableImplicitBeanArchives="false" />
 
+  <!--
+    Default runtime logging profile.
+    Liberty base level stays at AUDIT for framework noise control.
+    SipCallHandler runs at DEBUG by default to inspect caller identity headers, codec choices, DTMF input, and call lifecycle transitions.
+    SipRegistrationListener runs at INFO by default to track REGISTER/auth progress without per-attempt DEBUG noise.
+
+    Optional trace selectors to enable when diagnosing specific problems:
+    - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=debug
+      Shows parsed SDP offer details, selected RTP endpoint data, and codec matching.
+    - de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=debug
+      Shows RTP packetisation/send-path details and is usually too verbose for normal operation.
+    - de.bmarwell.proximo.pitido.codecs.input.*=debug
+      Shows native decoder and mixer capability probes (opus/soxr) and fallback decisions.
+    - de.bmarwell.proximo.pitido.codecs.sip.*=debug
+      Shows SIP codec availability probes (for example, G.722 native encoder readiness).
+  -->
   <logging
-    consoleLogLevel="AUDIT"
+    consoleLogLevel="INFO"
     consoleFormat="TBASIC"
-    traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=info:com.ibm.ws.sip.*=debug:jain.protocol.ip.sip.*=debug"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=debug:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=info"
     hideMessage="CWOWB1009W"
     isoDateFormat="true"
   />
