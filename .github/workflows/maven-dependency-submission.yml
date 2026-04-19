@@ -1,0 +1,32 @@
+name: Automatic Dependency Submission (Maven)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  submit-maven:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Submit Maven dependency graph
+        uses: advanced-security/maven-dependency-submission-action@v5
+        with:
+          # The project requires Maven 4 model features; use the repository wrapper.
+          ignore-maven-wrapper: "false"
+          maven-args: "-DskipTests -Dspotless.skip=true"
