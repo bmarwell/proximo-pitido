@@ -1,6 +1,8 @@
 # JVM options for Open Liberty — Próximo Pitido server
 #
-# --enable-native-access: required for de.bmarwell.proximo.pitido.codecs.input, which uses
-# the Foreign Function and Memory (FFM) API (java.lang.foreign.SymbolLookup,
-# java.lang.foreign.Arena) in LibsoxrChannelMixer to probe for libsoxr.so.0.
---enable-native-access=de.bmarwell.proximo.pitido.codecs.input
+# --enable-native-access: granted to codec modules.
+# codecs.input currently uses the Foreign Function and Memory (FFM) API
+# (java.lang.foreign.SymbolLookup, java.lang.foreign.Arena) in
+# LibsoxrChannelMixer and OggOpusPcmDecoder.
+# codecs.sip is included as requested so SIP codecs can use FFM when needed.
+--enable-native-access=de.bmarwell.proximo.pitido.codecs.input,de.bmarwell.proximo.pitido.codecs.sip
