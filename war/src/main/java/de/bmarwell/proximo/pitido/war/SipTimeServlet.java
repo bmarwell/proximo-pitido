@@ -90,7 +90,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
             return;
         }
         if (status == SipServletResponse.SC_OK) {
-            int grantedExpires = response.getExpires();
+            int grantedExpires = this.sipRegistrationService.resolveGrantedExpires(response);
             this.sipRegistrationService.markRegistered(grantedExpires);
             LOGGER.log(
                     System.Logger.Level.INFO,

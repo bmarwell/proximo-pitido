@@ -17,6 +17,7 @@ import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
 import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
+import java.util.ListIterator;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,6 +31,7 @@ import javax.servlet.sip.Address;
 import javax.servlet.sip.ServletParseException;
 import javax.servlet.sip.SipFactory;
 import javax.servlet.sip.SipServletResponse;
+import javax.servlet.sip.SipURI;
 import javax.servlet.sip.URI;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -296,6 +298,35 @@ public class SipRegistrationListener {
     }
 
     /**
+     * Resolves the registrar-granted expiry interval from a REGISTER 200 OK.
+     *
+     * <p>RFC 3261 §10.3 requires registrars to return the effective binding expiry in Contact
+     * header field values using the {@code expires} parameter.
+     * Some providers omit the top-level {@code Expires} header in 200 OK responses, so relying on
+     * {@link SipServletResponse#getExpires()} alone can schedule re-registration far too late.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>Prefer a positive Contact expires value whose URI user equals this listener's SIP ID.</li>
+     *   <li>Otherwise use the shortest positive Contact expires value.</li>
+     *   <li>Fallback to {@link SipServletResponse#getExpires()} (may be {@code -1}).</li>
+     * </ol>
+     *
+     * @param response REGISTER 200 OK response
+     * @return effective granted expiry in seconds, or {@code -1} when no expiry is present
+     */
+    public int resolveGrantedExpires(SipServletResponse response) {
+        int fallbackExpires = response.getExpires();
+        int contactExpires = resolveGrantedContactExpires(response);
+
+        if (contactExpires > 0) {
+            return contactExpires;
+        }
+
+        return fallbackExpires;
+    }
+
+    /**
      * Marks registration as successful (state = REGISTERED) and schedules renewal.
      *
      * @param grantedExpires the {@code Expires} value from the registrar's {@code 200 OK} response,
@@ -320,6 +351,49 @@ public class SipRegistrationListener {
         }
 
         scheduleReRegistration(effectiveExpires);
+    }
+
+    private int resolveGrantedContactExpires(SipServletResponse response) {
+        ListIterator<Address> contactHeaders;
+
+        try {
+            contactHeaders = response.getAddressHeaders("Contact");
+        } catch (ServletParseException servletParseException) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Could not parse Contact headers in REGISTER response",
+                    servletParseException);
+            return -1;
+        }
+
+        if (contactHeaders == null) {
+            return -1;
+        }
+
+        int shortestPositiveExpires = Integer.MAX_VALUE;
+
+        while (contactHeaders.hasNext()) {
+            Address contact = contactHeaders.next();
+            int contactExpires = contact.getExpires();
+
+            if (contactExpires <= 0) {
+                continue;
+            }
+
+            if (contact.getURI() instanceof SipURI sipUri && this.sipId.equals(sipUri.getUser())) {
+                return contactExpires;
+            }
+
+            if (contactExpires < shortestPositiveExpires) {
+                shortestPositiveExpires = contactExpires;
+            }
+        }
+
+        if (shortestPositiveExpires == Integer.MAX_VALUE) {
+            return -1;
+        }
+
+        return shortestPositiveExpires;
     }
 
     /**

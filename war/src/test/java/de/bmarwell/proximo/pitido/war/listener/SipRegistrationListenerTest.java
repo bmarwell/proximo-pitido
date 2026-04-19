@@ -12,9 +12,16 @@
  */
 package de.bmarwell.proximo.pitido.war.listener;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.List;
+import javax.servlet.sip.Address;
+import javax.servlet.sip.SipServletResponse;
+import javax.servlet.sip.SipURI;
 import org.junit.jupiter.api.Test;
 
 class SipRegistrationListenerTest {
@@ -83,5 +90,43 @@ class SipRegistrationListenerTest {
 
         // then: stale-retry allowance is restored for the new cycle
         assertTrue(listener.canRetryAfterStale());
+    }
+
+    @Test
+    void resolveGrantedExpires_usesMatchingContactExpires_whenHeaderIsMissing() throws Exception {
+        // given
+        var listener = new SipRegistrationListener();
+        listener.sipId = "051143820934";
+        SipServletResponse response = mock(SipServletResponse.class);
+        Address contactAddress = mock(Address.class);
+        SipURI sipUri = mock(SipURI.class);
+        when(response.getExpires()).thenReturn(-1);
+        when(response.getAddressHeaders("Contact"))
+                .thenReturn(List.of(contactAddress).listIterator());
+        when(contactAddress.getExpires()).thenReturn(60);
+        when(contactAddress.getURI()).thenReturn(sipUri);
+        when(sipUri.getUser()).thenReturn("051143820934");
+
+        // when
+        int grantedExpires = listener.resolveGrantedExpires(response);
+
+        // then
+        assertEquals(60, grantedExpires);
+    }
+
+    @Test
+    void resolveGrantedExpires_fallsBackToHeaderExpires_whenContactsAreAbsent() throws Exception {
+        // given
+        var listener = new SipRegistrationListener();
+        SipServletResponse response = mock(SipServletResponse.class);
+        when(response.getExpires()).thenReturn(120);
+        when(response.getAddressHeaders("Contact"))
+                .thenReturn(List.<Address>of().listIterator());
+
+        // when
+        int grantedExpires = listener.resolveGrantedExpires(response);
+
+        // then
+        assertEquals(120, grantedExpires);
     }
 }
