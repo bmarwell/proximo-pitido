@@ -85,7 +85,8 @@ public class SipCallHandler {
     PcmDecoderFactory pcmDecoderFactory;
 
     /** Holds per-call state while a call is active. */
-    private record CallState(SipSession session, Thread menuThread, List<LanguageFactory> sorted, CallMedia media) {}
+    private record CallState(
+            SipSession session, Thread menuThread, List<LanguageFactory> sorted, CallMedia media, Instant startTime) {}
 
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
@@ -105,12 +106,10 @@ public class SipCallHandler {
      * A further pause after accepting gives the caller's handset time to connect before audio begins.
      */
     public void handleInvite(SipServletRequest req) throws IOException {
-        LOGGER.log(System.Logger.Level.INFO, "Incoming call from [{0}]", req.getFrom());
+        LOGGER.log(System.Logger.Level.DEBUG, "Incoming call from [{0}]", req.getFrom());
         var sorted = LanguageSelector.sorted(languageFactories);
 
         if (sorted.isEmpty()) {
-            LOGGER.log(
-                    System.Logger.Level.WARNING, "No language factories registered, rejecting call {0}", req.getFrom());
             rejectNoLanguage(req);
 
             return;
@@ -124,32 +123,31 @@ public class SipCallHandler {
         }
 
         if (sorted.size() == 1) {
-            LOGGER.log(
-                    System.Logger.Level.INFO,
-                    "Only one language factory registered, playing immediately to {0}",
-                    req.getFrom());
             acceptAndAnnounce(req, sorted.getFirst());
 
             return;
         }
+
         acceptAndPlayMenu(req, sorted);
     }
 
     private static void rejectNoLanguage(SipServletRequest req) throws IOException {
         LOGGER.log(
+                System.Logger.Level.DEBUG, "Rejecting call from [{0}] with 480 — no language factories", req.getFrom());
+        LOGGER.log(
                 System.Logger.Level.WARNING,
-                "No language factories registered — rejecting call from [{0}] with 480",
-                req.getFrom());
+                "No language factories registered — rejecting incoming call with 480 Temporarily Unavailable");
         req.createResponse(SipServletResponse.SC_TEMPORARLY_UNAVAILABLE).send();
     }
 
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
+        LOGGER.log(System.Logger.Level.DEBUG, "Accepting call from [{0}]", req.getFrom());
+        CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Accepting call from [{0}] — playing [{1}] directly",
-                req.getFrom(),
-                factory.displayName());
-        CallMedia media = sdpNegotiator.negotiate(req);
+                "Call accepted — language [{0}], codec [{1}]",
+                factory.displayName(),
+                media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
         response.send();
@@ -157,6 +155,7 @@ public class SipCallHandler {
         SipSession session = req.getSession();
         String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
+        Instant startTime = Instant.now();
 
         Thread thread = Thread.ofVirtual().name("call-announce-" + sessionId).start(() -> {
             try {
@@ -169,16 +168,17 @@ public class SipCallHandler {
             playAnnouncementLoop(session, player, factory, sessionId, media);
         });
 
-        activeCalls.put(sessionId, new CallState(session, thread, List.of(factory), media));
+        activeCalls.put(sessionId, new CallState(session, thread, List.of(factory), media, startTime));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
+        LOGGER.log(System.Logger.Level.DEBUG, "Accepting call from [{0}]", req.getFrom());
+        CallMedia media = sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Accepting call from [{0}] — starting language-selection menu ({1} languages)",
-                req.getFrom(),
-                sorted.size());
-        CallMedia media = sdpNegotiator.negotiate(req);
+                "Call accepted — language-selection menu ({0} languages), codec [{1}]",
+                sorted.size(),
+                media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
         response.send();
@@ -186,14 +186,20 @@ public class SipCallHandler {
         SipSession session = req.getSession();
         String sessionId = session.getId();
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
+        Instant startTime = Instant.now();
         Thread menuThread = Thread.ofVirtual()
                 .name("call-menu-" + sessionId)
-                .start(() -> runMenu(session, player, sorted, sessionId, media));
-        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media));
+                .start(() -> runMenu(session, player, sorted, sessionId, media, startTime));
+        activeCalls.put(sessionId, new CallState(session, menuThread, sorted, media, startTime));
     }
 
     private void runMenu(
-            SipSession session, AudioPlayer player, List<LanguageFactory> sorted, String sessionId, CallMedia media) {
+            SipSession session,
+            AudioPlayer player,
+            List<LanguageFactory> sorted,
+            String sessionId,
+            CallMedia media,
+            Instant startTime) {
         try {
             Thread.sleep(1_000);
             runMenuLoop(player, sorted);
@@ -205,7 +211,8 @@ public class SipCallHandler {
             if (chosen != null) {
                 // Re-register with the current thread so @PreDestroy can interrupt the
                 // announcement loop and send BYE.
-                activeCalls.put(sessionId, new CallState(session, Thread.currentThread(), List.of(chosen), media));
+                activeCalls.put(
+                        sessionId, new CallState(session, Thread.currentThread(), List.of(chosen), media, startTime));
                 playAnnouncementLoop(session, player, chosen, sessionId, media);
             } else {
                 activeCalls.remove(sessionId);
@@ -283,14 +290,18 @@ public class SipCallHandler {
      */
     public void handleBye(SipServletRequest req) throws IOException {
         String sessionId = req.getSession().getId();
-        LOGGER.log(System.Logger.Level.INFO, "BYE received for session [{0}]", sessionId);
+        LOGGER.log(System.Logger.Level.DEBUG, "BYE received from [{0}]", req.getFrom());
         CallState callState = activeCalls.remove(sessionId);
 
-        if (callState != null) {
-            callState.menuThread().interrupt();
-            closeMedia(callState.media());
+        if (callState == null) {
+            req.createResponse(SipServletResponse.SC_OK).send();
+            return;
         }
 
+        callState.menuThread().interrupt();
+        closeMedia(callState.media());
+        Duration callDuration = Duration.between(callState.startTime(), Instant.now());
+        LOGGER.log(System.Logger.Level.INFO, "Call ended — duration {0}s", callDuration.toSeconds());
         pendingSelections.remove(sessionId);
         req.createResponse(SipServletResponse.SC_OK).send();
     }
@@ -312,9 +323,10 @@ public class SipCallHandler {
      */
     private void playAnnouncementLoop(
             SipSession session, AudioPlayer player, LanguageFactory factory, String sessionId, CallMedia media) {
+        LOGGER.log(System.Logger.Level.INFO, "Announcement loop starting — language [{0}]", factory.displayName());
         LOGGER.log(
-                System.Logger.Level.INFO,
-                "Starting announcement loop in [{0}] for {1}",
+                System.Logger.Level.DEBUG,
+                "Announcement loop starting — language [{0}], remote [{1}]",
                 factory.displayName(),
                 session.getRemoteParty());
 

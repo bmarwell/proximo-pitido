@@ -86,7 +86,7 @@ public class SdpNegotiator {
         String localIp = localSipHostProvider.get();
 
         LOGGER.log(
-                System.Logger.Level.INFO,
+                System.Logger.Level.DEBUG,
                 "SDP negotiation: local RTP {0}:{1} → remote RTP {2}:{3} — codec [{4}]",
                 localIp,
                 localPort,
