@@ -21,6 +21,8 @@ import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Random;
 
@@ -60,6 +62,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final int ssrc;
     private int seqNumber;
     private long timestamp;
+    private Instant lastPacketSentAt;
 
     /**
      * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
@@ -80,6 +83,45 @@ public class RtpAudioPlayer implements AudioPlayer {
     }
 
     /**
+     * Sends silence RTP packets for exactly {@code duration}, keeping the receiver's jitter
+     * buffer alive so the next audio plays with the correct timing gap.
+     *
+     * <p>Each packet carries a zero-filled PCM frame encoded by the negotiated codec.
+     * Packets are sent at the same 20 ms cadence as normal audio packets.
+     * Non-positive durations are silently ignored.
+     *
+     * @param duration how long to send silence
+     * @throws InterruptedException if the calling thread is interrupted
+     */
+    @Override
+    public void playSilence(Duration duration) throws InterruptedException {
+        long packets = duration.toMillis() / 20L;
+
+        if (packets <= 0) {
+            return;
+        }
+
+        short[] silenceFrame = new short[this.codec.samplesPerFrame()];
+
+        for (long i = 0; i < packets; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new InterruptedException("RTP silence interrupted");
+            }
+
+            try {
+                sendRtpPacket(this.codec.encode(silenceFrame));
+            } catch (IOException ioException) {
+                LOGGER.log(System.Logger.Level.DEBUG, "Socket closed during silence playback", ioException);
+                return;
+            }
+
+            this.lastPacketSentAt = Instant.now();
+            // Throttle to the 20 ms RTP packet cadence so the remote end is not flooded.
+            Thread.sleep(20);
+        }
+    }
+
+    /**
      * Opens the classpath resource at {@code resourcePath}, decodes it to mono PCM at
      * {@link RtpCodec#inputSampleRate()} Hz, encodes each 20 ms frame via the negotiated codec,
      * and sends it as an RTP packet.
@@ -93,6 +135,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     @Override
     public void playBlocking(String resourcePath) throws IOException, InterruptedException {
         LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
+        advanceTimestampForSilence();
 
         try (InputStream rawStream = openResource(resourcePath);
                 PcmStream pcm = this.pcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
@@ -120,8 +163,35 @@ public class RtpAudioPlayer implements AudioPlayer {
 
                 adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf, codecInputRate);
                 sendRtpPacket(this.codec.encode(codecFrameBuf));
+                this.lastPacketSentAt = Instant.now();
                 Thread.sleep(20);
             }
+        }
+    }
+
+    /**
+     * Advances {@link #timestamp} to account for any silence between the last sent packet and now.
+     *
+     * <p>After {@link #playBlocking(String)} returns, {@code this.timestamp} points 20 ms ahead of
+     * the last packet (the natural next-packet position).
+     * If the caller sleeps before the next {@code playBlocking} call, the wall clock advances but
+     * {@code this.timestamp} does not, causing the receiver to see no gap in the RTP stream.
+     * This method calculates the extra elapsed time and advances the timestamp by the equivalent
+     * number of silent 20 ms frames so that the receiver hears genuine silence.
+     */
+    private void advanceTimestampForSilence() {
+        if (this.lastPacketSentAt == null) {
+            return;
+        }
+
+        long elapsedMs = Instant.now().toEpochMilli() - this.lastPacketSentAt.toEpochMilli();
+        // this.timestamp already points 20ms past the last packet (the Thread.sleep(20)
+        // after the last sendRtpPacket has run). Any elapsed time beyond that 20ms is silence.
+        long extraSilenceMs = elapsedMs - 20L;
+
+        if (extraSilenceMs >= 10L) {
+            long silencePackets = extraSilenceMs / 20L;
+            this.timestamp += silencePackets * this.codec.rtpTimestampIncrement();
         }
     }
 
