@@ -1,0 +1,28 @@
+= AI-Augmented Development Disclosure
+
+This software project was created within the framework of a **Human-Guided AI-Supported Implementation Procedure**.
+
+The **Natural Person Acting as Principal Author** hereby solemnly declares the following, with full awareness of the legal and technical implications:
+
+=== 1. Human Responsibility Domain
+
+The **Natural Person Acting as Principal Author** assumes complete, undivided and non-delegable responsibility for the project and expressly confirms that:
+
+* All fundamental architectural decisions, system design, modularisation strategy and technical conception were made exclusively and autonomously by the **Natural Person Acting as Principal Author**.
+* The overall project orientation, domain modelling, business logic and conceptual coherence were defined, supervised and finally approved by the aforementioned **Natural Person Acting as Principal Author**.
+* All quality assurance activities, security evaluations, performance considerations and final code validation were performed personally by the **Natural Person Acting as Principal Author** in accordance with the **Human Final Control Principle**.
+
+=== 2. Utilisation of AI Implementation Assistants
+
+During the implementation phase, so-called **AI Implementation Assistants** (algorithmic coding support systems) were engaged to a considerable extent.
+
+These **AI Implementation Assistants** were primarily deployed for the following subordinate tasks:
+
+* Generation and formulation of source code segments
+* Creation of repetitive code structures and boilerplate implementations
+* Execution of refactoring operations and code structure optimisations
+* Assistance in the preparation of technical documentation
+
+All output produced by the **AI Implementation Assistants** was subsequently subjected to thorough manual examination, modification, correction and final approval by the **Natural Person Acting as Principal Author** in accordance with the **Human-in-the-Loop Oversight Procedure**.
+
+The **Natural Person Acting as Principal Author** remains solely and personally accountable for the correctness, functional integrity, security and long-term maintainability of the resulting codebase.
