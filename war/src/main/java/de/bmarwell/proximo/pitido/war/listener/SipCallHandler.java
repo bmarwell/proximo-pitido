@@ -82,6 +82,15 @@ public class SipCallHandler {
     /** Maximum duration of a single call before the server hangs up. */
     private static final Duration CALL_MAX_DURATION = Duration.ofMinutes(2);
 
+    /** Number of full language-list cycles before the menu expires and the call is hung up. */
+    private static final int MAX_MENU_LOOPS = 5;
+
+    /** Silence between successive language-selection phrases within one loop iteration. */
+    private static final Duration MENU_SILENCE_BETWEEN_LANGUAGES = Duration.ofSeconds(1);
+
+    /** Silence between successive loop iterations of the selection menu. */
+    private static final Duration MENU_SILENCE_BETWEEN_LOOPS = Duration.ofSeconds(5);
+
     @Inject
     Instance<LanguageFactory> languageFactories;
 
@@ -300,7 +309,7 @@ public class SipCallHandler {
             Instant startTime,
             String callerIdentitySummary) {
         try {
-            Thread.sleep(1_000);
+            Thread.sleep(5_000);
             runMenuLoop(player, menu, sessionId);
         } catch (InterruptedException interruptedException) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
@@ -312,6 +321,11 @@ public class SipCallHandler {
                 // the Future already stored in activeCalls covers this entire execution.
                 playAnnouncementLoop(session, player, chosen, sessionId, media, callerIdentitySummary);
             } else {
+                LOGGER.log(
+                        Level.INFO,
+                        "{0}Language-selection menu expired without digit — hanging up",
+                        callPrefix(sessionId));
+                sendBye(session);
                 activeCalls.remove(sessionId);
                 closeMedia(media);
             }
@@ -320,9 +334,22 @@ public class SipCallHandler {
 
     private static void runMenuLoop(AudioPlayer player, SequencedMap<Integer, LanguageFactory> menu, String sessionId)
             throws InterruptedException {
-        while (true) {
-            for (Map.Entry<Integer, LanguageFactory> entry : menu.entrySet()) {
+        List<Map.Entry<Integer, LanguageFactory>> entries =
+                menu.entrySet().stream().toList();
+
+        for (int loop = 0; loop < MAX_MENU_LOOPS; loop++) {
+            for (int index = 0; index < entries.size(); index++) {
+                Map.Entry<Integer, LanguageFactory> entry = entries.get(index);
                 playSelectionPhrase(player, entry.getValue(), entry.getKey(), sessionId);
+
+                boolean isLastLanguage = (index == entries.size() - 1);
+                boolean isLastLoop = (loop == MAX_MENU_LOOPS - 1);
+
+                if (!isLastLanguage) {
+                    player.playSilence(MENU_SILENCE_BETWEEN_LANGUAGES);
+                } else if (!isLastLoop) {
+                    player.playSilence(MENU_SILENCE_BETWEEN_LOOPS);
+                }
             }
         }
     }
@@ -352,13 +379,20 @@ public class SipCallHandler {
     public void handleDtmf(SipServletRequest req) throws IOException {
         req.createResponse(SipServletResponse.SC_OK).send();
         String sessionId = req.getSession().getId();
+        LOGGER.log(Level.DEBUG, "{0}INFO (DTMF) received", callPrefix(sessionId));
         CallState callState = activeCalls.get(sessionId);
 
         if (callState == null) {
+            LOGGER.log(Level.DEBUG, "{0}INFO received but no active call state — ignoring", callPrefix(sessionId));
             return;
         }
 
-        int digit = parseDtmfDigit(req);
+        Object rawContent = req.getContent();
+        String body = rawContent instanceof byte[] bytes
+                ? new String(bytes, StandardCharsets.UTF_8)
+                : String.valueOf(rawContent);
+        LOGGER.log(Level.DEBUG, "{0}DTMF body: [{1}]", callPrefix(sessionId), body.strip());
+        int digit = parseDtmfDigit(body);
 
         if (digit < 1) {
             LOGGER.log(
@@ -568,17 +602,13 @@ public class SipCallHandler {
     }
 
     /**
-     * Parses a DTMF digit from a SIP INFO body.
+     * Parses a DTMF digit from a SIP INFO body string.
      * Supports {@code application/dtmf-relay} ({@code Signal=N\r\nDuration=…}) and plain digit
      * bodies.
      * Returns {@code -1} for any unrecognised format.
      */
-    private static int parseDtmfDigit(SipServletRequest req) {
+    private static int parseDtmfDigit(String body) {
         try {
-            Object content = req.getContent();
-            String body = content instanceof byte[] bytes
-                    ? new String(bytes, StandardCharsets.UTF_8)
-                    : String.valueOf(content);
             if (body.contains("Signal=")) {
                 return body.lines()
                         .filter(line -> line.startsWith("Signal="))
