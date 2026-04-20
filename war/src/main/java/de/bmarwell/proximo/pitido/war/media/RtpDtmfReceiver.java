@@ -99,11 +99,6 @@ public class RtpDtmfReceiver implements Runnable {
                 return;
             }
 
-            LOGGER.log(
-                    System.Logger.Level.TRACE,
-                    "DTMF receiver: packet received — PT=[{0}] len=[{1}]",
-                    packet.getData()[1] & 0x7F,
-                    packet.getLength());
             processPacket(packet.getData(), packet.getLength());
         }
 
