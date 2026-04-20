@@ -16,19 +16,22 @@ import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.api.LanguageSelectionAnnouncement;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
 import de.bmarwell.proximo.pitido.codecs.input.PcmDecoderFactory;
+import de.bmarwell.proximo.pitido.core.LanguageMenuConfig;
 import de.bmarwell.proximo.pitido.core.LanguageSelector;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import de.bmarwell.proximo.pitido.war.media.CallMedia;
 import de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer;
 import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZonedDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.SequencedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import javax.annotation.PreDestroy;
@@ -40,6 +43,7 @@ import javax.inject.Inject;
 import javax.servlet.sip.SipServletRequest;
 import javax.servlet.sip.SipServletResponse;
 import javax.servlet.sip.SipSession;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Handles incoming SIP call sessions: INVITE, DTMF input (INFO), and call teardown (BYE).
@@ -90,6 +94,10 @@ public class SipCallHandler {
     @Inject
     SipCallBlacklist sipCallBlacklist;
 
+    @Inject
+    @ConfigProperty(name = "sip.languages.enabled", defaultValue = "")
+    String enabledLanguagesConfig;
+
     @Resource
     ManagedExecutorService managedExecutorService;
 
@@ -97,7 +105,7 @@ public class SipCallHandler {
     private record CallState(
             SipSession session,
             Future<?> callFuture,
-            List<LanguageFactory> sorted,
+            SequencedMap<Integer, LanguageFactory> menu,
             CallMedia media,
             Instant startTime,
             String callerIdentitySummary) {}
@@ -135,8 +143,9 @@ public class SipCallHandler {
         }
 
         var sorted = LanguageSelector.sorted(languageFactories);
+        var menu = buildLanguageMenu(sorted);
 
-        if (sorted.isEmpty()) {
+        if (menu.isEmpty()) {
             rejectNoLanguage(req, callId);
 
             return;
@@ -144,10 +153,11 @@ public class SipCallHandler {
 
         req.createResponse(SipServletResponse.SC_RINGING).send();
 
-        this.managedExecutorService.execute(() -> processAcceptedInvite(req, sorted, callId));
+        this.managedExecutorService.execute(() -> processAcceptedInvite(req, menu, callId));
     }
 
-    private void processAcceptedInvite(SipServletRequest req, List<LanguageFactory> sorted, String callId) {
+    private void processAcceptedInvite(
+            SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu, String callId) {
         try {
             Thread.sleep(1_000);
         } catch (InterruptedException interruptedException) {
@@ -156,13 +166,13 @@ public class SipCallHandler {
         }
 
         try {
-            if (sorted.size() == 1) {
-                acceptAndAnnounce(req, sorted.getFirst());
+            if (menu.size() == 1) {
+                acceptAndAnnounce(req, menu.firstEntry().getValue());
 
                 return;
             }
 
-            acceptAndPlayMenu(req, sorted);
+            acceptAndPlayMenu(req, menu);
         } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.ERROR,
@@ -186,6 +196,40 @@ public class SipCallHandler {
         req.createResponse(SipServletResponse.SC_TEMPORARLY_UNAVAILABLE).send();
     }
 
+    /**
+     * Builds an ordered digit-to-factory menu from all discovered language factories,
+     * applying the {@code sip.languages.enabled} filter if configured.
+     *
+     * <p>When the config is blank, all languages are included with digits assigned
+     * sequentially by {@link LanguageFactory#defaultOrder()}.
+     * When explicit digits are configured (e.g. {@code 1=de-DE,2=en-GB}), those digits
+     * are used directly; unrecognised locale tags are silently skipped.
+     */
+    private SequencedMap<Integer, LanguageFactory> buildLanguageMenu(List<LanguageFactory> sorted) {
+        SequencedMap<Integer, String> configured = LanguageMenuConfig.parse(this.enabledLanguagesConfig);
+
+        if (configured.isEmpty()) {
+            LinkedHashMap<Integer, LanguageFactory> menu = new LinkedHashMap<>();
+
+            for (int index = 0; index < sorted.size(); index++) {
+                menu.put(index + 1, sorted.get(index));
+            }
+
+            return menu;
+        }
+
+        LinkedHashMap<Integer, LanguageFactory> menu = new LinkedHashMap<>();
+
+        for (Map.Entry<Integer, String> entry : configured.entrySet()) {
+            sorted.stream()
+                    .filter(factory -> factory.locale().toLanguageTag().equals(entry.getValue()))
+                    .findFirst()
+                    .ifPresent(factory -> menu.put(entry.getKey(), factory));
+        }
+
+        return menu;
+    }
+
     private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
         SipSession session = req.getSession();
         String sessionId = session.getId();
@@ -205,6 +249,9 @@ public class SipCallHandler {
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
 
+        LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
+        singleMenu.put(1, factory);
+
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try {
                 Thread.sleep(1_000);
@@ -217,11 +264,11 @@ public class SipCallHandler {
         });
 
         activeCalls.put(
-                sessionId,
-                new CallState(session, callFuture, List.of(factory), media, startTime, callerIdentitySummary));
+                sessionId, new CallState(session, callFuture, singleMenu, media, startTime, callerIdentitySummary));
     }
 
-    private void acceptAndPlayMenu(SipServletRequest req, List<LanguageFactory> sorted) throws IOException {
+    private void acceptAndPlayMenu(SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu)
+            throws IOException {
         SipSession session = req.getSession();
         String sessionId = session.getId();
         LOGGER.log(System.Logger.Level.DEBUG, "{0}Accepting call from [{1}]", callPrefix(sessionId), req.getFrom());
@@ -230,7 +277,7 @@ public class SipCallHandler {
                 System.Logger.Level.INFO,
                 "{0}Call accepted — language-selection menu ({1} languages), codec [{2}]",
                 callPrefix(sessionId),
-                sorted.size(),
+                menu.size(),
                 media.codec().sdpName());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
@@ -240,21 +287,21 @@ public class SipCallHandler {
         Instant startTime = Instant.now();
         String callerIdentitySummary = buildCallerIdentitySummary(req);
         Future<?> callFuture = this.managedExecutorService.submit(
-                () -> runMenu(session, player, sorted, sessionId, media, startTime, callerIdentitySummary));
-        activeCalls.put(sessionId, new CallState(session, callFuture, sorted, media, startTime, callerIdentitySummary));
+                () -> runMenu(session, player, menu, sessionId, media, startTime, callerIdentitySummary));
+        activeCalls.put(sessionId, new CallState(session, callFuture, menu, media, startTime, callerIdentitySummary));
     }
 
     private void runMenu(
             SipSession session,
             AudioPlayer player,
-            List<LanguageFactory> sorted,
+            SequencedMap<Integer, LanguageFactory> menu,
             String sessionId,
             CallMedia media,
             Instant startTime,
             String callerIdentitySummary) {
         try {
             Thread.sleep(1_000);
-            runMenuLoop(player, sorted, sessionId);
+            runMenuLoop(player, menu, sessionId);
         } catch (InterruptedException interruptedException) {
             Thread.interrupted(); // consume interrupt; the chosen language is played in finally
         } finally {
@@ -271,11 +318,11 @@ public class SipCallHandler {
         }
     }
 
-    private static void runMenuLoop(AudioPlayer player, List<LanguageFactory> sorted, String sessionId)
+    private static void runMenuLoop(AudioPlayer player, SequencedMap<Integer, LanguageFactory> menu, String sessionId)
             throws InterruptedException {
         while (true) {
-            for (int slot = 1; slot <= sorted.size(); slot++) {
-                playSelectionPhrase(player, sorted.get(slot - 1), slot, sessionId);
+            for (Map.Entry<Integer, LanguageFactory> entry : menu.entrySet()) {
+                playSelectionPhrase(player, entry.getValue(), entry.getKey(), sessionId);
             }
         }
     }
@@ -322,9 +369,9 @@ public class SipCallHandler {
         }
 
         LOGGER.log(System.Logger.Level.DEBUG, "{0}DTMF digit [{1}] received", callPrefix(sessionId), digit);
-        Optional<LanguageFactory> chosen = LanguageSelector.fromDigit(callState.sorted(), digit);
+        LanguageFactory chosen = callState.menu().get(digit);
 
-        if (chosen.isEmpty()) {
+        if (chosen == null) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
                     "{0}DTMF digit [{1}] does not match any language slot — ignoring",
@@ -338,8 +385,8 @@ public class SipCallHandler {
                 "{0}DTMF digit [{1}] selected language [{2}]",
                 callPrefix(sessionId),
                 digit,
-                chosen.get().displayName());
-        pendingSelections.putIfAbsent(sessionId, chosen.get());
+                chosen.displayName());
+        pendingSelections.putIfAbsent(sessionId, chosen);
         callState.callFuture().cancel(true);
     }
 
@@ -377,8 +424,9 @@ public class SipCallHandler {
      * Also exits when the call has exceeded {@link #CALL_MAX_DURATION}; in that case a BYE is
      * sent to the caller to release the SIP line.
      *
-     * <p>Each iteration waits for the next announcement slot ({@code second % 10 == 2}), then
-     * plays one full announcement cycle.
+     * <p>Each iteration plays one full announcement cycle immediately.
+     * The announcement itself schedules silence until the next timed boundary via
+     * {@link de.bmarwell.proximo.pitido.spi.AbstractTimeAnnouncement#playSilenceUntil}.
      * I/O errors in a single cycle are logged and the loop continues;
      * only an {@link InterruptedException} or a timeout exits the loop.
      *
@@ -407,8 +455,6 @@ public class SipCallHandler {
 
         try {
             while (Instant.now().isBefore(deadline)) {
-                waitForNextAnnouncementSlot();
-
                 if (Instant.now().isAfter(deadline)) {
                     break;
                 }
@@ -422,6 +468,8 @@ public class SipCallHandler {
                             "{0}Announcement complete; played {1} file(s)",
                             callPrefix(sessionId),
                             receipt.fileNames().size());
+                    LOGGER.log(Level.TRACE, "{0}Announcement complete; played: {1}.", callPrefix(sessionId), receipt);
+                    player.playSilence(Duration.ofSeconds(1));
                 } catch (IOException ioException) {
                     LOGGER.log(
                             System.Logger.Level.WARNING,
@@ -442,18 +490,6 @@ public class SipCallHandler {
         } finally {
             activeCalls.remove(sessionId);
             closeMedia(media);
-        }
-    }
-
-    /**
-     * Blocks until the wall-clock second satisfies {@code second % 10 == 2}.
-     * Polls every 100 ms.
-     *
-     * @throws InterruptedException if the thread is interrupted while waiting
-     */
-    private static void waitForNextAnnouncementSlot() throws InterruptedException {
-        while (ZonedDateTime.now().getSecond() % 10 != 2) {
-            Thread.sleep(100);
         }
     }
 

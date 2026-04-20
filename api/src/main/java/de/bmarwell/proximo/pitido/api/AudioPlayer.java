@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.api;
 
 import java.io.IOException;
+import java.time.Duration;
 
 /**
  * Plays an audio resource to the active SIP call leg (blocking).
@@ -36,4 +37,27 @@ public interface AudioPlayer {
      *                              stop playback promptly and propagate this exception
      */
     void playBlocking(String resourcePath) throws IOException, InterruptedException;
+
+    /**
+     * Holds the stream open with silence for the given duration.
+     *
+     * <p>RTP implementations must send actual silence packets so the receiver's jitter buffer
+     * stays active and renders the gap as audible silence.
+     * Without continuous packet flow, most jitter buffers flush after ~200 ms and play the next
+     * audio immediately, collapsing any intended gap.
+     *
+     * <p>The default implementation simply sleeps; it is suitable for test doubles that do not
+     * produce real RTP output.
+     * Non-positive durations are ignored.
+     *
+     * @param duration how long to be silent
+     * @throws InterruptedException if the calling thread is interrupted
+     */
+    default void playSilence(Duration duration) throws InterruptedException {
+        long millis = duration.toMillis();
+
+        if (millis > 0) {
+            Thread.sleep(millis);
+        }
+    }
 }

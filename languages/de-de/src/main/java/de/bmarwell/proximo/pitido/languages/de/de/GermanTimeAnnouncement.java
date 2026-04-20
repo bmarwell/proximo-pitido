@@ -20,8 +20,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * German time announcement: <em>"Beim nächsten Ton ist es … Uhr … Minuten und … Sekunden."</em>
@@ -73,18 +71,16 @@ public class GermanTimeAnnouncement extends AbstractTimeAnnouncement {
         ZonedDateTime now = ZonedDateTime.now(this.clock);
         ZonedDateTime announcementTime = announcementTime(now);
 
-        List<String> played = new ArrayList<>();
-
-        play(played, "announcement.wav");
-        play(played, hourFile(announcementTime.getHour()));
-        play(played, minuteFile(announcementTime.getMinute()));
-        play(played, secondFile(announcementTime.getSecond()));
+        play("announcement.wav");
+        play(hourFile(announcementTime.getHour()));
+        play(minuteFile(announcementTime.getMinute()));
+        play(secondFile(announcementTime.getSecond()));
 
         waitUntil(announcementTime);
 
-        play(played, "signal.wav");
+        play("signal.wav");
 
-        return new PlaybackReceipt(played);
+        return buildReceipt();
     }
 
     /**

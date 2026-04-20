@@ -13,27 +13,37 @@
 package de.bmarwell.proximo.pitido.spi;
 
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
+import de.bmarwell.proximo.pitido.api.PlaybackReceipt;
+import de.bmarwell.proximo.pitido.api.PlayedResource;
 import de.bmarwell.proximo.pitido.api.TimeAnnouncement;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Base class for {@link TimeAnnouncement} implementations that play audio files from the classpath.
  *
- * <p>Provides a single {@link #play(List, String)} helper that:
- * <ol>
- *   <li>Resolves the full classpath resource path as {@code audioBase() + fileName}</li>
- *   <li>Delegates to the injected {@link AudioPlayer}</li>
- *   <li>Records the path in the running playback list</li>
- * </ol>
+ * <p>Owns the running list of {@link PlayedResource} entries for the current announcement.
+ * Subclasses call {@link #play(String)} for each file and {@link #buildReceipt()} at the end of
+ * {@code announce()}.
+ * The base class wraps each {@link AudioPlayer#playBlocking(String)} call with wall-clock
+ * timestamps, so the receipt carries actual start instants and durations with no extra code
+ * in the subclass.
  *
  * <p>Subclasses must supply an {@link #audioBase()} that is the classpath prefix for their
  * audio resources, e.g. {@code "de/bmarwell/proximo/pitido/languages/de/de/audio/de/"}.
+ *
+ * <p>Each instance is intended for a single {@code announce()} call.
+ * {@link de.bmarwell.proximo.pitido.spi.LanguageFactory} creates a fresh instance per call.
  */
 public abstract class AbstractTimeAnnouncement implements TimeAnnouncement {
 
     /** The audio player to use for all playback operations. */
     protected final AudioPlayer audioPlayer;
+
+    private final List<PlayedResource> played = new ArrayList<>();
 
     /**
      * Constructs an announcement backed by the given player.
@@ -53,17 +63,46 @@ public abstract class AbstractTimeAnnouncement implements TimeAnnouncement {
     protected abstract String audioBase();
 
     /**
-     * Plays the resource at {@code audioBase() + fileName}, waits for it to finish, and adds the
-     * full resolved path to {@code played}.
+     * Plays the resource at {@code audioBase() + fileName}, records its wall-clock start and
+     * duration, and stores a {@link PlayedResource} entry for the receipt.
      *
-     * @param played    the accumulator for the playback receipt; entries are added in call order
-     * @param fileName  the file name within {@link #audioBase()}, e.g. {@code "signal.wav"}
+     * @param fileName the file name within {@link #audioBase()}, e.g. {@code "signal.wav"}
      * @throws IOException          on any I/O or streaming error
      * @throws InterruptedException if the calling thread is interrupted; stops immediately
      */
-    protected void play(List<String> played, String fileName) throws IOException, InterruptedException {
+    protected void play(String fileName) throws IOException, InterruptedException {
         String path = audioBase() + fileName;
+        Instant start = Instant.now();
         this.audioPlayer.playBlocking(path);
-        played.add(path);
+        Duration duration = Duration.between(start, Instant.now());
+        this.played.add(new PlayedResource(start, duration, path));
+    }
+
+    /**
+     * Builds and returns the playback receipt for this announcement.
+     *
+     * <p>Call once at the end of {@code announce()}, after all {@link #play(String)} calls.
+     *
+     * @return immutable receipt of every resource played so far; never {@code null}
+     */
+    protected PlaybackReceipt buildReceipt() {
+        return new PlaybackReceipt(this.played);
+    }
+
+    /**
+     * Sends silence to the caller until {@code target}, keeping the RTP stream alive.
+     *
+     * <p>Delegates to {@link AudioPlayer#playSilence(Duration)}.
+     * If {@code target} is already in the past, this is a no-op.
+     *
+     * @param target the instant at which silence should end
+     * @throws InterruptedException if the calling thread is interrupted
+     */
+    protected void playSilenceUntil(Instant target) throws InterruptedException {
+        long millis = target.toEpochMilli() - Instant.now().toEpochMilli();
+
+        if (millis > 0) {
+            this.audioPlayer.playSilence(Duration.ofMillis(millis));
+        }
     }
 }

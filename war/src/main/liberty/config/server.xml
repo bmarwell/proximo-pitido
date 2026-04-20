@@ -50,7 +50,7 @@
     - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=debug
       Shows parsed SDP offer details, selected RTP endpoint data, and codec matching.
     - de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=debug
-      Shows RTP packetisation/send-path details and is usually too verbose for normal operation.
+      Shows RTP packetisationz/send-path details and is usually too verbose for normal operation.
     - de.bmarwell.proximo.pitido.codecs.input.*=debug
       Shows native decoder and mixer capability probes (opus/soxr) and fallback decisions.
     - de.bmarwell.proximo.pitido.codecs.sip.*=debug
@@ -59,7 +59,7 @@
   <logging
     consoleLogLevel="INFO"
     consoleFormat="TBASIC"
-    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=debug:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=info"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=FINER:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=FINE"
     hideMessage="CWOWB1009W,CWSCT0017E"
     isoDateFormat="true"
   />
