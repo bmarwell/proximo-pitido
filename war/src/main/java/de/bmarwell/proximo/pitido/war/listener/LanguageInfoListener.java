@@ -12,13 +12,17 @@
  */
 package de.bmarwell.proximo.pitido.war.listener;
 
+import de.bmarwell.proximo.pitido.core.LanguageMenuConfig;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import java.lang.System.Logger.Level;
+import java.util.List;
+import java.util.SequencedMap;
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
 @WebListener
@@ -29,6 +33,10 @@ public class LanguageInfoListener implements ServletContextListener {
     @Inject
     Instance<LanguageFactory> languageFactories;
 
+    @Inject
+    @ConfigProperty(name = "sip.languages.enabled", defaultValue = "")
+    String enabledLanguagesConfig;
+
     @Override
     public void contextInitialized(javax.servlet.ServletContextEvent sce) {
         if (this.languageFactories == null || this.languageFactories.isUnsatisfied()) {
@@ -36,10 +44,31 @@ public class LanguageInfoListener implements ServletContextListener {
             return;
         }
 
-        this.logger.log(
-                Level.INFO,
-                "Found {0} language factories: [{1}]",
-                this.languageFactories.stream().count(),
-                this.languageFactories.stream().toList());
+        List<LanguageFactory> all = this.languageFactories.stream().toList();
+        this.logger.log(Level.INFO, "Found {0} language factories: [{1}]", all.size(), all);
+
+        SequencedMap<Integer, String> configured = LanguageMenuConfig.parse(this.enabledLanguagesConfig);
+
+        if (configured.isEmpty()) {
+            this.logger.log(Level.DEBUG, "sip.languages.enabled not set — all discovered factories are active.");
+            return;
+        }
+
+        this.logger.log(Level.DEBUG, "sip.languages.enabled = [{0}]", this.enabledLanguagesConfig);
+
+        for (LanguageFactory factory : all) {
+            String tag = factory.locale().toLanguageTag();
+            boolean active = configured.values().stream().anyMatch(tag::equals);
+
+            if (active) {
+                this.logger.log(Level.DEBUG, "  ACTIVE   [{0}] (locale tag: {1})", factory.displayName(), tag);
+            } else {
+                this.logger.log(
+                        Level.DEBUG,
+                        "  DROPPED  [{0}] (locale tag: {1}) — not in sip.languages.enabled",
+                        factory.displayName(),
+                        tag);
+            }
+        }
     }
 }

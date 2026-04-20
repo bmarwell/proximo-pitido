@@ -20,9 +20,6 @@ import java.io.IOException;
  * Plays the German language-selection phrase for the assigned menu slot.
  *
  * <p>The phrase file is looked up at {@code audio/de/menu_<number>.opus} on the classpath.
- * If the file for a given slot number is absent, {@link #playSelectionPhrase} returns silently.
- * This allows partial rollout: add {@code menu_1.opus}, {@code menu_2.opus}, … one at a time
- * without requiring all slots to be populated simultaneously.
  */
 public class GermanLanguageSelectionAnnouncement implements LanguageSelectionAnnouncement {
 
@@ -33,8 +30,7 @@ public class GermanLanguageSelectionAnnouncement implements LanguageSelectionAnn
     }
 
     /**
-     * Plays "Für Deutsch drücken Sie die [N]." if the corresponding audio file is available.
-     * Does nothing if {@code menu_<number>.opus} is not present on the classpath.
+     * Plays "Für Deutsch drücken Sie die [N]."
      *
      * @param number the 1-based menu slot digit (1–9)
      * @throws IOException          on any I/O or RTP streaming error
@@ -43,11 +39,6 @@ public class GermanLanguageSelectionAnnouncement implements LanguageSelectionAnn
     @Override
     public void playSelectionPhrase(int number) throws IOException, InterruptedException {
         String resourcePath = GermanTimeAnnouncement.AUDIO_BASE + "menu_" + number + ".opus";
-
-        if (getClass().getClassLoader().getResource(resourcePath) == null) {
-            return;
-        }
-
         this.audioPlayer.playBlocking(resourcePath);
     }
 }
