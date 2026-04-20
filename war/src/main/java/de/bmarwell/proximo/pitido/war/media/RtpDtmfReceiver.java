@@ -79,6 +79,10 @@ public class RtpDtmfReceiver implements Runnable {
             return;
         }
 
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "DTMF receiver: entering receive loop (expected PT={0})",
+                this.telephoneEventPayloadType);
         byte[] buf = new byte[256];
         DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
@@ -95,13 +99,24 @@ public class RtpDtmfReceiver implements Runnable {
                 return;
             }
 
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "DTMF receiver: packet received — PT=[{0}] len=[{1}]",
+                    packet.getData()[1] & 0x7F,
+                    packet.getLength());
             processPacket(packet.getData(), packet.getLength());
         }
+
+        LOGGER.log(System.Logger.Level.DEBUG, "DTMF receiver: exiting (socket closed or interrupted)");
     }
 
     /**
      * Parses one UDP datagram as an RTP packet.
      * Fires {@link #onDigit} if it is a telephone-event end-of-event packet.
+     *
+     * <p>The RTP header is variable-length when CSRC entries are present (CC &gt; 0; 4 bytes each)
+     * or when the extension bit is set (an additional 4-byte header plus extension data).
+     * Both are accounted for when computing the payload offset.
      */
     void processPacket(byte[] data, int length) {
         if (length < MIN_PACKET_SIZE) {
@@ -114,8 +129,25 @@ public class RtpDtmfReceiver implements Runnable {
             return;
         }
 
-        int eventCode = data[RTP_HEADER_SIZE] & 0xFF;
-        boolean endOfEvent = (data[RTP_HEADER_SIZE + 1] & 0x80) != 0;
+        int csrcCount = data[0] & 0x0F;
+        boolean hasExtension = (data[0] & 0x10) != 0;
+        int payloadOffset = RTP_HEADER_SIZE + 4 * csrcCount;
+
+        if (hasExtension) {
+            if (length < payloadOffset + 4) {
+                return;
+            }
+
+            int extensionLength = ((data[payloadOffset + 2] & 0xFF) << 8) | (data[payloadOffset + 3] & 0xFF);
+            payloadOffset += 4 + 4 * extensionLength;
+        }
+
+        if (length < payloadOffset + TELEPHONE_EVENT_PAYLOAD_MIN_SIZE) {
+            return;
+        }
+
+        int eventCode = data[payloadOffset] & 0xFF;
+        boolean endOfEvent = (data[payloadOffset + 1] & 0x80) != 0;
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
