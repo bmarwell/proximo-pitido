@@ -9,3 +9,17 @@
 # Using ALL-UNNAMED is therefore the correct value; module-info.java still enforces
 # encapsulation and dependency declarations at compile time.
 --enable-native-access=ALL-UNNAMED
+
+# Suppress unknown-flag warnings when running on HotSpot so that OpenJ9-specific
+# tuning flags below are silently ignored instead of aborting startup.
+-XX:+IgnoreUnrecognizedVMOptions
+
+# OpenJ9 container tuning — silently ignored on HotSpot.
+# IdleTuningGcOnIdle: run a GC cycle when the JVM is idle to reclaim heap pages.
+# ClassRelationshipVerifier: lazy class verification reduces startup time.
+# Xtune:virtualize: optimise for a virtualised or container host.
+-XX:+IdleTuningGcOnIdle
+-XX:+ClassRelationshipVerifier
+-Xtune:virtualize
+
+# verbose GC not enabled — do not add -verbose:gc or -Xverbosegclog

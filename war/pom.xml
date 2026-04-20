@@ -147,4 +147,62 @@
     </plugins>
   </build>
 
+  <profiles>
+    <profile>
+      <id>dockerize</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.eclipse.jkube</groupId>
+            <artifactId>kubernetes-maven-plugin</artifactId>
+            <configuration>
+              <images>
+                <image>
+                  <name>de.bmarwell.proximo.pitido/${project.artifactId}</name>
+                  <build>
+                    <dockerFile>${project.basedir}/src/main/docker/Dockerfile</dockerFile>
+                    <assembly>
+                      <inline>
+                        <fileSets>
+                          <fileSet>
+                            <directory>${project.basedir}/src/main/liberty/config</directory>
+                            <outputDirectory>config</outputDirectory>
+                            <excludes>
+                              <exclude>server.env</exclude>
+                              <exclude>.gitignore</exclude>
+                            </excludes>
+                          </fileSet>
+                        </fileSets>
+                        <files>
+                          <file>
+                            <source>${project.build.directory}/${project.build.finalName}.war</source>
+                            <outputDirectory>.</outputDirectory>
+                          </file>
+                        </files>
+                      </inline>
+                    </assembly>
+                    <tags>
+                      <tag>latest</tag>
+                      <tag>${project.version}</tag>
+                    </tags>
+                  </build>
+                </image>
+              </images>
+              <verbose>true</verbose>
+            </configuration>
+            <executions>
+              <execution>
+                <id>build-docker-image</id>
+                <goals>
+                  <goal>build</goal>
+                </goals>
+                <phase>package</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>
