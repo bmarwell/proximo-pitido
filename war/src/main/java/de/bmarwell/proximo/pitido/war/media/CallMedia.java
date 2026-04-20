@@ -22,10 +22,21 @@ import java.net.InetSocketAddress;
  * <p>Created by {@link SdpNegotiator} from the SDP offer in the incoming INVITE.
  * The caller is responsible for closing {@link #localSocket()} when the call ends.
  *
- * @param localSocket the bound UDP socket used for RTP transmission; must be closed after the call
- * @param remoteRtp   the remote endpoint's RTP address and port, from the SDP {@code c=} and
- *                    {@code m=audio} lines
- * @param sdpAnswer   the fully formatted SDP answer body to include in the 200 OK response
- * @param codec       the negotiated RTP codec; determines payload type, encoding, and clock rate
+ * @param localSocket                the bound UDP socket used for RTP transmission; must be closed
+ *                                   after the call
+ * @param remoteRtp                  the remote endpoint's RTP address and port, from the SDP
+ *                                   {@code c=} and {@code m=audio} lines
+ * @param sdpAnswer                  the fully formatted SDP answer body to include in the 200 OK
+ *                                   response
+ * @param codec                      the negotiated RTP codec; determines payload type, encoding,
+ *                                   and clock rate
+ * @param telephoneEventPayloadType  the dynamic RTP payload type negotiated for RFC 4733
+ *                                   telephone-event, or {@code -1} if the remote side did not
+ *                                   offer telephone-event in its SDP
  */
-public record CallMedia(DatagramSocket localSocket, InetSocketAddress remoteRtp, String sdpAnswer, RtpCodec codec) {}
+public record CallMedia(
+        DatagramSocket localSocket,
+        InetSocketAddress remoteRtp,
+        String sdpAnswer,
+        RtpCodec codec,
+        int telephoneEventPayloadType) {}

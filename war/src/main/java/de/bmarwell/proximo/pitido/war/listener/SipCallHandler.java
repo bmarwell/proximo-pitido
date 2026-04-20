@@ -21,6 +21,7 @@ import de.bmarwell.proximo.pitido.core.LanguageSelector;
 import de.bmarwell.proximo.pitido.spi.LanguageFactory;
 import de.bmarwell.proximo.pitido.war.media.CallMedia;
 import de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer;
+import de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver;
 import de.bmarwell.proximo.pitido.war.media.SdpNegotiator;
 import java.io.IOException;
 import java.lang.System.Logger.Level;
@@ -32,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.SequencedMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import javax.annotation.PreDestroy;
@@ -114,6 +116,7 @@ public class SipCallHandler {
     private record CallState(
             SipSession session,
             Future<?> callFuture,
+            Future<?> receiverFuture,
             SequencedMap<Integer, LanguageFactory> menu,
             CallMedia media,
             Instant startTime,
@@ -273,7 +276,15 @@ public class SipCallHandler {
         });
 
         activeCalls.put(
-                sessionId, new CallState(session, callFuture, singleMenu, media, startTime, callerIdentitySummary));
+                sessionId,
+                new CallState(
+                        session,
+                        callFuture,
+                        CompletableFuture.completedFuture(null),
+                        singleMenu,
+                        media,
+                        startTime,
+                        callerIdentitySummary));
     }
 
     private void acceptAndPlayMenu(SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu)
@@ -297,7 +308,11 @@ public class SipCallHandler {
         String callerIdentitySummary = buildCallerIdentitySummary(req);
         Future<?> callFuture = this.managedExecutorService.submit(
                 () -> runMenu(session, player, menu, sessionId, media, startTime, callerIdentitySummary));
-        activeCalls.put(sessionId, new CallState(session, callFuture, menu, media, startTime, callerIdentitySummary));
+
+        Future<?> receiverFuture = startDtmfReceiver(media, sessionId);
+        activeCalls.put(
+                sessionId,
+                new CallState(session, callFuture, receiverFuture, menu, media, startTime, callerIdentitySummary));
     }
 
     private void runMenu(
@@ -371,6 +386,48 @@ public class SipCallHandler {
     }
 
     /**
+     * Starts an RFC 2833 telephone-event receiver for the given call if telephone-event was
+     * negotiated in the SDP.
+     * The receiver shares the call's UDP socket; it exits automatically when the socket is closed.
+     * Returns a completed future immediately if telephone-event was not offered by the remote side.
+     */
+    private Future<?> startDtmfReceiver(CallMedia media, String sessionId) {
+        int telephoneEventPt = media.telephoneEventPayloadType();
+
+        if (telephoneEventPt < 0) {
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "{0}No telephone-event PT negotiated — RFC 2833 DTMF receiver not started",
+                    callPrefix(sessionId));
+
+            return CompletableFuture.completedFuture(null);
+        }
+
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}Starting RFC 2833 DTMF receiver (PT={1})",
+                callPrefix(sessionId),
+                telephoneEventPt);
+        RtpDtmfReceiver receiver = new RtpDtmfReceiver(
+                media.localSocket(), telephoneEventPt, digit -> handleReceivedDtmfDigit(sessionId, digit));
+
+        return this.managedExecutorService.submit(receiver);
+    }
+
+    /**
+     * Called by the RFC 2833 receiver when a telephone-event end-of-event packet is decoded.
+     * Delegates to the shared digit-selection logic.
+     */
+    private void handleReceivedDtmfDigit(String sessionId, int eventCode) {
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}RFC 2833 DTMF event code [{1}] received",
+                callPrefix(sessionId),
+                eventCode);
+        applyDtmfSelection(sessionId, eventCode);
+    }
+
+    /**
      * Handles a SIP INFO message carrying a DTMF digit.
      * Records the caller's language choice and interrupts the menu thread so playback stops
      * immediately.
@@ -379,11 +436,11 @@ public class SipCallHandler {
     public void handleDtmf(SipServletRequest req) throws IOException {
         req.createResponse(SipServletResponse.SC_OK).send();
         String sessionId = req.getSession().getId();
-        LOGGER.log(Level.DEBUG, "{0}INFO (DTMF) received", callPrefix(sessionId));
+        LOGGER.log(Level.DEBUG, "{0}SIP INFO (DTMF) received", callPrefix(sessionId));
         CallState callState = activeCalls.get(sessionId);
 
         if (callState == null) {
-            LOGGER.log(Level.DEBUG, "{0}INFO received but no active call state — ignoring", callPrefix(sessionId));
+            LOGGER.log(Level.DEBUG, "{0}SIP INFO received but no active call state — ignoring", callPrefix(sessionId));
             return;
         }
 
@@ -391,18 +448,32 @@ public class SipCallHandler {
         String body = rawContent instanceof byte[] bytes
                 ? new String(bytes, StandardCharsets.UTF_8)
                 : String.valueOf(rawContent);
-        LOGGER.log(Level.DEBUG, "{0}DTMF body: [{1}]", callPrefix(sessionId), body.strip());
+        LOGGER.log(Level.DEBUG, "{0}SIP INFO DTMF body: [{1}]", callPrefix(sessionId), body.strip());
         int digit = parseDtmfDigit(body);
 
         if (digit < 1) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
-                    "{0}DTMF digit unrecognised or out of range — ignoring",
+                    "{0}SIP INFO DTMF digit unrecognised or out of range — ignoring",
                     callPrefix(sessionId));
             return;
         }
 
-        LOGGER.log(System.Logger.Level.DEBUG, "{0}DTMF digit [{1}] received", callPrefix(sessionId), digit);
+        applyDtmfSelection(sessionId, digit);
+    }
+
+    /**
+     * Common logic for both SIP INFO DTMF and RFC 2833 telephone-event DTMF.
+     * Looks up the language for the given digit slot, records the selection, and interrupts
+     * the menu playback thread.
+     */
+    private void applyDtmfSelection(String sessionId, int digit) {
+        CallState callState = activeCalls.get(sessionId);
+
+        if (callState == null) {
+            return;
+        }
+
         LanguageFactory chosen = callState.menu().get(digit);
 
         if (chosen == null) {
@@ -422,6 +493,7 @@ public class SipCallHandler {
                 chosen.displayName());
         pendingSelections.putIfAbsent(sessionId, chosen);
         callState.callFuture().cancel(true);
+        callState.receiverFuture().cancel(true);
     }
 
     /**
@@ -439,6 +511,7 @@ public class SipCallHandler {
         }
 
         callState.callFuture().cancel(true);
+        callState.receiverFuture().cancel(true);
         closeMedia(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(
@@ -505,6 +578,14 @@ public class SipCallHandler {
                     LOGGER.log(Level.TRACE, "{0}Announcement complete; played: {1}.", callPrefix(sessionId), receipt);
                     player.playSilence(Duration.ofSeconds(1));
                 } catch (IOException ioException) {
+                    if (media.localSocket().isClosed()) {
+                        LOGGER.log(
+                                System.Logger.Level.DEBUG,
+                                "{0}Announcement loop: socket closed — exiting",
+                                callPrefix(sessionId));
+                        break;
+                    }
+
                     LOGGER.log(
                             System.Logger.Level.WARNING,
                             "{0}Time announcement failed for language [{1}]: {2}",
@@ -539,6 +620,7 @@ public class SipCallHandler {
                 activeCalls.size());
         activeCalls.values().forEach(callState -> {
             callState.callFuture().cancel(true);
+            callState.receiverFuture().cancel(true);
             sendBye(callState.session());
         });
         activeCalls.clear();

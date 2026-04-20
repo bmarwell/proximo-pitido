@@ -59,7 +59,7 @@
   <logging
     consoleLogLevel="INFO"
     consoleFormat="TBASIC"
-    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=FINER:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=FINE"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=finest:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=fine:de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver=finest"
     hideMessage="CWOWB1009W,CWSCT0017E"
     isoDateFormat="true"
   />

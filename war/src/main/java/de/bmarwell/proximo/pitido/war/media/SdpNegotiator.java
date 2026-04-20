@@ -81,6 +81,7 @@ public class SdpNegotiator {
 
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
+        int telephoneEventPt = parseTelephoneEventPayloadType(sdpOffer);
         RtpCodec codec = selectCodec(parseOfferedPayloadTypes(sdpOffer));
 
         DatagramSocket localSocket = new DatagramSocket(0);
@@ -89,18 +90,19 @@ public class SdpNegotiator {
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
-                "{0}SDP negotiation: local RTP {1}:{2} → remote RTP {3}:{4} — codec [{5}]",
+                "{0}SDP negotiation: local RTP {1}:{2} → remote RTP {3}:{4} — codec [{5}], telephone-event PT [{6}]",
                 callPrefix(callId),
                 localIp,
                 localPort,
                 remoteIp,
                 remotePort,
-                codec.sdpName());
+                codec.sdpName(),
+                telephoneEventPt);
 
-        String sdpAnswer = buildSdpAnswer(localIp, localPort, codec);
+        String sdpAnswer = buildSdpAnswer(localIp, localPort, codec, telephoneEventPt);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
-        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec);
+        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec, telephoneEventPt);
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {
@@ -150,6 +152,20 @@ public class SdpNegotiator {
     }
 
     /**
+     * Extracts the RFC 4733 telephone-event RTP payload type from the SDP offer.
+     * Scans {@code a=rtpmap:<pt> telephone-event/<clock>} lines.
+     * Returns {@code -1} if the remote side did not offer telephone-event.
+     */
+    static int parseTelephoneEventPayloadType(String sdp) {
+        return sdp.lines()
+                .filter(line -> line.startsWith("a=rtpmap:") && line.contains("telephone-event"))
+                .findFirst()
+                .map(line ->
+                        Integer.parseInt(line.substring("a=rtpmap:".length()).split("[/ ]")[0]))
+                .orElse(-1);
+    }
+
+    /**
      * Extracts the offered RTP payload type integers from the {@code m=audio} line of the SDP offer.
      * Returns {@code {8}} (PCMA) as default if the line cannot be parsed.
      */
@@ -184,7 +200,7 @@ public class SdpNegotiator {
         return descriptor.forCall();
     }
 
-    private static String buildSdpAnswer(String localIp, int localPort, RtpCodec codec) {
+    private static String buildSdpAnswer(String localIp, int localPort, RtpCodec codec, int telephoneEventPt) {
         StringBuilder sdp = new StringBuilder();
         sdp.append("v=0\r\n")
                 .append("o=proximo-pitido 0 0 IN IP4 ")
@@ -198,8 +214,13 @@ public class SdpNegotiator {
                 .append("m=audio ")
                 .append(localPort)
                 .append(" RTP/AVP ")
-                .append(codec.payloadType())
-                .append("\r\n")
+                .append(codec.payloadType());
+
+        if (telephoneEventPt >= 0) {
+            sdp.append(" ").append(telephoneEventPt);
+        }
+
+        sdp.append("\r\n")
                 .append("a=rtpmap:")
                 .append(codec.payloadType())
                 .append(" ")
@@ -216,7 +237,12 @@ public class SdpNegotiator {
                     .append("\r\n");
         }
 
-        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendonly\r\n");
+        if (telephoneEventPt >= 0) {
+            sdp.append("a=rtpmap:").append(telephoneEventPt).append(" telephone-event/8000\r\n");
+            sdp.append("a=fmtp:").append(telephoneEventPt).append(" 0-15\r\n");
+        }
+
+        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendrecv\r\n");
 
         return sdp.toString();
     }
