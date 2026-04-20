@@ -87,14 +87,35 @@ import java.util.List;
  * <h2>Announcement timing</h2>
  *
  * <p>Choose {@code T} to be at least as far in the future as the total expected speech
- * duration plus a safety margin (typically 2 s after the last syllable).
- * Generating audio for every 5-second value (e.g. "five seconds", "ten seconds", …,
- * "fifty-five seconds") keeps the maximum silence between the end of speech and the first
- * stroke below 6 s.
- * Prefer 10-second boundaries (:00, :10, :20, …) when they fit within the silence budget —
- * they sound cleaner to the caller and require no fractional-second audio files.
+ * duration plus a safety margin.
+ * Prefer 10-second boundaries (:00, :10, :20, …) — they sound cleaner to the caller and
+ * require no fractional-second audio files.
  * Fall back to 5-second boundaries only when the 10-second boundary would exceed the
  * maximum acceptable gap.
+ *
+ * <h2>Highly recommended: late-start speech placement</h2>
+ *
+ * <p>Do <em>not</em> begin speech immediately when {@code announce()} is entered.
+ * Instead, wait with silence until {@code T − avgSpeechDuration − targetPreBeepSilence},
+ * then play the speech, then let the remaining gap close naturally before the beep.
+ *
+ * <p>This places any "spare" silence <em>before</em> the speech (i.e., after the previous
+ * beep), which callers perceive as a natural post-beep pause.
+ * The alternative — starting speech immediately and waiting after — produces an awkward
+ * silence between the last spoken word and the beep, which callers notice and dislike.
+ *
+ * <p>Recommended values:
+ * <ul>
+ *   <li>{@code avgSpeechDuration}: average speech duration across all announcement types
+ *       for this language (e.g. 8 s for a four-file opus announcement).</li>
+ *   <li>{@code targetPreBeepSilence}: 2 s (acceptable range: 1–3 s).</li>
+ *   <li>{@code minLeadSeconds}: must exceed {@code avgSpeechDuration + targetPreBeepSilence}
+ *       to guarantee a positive pre-speech silence in every case.</li>
+ * </ul>
+ *
+ * <p>The outcome lands in the 1–3 s pre-beep silence range for roughly 90 % of
+ * announcements; the remaining edge cases (unusually long or short phrases) may be
+ * slightly outside the range, which is acceptable.
  */
 public abstract class AbstractTimeAnnouncement implements TimeAnnouncement {
 

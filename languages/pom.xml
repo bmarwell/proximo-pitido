@@ -14,6 +14,7 @@
   <subprojects>
     <subproject>de-de</subproject>
     <subproject>en-gb</subproject>
+    <subproject>es-ar</subproject>
   </subprojects>
 
 </project>
