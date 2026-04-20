@@ -26,7 +26,7 @@ import javax.inject.Named;
 @Named("language-factory-de-de")
 public class GermanLanguageFactory implements LanguageFactory {
 
-    private static final Locale LOCALE = Locale.GERMAN;
+    private static final Locale LOCALE = Locale.GERMANY;
     private static final String DISPLAY_NAME = "Deutsch";
     private static final int DEFAULT_ORDER = 10;
 
