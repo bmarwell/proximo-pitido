@@ -141,12 +141,13 @@ OPTIONS:   ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
 |===
 |Env var |MP Config property |Description
 
-|`SIP_REGISTRAR`      |`sip.registrar`      |SIP domain of the registrar (e.g. `tel.t-online.de`, `sip.sipgate.de`)
-|`SIP_SIPID`          |`sip.sipid`          |Your SIP subscriber ID / phone number
-|`SIP_USER_ID`        |`sip.user.id`        |Auth username (often an e-mail address)
-|`SIP_USER_PASSWORD`  |`sip.user.password`  |Auth password
-|`SIP_LOCAL_HOST`     |`sip.local.host`     |LAN IP Liberty binds the SIP endpoint to
-|`SIP_PUBLIC_HOST`    |`sip.public.host`    |Public IP advertised in the Contact header (auto-detected if absent)
+|`SIP_REGISTRAR`             |`sip.registrar`             |SIP domain of the registrar (e.g. `tel.t-online.de`, `sip.sipgate.de`). Optional when registration is disabled.
+|`SIP_SIPID`                 |`sip.sipid`                 |Your SIP subscriber ID / phone number. Optional when registration is disabled.
+|`SIP_USER_ID`               |`sip.user.id`               |Auth username (often an e-mail address). Optional when registration is disabled.
+|`SIP_USER_PASSWORD`         |`sip.user.password`         |Auth password. Optional when registration is disabled.
+|`SIP_LOCAL_HOST`            |`sip.local.host`            |LAN IP Liberty binds the SIP endpoint to
+|`SIP_PUBLIC_HOST`           |`sip.public.host`           |Public IP advertised in the Contact header (auto-detected if absent)
+|`SIP_REGISTRATION_ENABLED`  |`sip.registration.enabled`  |Set to `false` to skip REGISTER entirely and accept direct calls only (softphone / dev mode). Default: `true`.
 |===
 
 `server.env` is intentionally excluded from version control (contains secrets).
