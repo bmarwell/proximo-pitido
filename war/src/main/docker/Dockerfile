@@ -4,7 +4,7 @@ COPY --chown=1001:0 maven/config/* /config/
 
 RUN features.sh
 
-COPY --chown=1001:0 maven/*.war /config/apps/
+COPY --chown=1001:0 maven/*.war /config/dropins/
 
 ENV OPENJ9_SCC=true
 RUN configure.sh
