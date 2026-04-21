@@ -154,50 +154,38 @@
       <build>
         <plugins>
           <plugin>
-            <groupId>org.eclipse.jkube</groupId>
-            <artifactId>kubernetes-maven-plugin</artifactId>
-            <configuration>
-              <images>
-                <image>
-                  <name>de.bmarwell.proximo.pitido/${project.artifactId}</name>
-                  <build>
-                    <dockerFile>${project.basedir}/src/main/docker/Dockerfile</dockerFile>
-                    <assembly>
-                      <inline>
-                        <fileSets>
-                          <fileSet>
-                            <directory>${project.basedir}/src/main/liberty/config</directory>
-                            <outputDirectory>config</outputDirectory>
-                            <excludes>
-                              <exclude>server.env</exclude>
-                              <exclude>.gitignore</exclude>
-                            </excludes>
-                          </fileSet>
-                        </fileSets>
-                        <files>
-                          <file>
-                            <source>${project.build.directory}/${project.build.finalName}.war</source>
-                            <outputDirectory>.</outputDirectory>
-                          </file>
-                        </files>
-                      </inline>
-                    </assembly>
-                    <tags>
-                      <tag>latest</tag>
-                      <tag>${project.version}</tag>
-                    </tags>
-                  </build>
-                </image>
-              </images>
-              <verbose>true</verbose>
-            </configuration>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
             <executions>
               <execution>
                 <id>build-docker-image</id>
-                <goals>
-                  <goal>build</goal>
-                </goals>
                 <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <mkdir dir="${project.build.directory}/docker-context/maven/config"/>
+                    <copy todir="${project.build.directory}/docker-context/maven/config">
+                      <fileset dir="${project.basedir}/src/main/liberty/config">
+                        <exclude name="server.env"/>
+                        <exclude name=".gitignore"/>
+                      </fileset>
+                    </copy>
+                    <copy file="${project.build.directory}/${project.build.finalName}.war"
+                          todir="${project.build.directory}/docker-context/maven/"/>
+                    <exec executable="docker" failonerror="true">
+                      <arg value="build"/>
+                      <arg value="-f"/>
+                      <arg value="${project.basedir}/src/main/docker/Dockerfile"/>
+                      <arg value="-t"/>
+                      <arg value="de.bmarwell.proximo.pitido/${project.artifactId}:latest"/>
+                      <arg value="-t"/>
+                      <arg value="de.bmarwell.proximo.pitido/${project.artifactId}:${project.version}"/>
+                      <arg value="${project.build.directory}/docker-context"/>
+                    </exec>
+                  </target>
+                </configuration>
               </execution>
             </executions>
           </plugin>
