@@ -73,24 +73,34 @@ public class SipRegistrationListener {
      */
     private final AtomicBoolean staleRetryUsed = new AtomicBoolean(false);
 
+    /**
+     * When {@code false}, the application skips SIP REGISTER entirely and accepts direct calls
+     * from softphones on the local network.
+     * All SIP credentials become optional when registration is disabled.
+     * Maps to {@code SIP_REGISTRATION_ENABLED}.
+     */
+    @Inject
+    @ConfigProperty(name = "sip.registration.enabled", defaultValue = "true")
+    boolean registrationEnabled;
+
     /** SIP domain of the registrar, e.g. {@code tel.t-online.de} or {@code sip.sipgate.de}. Maps to {@code SIP_REGISTRAR}. */
     @Inject
-    @ConfigProperty(name = "sip.registrar")
+    @ConfigProperty(name = "sip.registrar", defaultValue = "")
     String registrar;
 
     /** SIP subscriber ID / phone number used to build the SIP URI. Maps to {@code SIP_SIPID}. */
     @Inject
-    @ConfigProperty(name = "sip.sipid")
+    @ConfigProperty(name = "sip.sipid", defaultValue = "")
     String sipId;
 
     /** Authentication username (often an e-mail address). Maps to {@code SIP_USER_ID}. */
     @Inject
-    @ConfigProperty(name = "sip.user.id")
+    @ConfigProperty(name = "sip.user.id", defaultValue = "")
     String loginUserId;
 
     /** Authentication password. Maps to {@code SIP_USER_PASSWORD}. */
     @Inject
-    @ConfigProperty(name = "sip.user.password")
+    @ConfigProperty(name = "sip.user.password", defaultValue = "")
     String loginPassword;
 
     @Inject
@@ -137,6 +147,14 @@ public class SipRegistrationListener {
      * the factory is not available immediately after the delay.
      */
     public void scheduleRegistration(ServletContext sc) {
+        if (!this.registrationEnabled) {
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "SIP registration disabled (sip.registration.enabled=false) — "
+                            + "listening for direct calls only");
+            return;
+        }
+
         this.shuttingDown.set(false);
         this.servletContext = sc;
         this.startupRegistrationTask = this.managedScheduledExecutorService.schedule(
