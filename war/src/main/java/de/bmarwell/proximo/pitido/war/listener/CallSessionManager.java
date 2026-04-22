@@ -124,6 +124,12 @@ public class CallSessionManager {
         if (!media.localSocket().isClosed()) {
             media.localSocket().close();
         }
+
+        try {
+            media.codec().close();
+        } catch (Exception closeException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Error closing codec after call", closeException);
+        }
     }
 
     static void sendBye(SipSession session) {

@@ -33,7 +33,7 @@ import java.io.IOException;
  * {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all beans via CDI
  * {@code Instance<RtpCodec>} and filters by availability and preference.
  */
-public interface RtpCodec {
+public interface RtpCodec extends AutoCloseable {
 
     /**
      * Returns {@code true} if this codec can be used on the current host.
@@ -130,4 +130,17 @@ public interface RtpCodec {
      * Does not include the leading {@code "a=fmtp:<pt> "} prefix.
      */
     String fmtpParams();
+
+    /**
+     * Releases any native resources held by this per-call codec instance.
+     *
+     * <p>Stateless codecs (e.g. PCMA) return {@code this} from {@link #forCall()} and must not
+     * be closed; the default implementation is a no-op.
+     * Stateful per-call codecs (e.g. G.722) override this to release their native {@link Arena}.
+     * {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager} calls this when the call ends.
+     */
+    @Override
+    default void close() {
+        // no-op for stateless codecs (e.g. PCMA) whose forCall() returns the shared CDI singleton
+    }
 }
