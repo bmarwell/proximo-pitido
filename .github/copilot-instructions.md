@@ -25,6 +25,7 @@ Designed to work with any RFC 3261-compliant SIP provider (Deutsche Telekom, SIP
 - Start server: `./mvnw liberty:run -am -pl war`
 - Logs: `war/target/wlp-usr/servers/proximo-pitido/logs/messages.log` and `trace.log`
 - Before committing: `git config commit.gpgsign false` and `./mvnw spotless:apply`
+- Before pushing: run `./mvnw verify -am -pl codecs/sip` to check for forbidden API calls (e.g. `String.format()` without `Locale.ROOT`)
 
 ## Module layout
 
