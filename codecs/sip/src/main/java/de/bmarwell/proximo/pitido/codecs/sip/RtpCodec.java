@@ -39,7 +39,7 @@ public interface RtpCodec {
      * Returns {@code true} if this codec can be used on the current host.
      *
      * <p>Pure-Java codecs (e.g. PCMA) always return {@code true}.
-     * Native-library codecs (e.g. a future G.722 via libg72x) return {@code false} when the
+     * Native-library codecs (e.g. {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec} via libspandsp) return {@code false} when the
      * required library is not installed.
      */
     boolean isAvailable();
