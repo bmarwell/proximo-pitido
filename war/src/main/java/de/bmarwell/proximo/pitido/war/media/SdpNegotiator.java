@@ -198,6 +198,13 @@ public class SdpNegotiator {
                 .min(Comparator.comparingInt(RtpCodec::preference))
                 .orElse(PcmaRtpCodec.INSTANCE);
 
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "Codec selected: {0} (PT {1}) from offered payload types {2}",
+                descriptor.sdpName(),
+                descriptor.payloadType(),
+                offeredPayloadTypes);
+
         return descriptor.forCall();
     }
 

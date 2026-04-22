@@ -249,10 +249,16 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      * automatically, and the segment becomes invalid so that any attempt to encode after close
      * throws {@link IllegalStateException} rather than crashing the JVM.
      *
-     * @throws IllegalStateException if {@code E_IF_init} returns a null pointer
+     * @throws IllegalStateException if the codec is not available (library not loaded),
+     *                               or if {@code E_IF_init} returns a null pointer
      */
     @Override
     public RtpCodec forCall() {
+        if (!this.available) {
+            throw new IllegalStateException(
+                    "AMR-WB codec is not available — libvo-amrwbenc was not loaded; check probe() logs");
+        }
+
         MemorySegment rawStatePtr = invokeInit();
 
         if (rawStatePtr.address() == 0L) {
