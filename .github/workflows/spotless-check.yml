@@ -1,4 +1,4 @@
-name: Maven tests
+name: Code style check (Spotless)
 
 on:
   workflow_dispatch: {}
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  check:
     if: github.ref_name == 'main' || github.event_name != 'push' && github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     strategy:
@@ -29,7 +29,7 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
-      - name: Run unit and integration tests
+      - name: Check code style
         shell: bash
         run: >
           ./mvnw
@@ -37,7 +37,4 @@ jobs:
           --errors
           --batch-mode
           --no-transfer-progress
-          verify
-          -DtrimStackTrace=false
-          -Dspotless.skip=true
-          -Dforbiddenapis.skip=true
+          spotless:check
