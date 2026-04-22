@@ -80,6 +80,35 @@
         <scope>provided</scope>
       </dependency>
 
+      <!-- JAX-RS 2.1 client API — provided at runtime by Liberty's jaxrsClient feature -->
+      <dependency>
+        <groupId>javax.ws.rs</groupId>
+        <artifactId>javax.ws.rs-api</artifactId>
+        <version>2.1.1</version>
+        <scope>provided</scope>
+      </dependency>
+
+      <!--
+        JAXB API — provided at runtime by Liberty's jaxb-2.2 feature (included in javaee-8.0).
+        Required at compile time because javax.ws.rs-api:2.1.1 declares
+        "requires transitive java.xml.bind" in its module-info, so javac must be able
+        to resolve the java.xml.bind module on the module path.
+      -->
+      <dependency>
+        <groupId>javax.xml.bind</groupId>
+        <artifactId>jaxb-api</artifactId>
+        <version>2.3.1</version>
+        <scope>provided</scope>
+      </dependency>
+
+      <!-- Apache CXF JAX-RS client — test-time ClientBuilder SPI implementation -->
+      <dependency>
+        <groupId>org.apache.cxf</groupId>
+        <artifactId>cxf-rt-rs-client</artifactId>
+        <version>3.6.5</version>
+        <scope>test</scope>
+      </dependency>
+
       <!-- build dependencies -->
       <dependency>
         <groupId>com.palantir.javaformat</groupId>

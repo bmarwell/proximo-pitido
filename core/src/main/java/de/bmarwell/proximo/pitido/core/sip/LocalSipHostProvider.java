@@ -24,9 +24,19 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 /**
  * Provides the local SIP host address to use in the SIP {@code Contact} header.
  *
- * <p>Prefers the {@code sip.public.host} / {@code SIP_PUBLIC_HOST} config property (the
- * public-facing address behind NAT). Falls back to auto-detecting the first non-loopback,
- * non-link-local IPv4 address on any active network interface.
+ * <p>Address resolution priority:
+ *
+ * <ol>
+ *   <li>{@code SIP_PUBLIC_HOST} / {@code sip.public.host} — explicit operator override; used
+ *       as-is without any network call.</li>
+ *   <li>Public IP auto-detected via {@link PublicIpDiscoveryService} — used when
+ *       {@code SIP_REGISTRATION_ENABLED=true} and {@code SIP_PUBLIC_HOST} is absent.
+ *       Behind NAT (home router, Docker host), a local IP in the Contact header is unreachable
+ *       from the registrar, so a public IP is necessary.</li>
+ *   <li>First non-loopback, non-link-local IPv4 address on any active network interface —
+ *       used when registration is disabled (softphone / dev mode) or when all public-IP
+ *       discovery services are unreachable.</li>
+ * </ol>
  */
 @ApplicationScoped
 public class LocalSipHostProvider {
@@ -39,19 +49,47 @@ public class LocalSipHostProvider {
     @ConfigProperty(name = "sip.public.host")
     Optional<String> configuredHost;
 
+    @Inject
+    @ConfigProperty(name = "sip.registration.enabled", defaultValue = "true")
+    boolean registrationEnabled;
+
+    @Inject
+    PublicIpDiscoveryService publicIpDiscoveryService;
+
     /** CDI no-args constructor. */
     public LocalSipHostProvider() {}
 
     /** Returns the address to advertise in the SIP {@code Contact} header. */
     public String get() {
-        return configuredHost.orElseGet(this::detectLocalAddress);
+        if (this.configuredHost.isPresent()) {
+            return this.configuredHost.get();
+        }
+
+        if (!this.registrationEnabled) {
+            return detectLocalAddress();
+        }
+
+        Optional<String> publicIp = this.publicIpDiscoveryService.discover();
+
+        if (publicIp.isPresent()) {
+            return publicIp.get();
+        }
+
+        LOGGER.log(
+                System.Logger.Level.WARNING,
+                "All public IP discovery services unreachable; falling back to local IP for Contact header."
+                        + " Incoming calls may fail if this host is behind NAT.");
+        return detectLocalAddress();
     }
 
     private String detectLocalAddress() {
         try {
             return findLocalIpv4Address().orElse(FALLBACK_ADDRESS);
-        } catch (SocketException ex) {
-            LOGGER.log(System.Logger.Level.WARNING, "Could not auto-detect local SIP host, using loopback", ex);
+        } catch (SocketException socketException) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "Could not auto-detect local SIP host, using loopback",
+                    socketException);
             return FALLBACK_ADDRESS;
         }
     }
@@ -70,7 +108,7 @@ public class LocalSipHostProvider {
     private boolean isUsableInterface(NetworkInterface ni) {
         try {
             return ni.isUp() && !ni.isLoopback() && !ni.isVirtual();
-        } catch (SocketException ex) {
+        } catch (SocketException socketException) {
             return false;
         }
     }
