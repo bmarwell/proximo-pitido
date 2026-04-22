@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.war.listener;
 
+import java.util.Locale;
 import javax.servlet.sip.SipServletRequest;
 
 /**
@@ -29,6 +30,7 @@ final class SipCallHeaders {
 
     static String buildCallerIdentitySummary(SipServletRequest req) {
         return String.format(
+                Locale.ROOT,
                 "from=[%s], to=[%s], requestUri=[%s], callId=[%s], pAssertedIdentity=[%s], remotePartyId=[%s], "
                         + "pPreferredIdentity=[%s], privacy=[%s], diversion=[%s], historyInfo=[%s], contact=[%s], "
                         + "via=[%s], userAgent=[%s]",
