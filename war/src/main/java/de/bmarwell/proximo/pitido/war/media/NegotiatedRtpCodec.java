@@ -27,16 +27,11 @@ import java.io.IOException;
  * and the SDP answer use the same PT value the caller expects.
  *
  * <p>All methods other than {@link #payloadType()} delegate to the wrapped per-call codec instance.
+ *
+ * @param delegate               the per-call codec instance obtained from {@link RtpCodec#forCall()}
+ * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
  */
-class NegotiatedRtpCodec implements RtpCodec {
-
-    private final RtpCodec delegate;
-    private final int negotiatedPayloadType;
-
-    NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) {
-        this.delegate = delegate;
-        this.negotiatedPayloadType = negotiatedPayloadType;
-    }
+record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) implements RtpCodec {
 
     /**
      * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.

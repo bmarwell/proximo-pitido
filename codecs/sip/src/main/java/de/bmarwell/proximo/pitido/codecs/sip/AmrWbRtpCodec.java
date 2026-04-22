@@ -20,6 +20,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.util.Arrays;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -313,16 +314,24 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * AMR-WB requires octet-aligned packetisation (RFC 4867 §4.4).
+     * This implementation requires octet-aligned packetisation (RFC 4867 §4.4).
      *
      * <p>Callers may advertise AMR-WB under multiple dynamic payload types: one for
      * bandwidth-efficient mode (no {@code octet-align=1} in fmtp) and one for octet-aligned mode.
      * This implementation only encodes octet-aligned frames, so only the payload type whose fmtp
      * declares {@code octet-align=1} is accepted.
+     *
+     * <p>Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2,
+     * so values such as {@code octet-align=10} are not falsely matched.
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        return offeredFmtp.contains("octet-align=1");
+        return Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+    }
+
+    private static boolean isOctetAlignParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
     }
 
     /**

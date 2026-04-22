@@ -68,8 +68,8 @@ class SdpNegotiatorTest {
             a=rtpmap:110 AMR-WB/16000\r
             a=fmtp:110 octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0\r
             a=rtpmap:9 G722/8000\r
-            a=rtpmap:102 G722/8000\r
-            a=rtpmap:108 AMR/8000\r
+            a=rtpmap:102 AMR/8000\r
+            a=rtpmap:108 G722/8000\r
             a=rtpmap:8 PCMA/8000\r
             a=rtpmap:0 PCMU/8000\r
             a=rtpmap:100 telephone-event/16000\r

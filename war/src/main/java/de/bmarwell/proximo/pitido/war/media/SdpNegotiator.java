@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -202,24 +203,28 @@ public class SdpNegotiator {
         Map<Integer, String> result = new LinkedHashMap<>();
 
         sdp.lines().filter(line -> line.startsWith("a=rtpmap:")).forEach(line -> {
-            // a=rtpmap:<pt> <name>/<rate>[/<channels>]
-            String rest = line.substring("a=rtpmap:".length()).strip();
-            int spacePos = rest.indexOf(' ');
+            try {
+                // a=rtpmap:<pt> <name>/<rate>[/<channels>]
+                String rest = line.substring("a=rtpmap:".length()).strip();
+                int spacePos = rest.indexOf(' ');
 
-            if (spacePos < 0) {
-                return;
+                if (spacePos < 0) {
+                    return;
+                }
+
+                int pt = Integer.parseInt(rest.substring(0, spacePos));
+                String encoding = rest.substring(spacePos + 1).strip();
+                String[] encodingParts = encoding.split("/");
+
+                if (encodingParts.length < 2) {
+                    return;
+                }
+
+                String codecKey = (encodingParts[0] + "/" + encodingParts[1]).toUpperCase(Locale.ROOT);
+                result.put(pt, codecKey);
+            } catch (NumberFormatException | IndexOutOfBoundsException ignored) {
+                // Skip malformed a=rtpmap lines; remaining codecs can still be matched.
             }
-
-            int pt = Integer.parseInt(rest.substring(0, spacePos));
-            String encoding = rest.substring(spacePos + 1).strip();
-            String[] encodingParts = encoding.split("/");
-
-            if (encodingParts.length < 2) {
-                return;
-            }
-
-            String codecKey = (encodingParts[0] + "/" + encodingParts[1]).toUpperCase();
-            result.put(pt, codecKey);
         });
 
         return result;
@@ -244,7 +249,15 @@ public class SdpNegotiator {
                 return;
             }
 
-            int pt = Integer.parseInt(rest.substring(0, spacePos));
+            final int pt;
+
+            try {
+                pt = Integer.parseInt(rest.substring(0, spacePos));
+            } catch (NumberFormatException ignored) {
+                // Skip malformed a=fmtp lines; this payload type simply has no fmtp params.
+                return;
+            }
+
             String params = rest.substring(spacePos + 1).strip();
             result.put(pt, params);
         });
@@ -334,12 +347,12 @@ public class SdpNegotiator {
      */
     private static Optional<Integer> negotiatedPt(
             RtpCodec codec, Set<Integer> offeredPts, Map<Integer, String> rtpmap, Map<Integer, String> fmtp) {
-        String codecKey = (codec.sdpName() + "/" + codec.rtpClockRate()).toUpperCase();
+        String codecKey = (codec.sdpName() + "/" + codec.rtpClockRate()).toUpperCase(Locale.ROOT);
 
         // Find the first offered PT whose rtpmap matches this codec and whose fmtp is compatible.
         Optional<Integer> fromRtpmap = rtpmap.entrySet().stream()
                 .filter(entry -> offeredPts.contains(entry.getKey()))
-                .filter(entry -> entry.getValue().equalsIgnoreCase(codecKey))
+                .filter(entry -> entry.getValue().equals(codecKey))
                 .filter(entry -> codec.matchesFmtp(fmtp.getOrDefault(entry.getKey(), "")))
                 .map(Map.Entry::getKey)
                 .findFirst();
@@ -348,9 +361,21 @@ public class SdpNegotiator {
             return fromRtpmap;
         }
 
-        // Fallback: static payload type (0–95), offered without an explicit rtpmap line.
-        if (offeredPts.contains(codec.payloadType()) && codec.matchesFmtp("")) {
-            return Optional.of(codec.payloadType());
+        int payloadType = codec.payloadType();
+
+        // Fallback: static payload type (0–95) offered without an explicit rtpmap line.
+        // Dynamic PTs (96–127) must always be declared via a=rtpmap; skip them here.
+        // Also skip if the rtpmap already maps this PT to a different codec.
+        if (payloadType > 95) {
+            return Optional.empty();
+        }
+
+        if (rtpmap.containsKey(payloadType)) {
+            return Optional.empty();
+        }
+
+        if (offeredPts.contains(payloadType) && codec.matchesFmtp("")) {
+            return Optional.of(payloadType);
         }
 
         return Optional.empty();
