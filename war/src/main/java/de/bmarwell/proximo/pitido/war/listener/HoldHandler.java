@@ -106,7 +106,7 @@ public class HoldHandler {
 
     /**
      * Returns {@code true} when the SDP offer indicates the caller is placing the call on hold.
-     * Checks for {@code a=sendonly} or {@code a=inactive} in the media section.
+     * Checks for {@code a=sendonly} or {@code a=inactive} anywhere in the SDP body.
      */
     static boolean isHoldOffer(String sdp) {
         return sdp.lines().anyMatch(line -> {

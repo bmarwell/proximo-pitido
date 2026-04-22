@@ -109,6 +109,12 @@ public class RtpAudioPlayer implements AudioPlayer {
                 throw new InterruptedException("RTP silence interrupted");
             }
 
+            if (this.callMedia.isHeld()) {
+                this.timestamp += this.codec.rtpTimestampIncrement();
+                Thread.sleep(20);
+                continue;
+            }
+
             try {
                 sendRtpPacket(this.codec.encode(silenceFrame));
             } catch (IOException ioException) {
