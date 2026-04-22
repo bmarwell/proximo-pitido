@@ -27,7 +27,6 @@ services:
       - "5060:5060/tcp"         # SIP signalling (TCP)
       - "5060:5060/udp"         # SIP signalling (UDP)
       - "5061:5061/tcp"         # SIP over TLS
-      - "5061:5061/udp"
       - "16384-16484:16384-16484/udp"  # RTP media (100-port window)
 
     # ── InstantOn (option C) only ─────────────────────────────────────────────
