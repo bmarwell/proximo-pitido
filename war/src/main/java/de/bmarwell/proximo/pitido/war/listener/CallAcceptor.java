@@ -180,16 +180,26 @@ public class CallAcceptor {
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
-        AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
+            // forCall() must run on the announcement thread so that the confined Arena is owned
+            // by the thread that will also call encode() and close() — preventing WrongThreadException.
+            var callCodec = media.codec().forCall();
+
             try {
                 Thread.sleep(1_000);
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
+                callCodec.close();
                 return;
             }
 
-            this.announcementLoop.play(session, player, factory, sessionId, media);
+            AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
+
+            try {
+                this.announcementLoop.play(session, player, factory, sessionId, media);
+            } finally {
+                callCodec.close();
+            }
         });
 
         this.callSessionManager.register(
@@ -211,7 +221,6 @@ public class CallAcceptor {
         CallMedia media =
                 negotiateAndRespond(req, sessionId, "language-selection menu (" + menu.size() + " languages)");
 
-        AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
         String callerIdentitySummary = SipCallHeaders.buildCallerIdentitySummary(req);
         LOGGER.log(
@@ -220,8 +229,18 @@ public class CallAcceptor {
                 SipCallHeaders.callPrefix(sessionId),
                 callerIdentitySummary);
 
-        Future<?> callFuture =
-                this.managedExecutorService.submit(() -> this.menuRunner.run(session, player, menu, sessionId, media));
+        Future<?> callFuture = this.managedExecutorService.submit(() -> {
+            // forCall() must run on the menu thread so that the confined Arena is owned
+            // by the thread that will also call encode() and close() — preventing WrongThreadException.
+            var callCodec = media.codec().forCall();
+            AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
+
+            try {
+                this.menuRunner.run(session, player, menu, sessionId, media);
+            } finally {
+                callCodec.close();
+            }
+        });
         Future<?> receiverFuture = this.dtmfDispatcher.startReceiver(media, sessionId);
 
         this.callSessionManager.register(

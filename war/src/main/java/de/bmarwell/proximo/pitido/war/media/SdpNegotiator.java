@@ -284,8 +284,9 @@ public class SdpNegotiator {
      * <p>Falls back to {@link PcmaRtpCodec#INSTANCE} if no injected codec matches.
      *
      * @param sdpOffer the full SDP offer string from the INVITE body
-     * @return a per-call codec instance whose {@link RtpCodec#payloadType()} returns the PT
-     *         that was actually negotiated with the caller
+     * @return a codec descriptor (CDI bean) whose {@link RtpCodec#payloadType()} returns the PT
+     *         actually negotiated with the caller; callers must call {@link RtpCodec#forCall()}
+     *         on the announcement thread before encoding
      */
     private RtpCodec selectCodec(String sdpOffer) {
         return selectCodec(this.availableCodecs.stream(), sdpOffer);
@@ -298,7 +299,8 @@ public class SdpNegotiator {
      *
      * @param codecs   available codec descriptors, each an {@code @ApplicationScoped} CDI bean
      * @param sdpOffer the full SDP offer string from the INVITE body
-     * @return a {@link NegotiatedRtpCodec} wrapping the selected per-call codec instance
+     * @return a {@link NegotiatedRtpCodec} wrapping the selected codec descriptor with the
+     *         negotiated payload type; call {@link RtpCodec#forCall()} on the announcement thread
      */
     static RtpCodec selectCodec(Stream<RtpCodec> codecs, String sdpOffer) {
         Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer);
@@ -307,9 +309,9 @@ public class SdpNegotiator {
 
         Optional<NegotiatedRtpCodec> selected = codecs.filter(RtpCodec::isAvailable)
                 .sorted(Comparator.comparingInt(RtpCodec::preference))
-                .flatMap(
-                        codec -> negotiatedPt(codec, offeredPts, rtpmap, fmtp)
-                                .map(pt -> new NegotiatedRtpCodec(codec.forCall(), pt))
+                .flatMap(codec ->
+                        negotiatedPt(codec, offeredPts, rtpmap, fmtp)
+                                .map(pt -> new NegotiatedRtpCodec(codec, pt))
                                 .stream())
                 .findFirst();
 
@@ -318,7 +320,7 @@ public class SdpNegotiator {
         }
 
         NegotiatedRtpCodec result = selected.orElseGet(
-                () -> new NegotiatedRtpCodec(PcmaRtpCodec.INSTANCE.forCall(), PcmaRtpCodec.INSTANCE.payloadType()));
+                () -> new NegotiatedRtpCodec(PcmaRtpCodec.INSTANCE, PcmaRtpCodec.INSTANCE.payloadType()));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
