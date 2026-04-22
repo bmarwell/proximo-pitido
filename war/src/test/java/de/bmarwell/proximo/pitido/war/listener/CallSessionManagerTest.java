@@ -25,7 +25,7 @@ class CallSessionManagerTest {
         var manager = new CallSessionManager();
 
         // when
-        boolean claimed = manager.tryClaimSipCallId("call-id-1", "wlp_2_2");
+        boolean claimed = manager.tryClaimSipCallId("call-id-1");
 
         // then
         assertTrue(claimed);
@@ -35,10 +35,10 @@ class CallSessionManagerTest {
     void tryClaimSipCallId_duplicateForkIsRejected() {
         // given
         var manager = new CallSessionManager();
-        manager.tryClaimSipCallId("call-id-1", "wlp_2_2");
+        manager.tryClaimSipCallId("call-id-1");
 
         // when — second fork with the same SIP Call-ID
-        boolean claimed = manager.tryClaimSipCallId("call-id-1", "wlp_3_3");
+        boolean claimed = manager.tryClaimSipCallId("call-id-1");
 
         // then
         assertFalse(claimed);
@@ -48,10 +48,10 @@ class CallSessionManagerTest {
     void tryClaimSipCallId_differentCallIdsAreIndependent() {
         // given
         var manager = new CallSessionManager();
-        manager.tryClaimSipCallId("call-id-1", "wlp_2_2");
+        manager.tryClaimSipCallId("call-id-1");
 
         // when — a different call (different SIP Call-ID)
-        boolean claimed = manager.tryClaimSipCallId("call-id-2", "wlp_4_4");
+        boolean claimed = manager.tryClaimSipCallId("call-id-2");
 
         // then
         assertTrue(claimed);
@@ -61,11 +61,11 @@ class CallSessionManagerTest {
     void releaseSipCallId_allowsReclaimAfterRelease() {
         // given
         var manager = new CallSessionManager();
-        manager.tryClaimSipCallId("call-id-1", "wlp_2_2");
+        manager.tryClaimSipCallId("call-id-1");
         manager.releaseSipCallId("call-id-1");
 
         // when — next call with the same SIP Call-ID (e.g. caller rings again)
-        boolean claimed = manager.tryClaimSipCallId("call-id-1", "wlp_6_6");
+        boolean claimed = manager.tryClaimSipCallId("call-id-1");
 
         // then
         assertTrue(claimed);

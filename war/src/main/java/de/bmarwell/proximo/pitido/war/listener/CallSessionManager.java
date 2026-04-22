@@ -17,6 +17,7 @@ import de.bmarwell.proximo.pitido.war.media.CallMedia;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.PreDestroy;
 import javax.enterprise.context.ApplicationScoped;
@@ -45,9 +46,8 @@ public class CallSessionManager {
 
     /**
      * SIP Call-IDs currently being handled, claimed atomically before {@code 180 Ringing} is sent.
-     * Maps SIP Call-ID → Liberty session ID.
      */
-    private final ConcurrentHashMap<String, String> claimedSipCallIds = new ConcurrentHashMap<>();
+    private final Set<String> claimedSipCallIds = ConcurrentHashMap.newKeySet();
 
     /**
      * Language selections written by the DTMF dispatcher; read (and cleared) by the menu runner
@@ -56,13 +56,13 @@ public class CallSessionManager {
     private final ConcurrentHashMap<String, LanguageFactory> pendingSelections = new ConcurrentHashMap<>();
 
     /**
-     * Atomically claims a SIP Call-ID for the given Liberty session.
+     * Atomically claims a SIP Call-ID.
      * Returns {@code true} if the claim succeeded (no other session was already handling this
      * Call-ID), or {@code false} if the Call-ID was already claimed — indicating a duplicate
      * INVITE fork that should be rejected.
      */
-    boolean tryClaimSipCallId(String sipCallId, String sessionId) {
-        return this.claimedSipCallIds.putIfAbsent(sipCallId, sessionId) == null;
+    boolean tryClaimSipCallId(String sipCallId) {
+        return this.claimedSipCallIds.add(sipCallId);
     }
 
     /** Releases a previously claimed SIP Call-ID. */
@@ -120,14 +120,12 @@ public class CallSessionManager {
                 "{0}BYE received from [{1}]",
                 SipCallHeaders.callPrefix(sessionId),
                 req.getFrom());
-        CallState callState = this.activeCalls.remove(sessionId);
+        CallState callState = this.remove(sessionId);
 
         if (callState == null) {
             req.createResponse(SipServletResponse.SC_OK).send();
             return;
         }
-
-        releaseSipCallId(callState.sipCallId());
 
         callState.callFuture().cancel(true);
         callState.receiverFuture().cancel(true);
