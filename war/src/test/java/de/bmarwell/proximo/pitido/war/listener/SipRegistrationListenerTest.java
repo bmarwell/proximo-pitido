@@ -79,6 +79,16 @@ class SipRegistrationListenerTest {
     }
 
     @Test
+    void canRetryAfterStale_returnsTrueFirstTime_thenFalse() {
+        // given
+        var listener = new SipRegistrationListener();
+
+        // when / then: exactly one stale retry is permitted
+        assertTrue(listener.canRetryAfterStale());
+        assertFalse(listener.canRetryAfterStale());
+    }
+
+    @Test
     void resetForReRegistration_allowsStaleRetryAgain() {
         // given: a previous registration cycle consumed the stale-retry allowance
         var listener = new SipRegistrationListener();
