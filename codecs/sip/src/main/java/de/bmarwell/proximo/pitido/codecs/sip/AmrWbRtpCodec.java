@@ -313,6 +313,19 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
+     * AMR-WB requires octet-aligned packetisation (RFC 4867 §4.4).
+     *
+     * <p>Callers may advertise AMR-WB under multiple dynamic payload types: one for
+     * bandwidth-efficient mode (no {@code octet-align=1} in fmtp) and one for octet-aligned mode.
+     * This implementation only encodes octet-aligned frames, so only the payload type whose fmtp
+     * declares {@code octet-align=1} is accepted.
+     */
+    @Override
+    public boolean matchesFmtp(String offeredFmtp) {
+        return offeredFmtp.contains("octet-align=1");
+    }
+
+    /**
      * Encodes one frame of 320 mono PCM samples at 16 kHz to AMR-WB octet-aligned RTP payload.
      *
      * <p>The returned array contains the complete RFC 4867 §4.4 octet-aligned payload:
