@@ -21,6 +21,7 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.util.Arrays;
+import java.util.Locale;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -97,10 +98,15 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     private static final System.Logger LOGGER = System.getLogger(AmrWbRtpCodec.class.getName());
 
     /**
-     * AMR-WB encoding mode 8: 23.85 kbps — the highest quality mode.
+     * Default AMR-WB encoding mode: 2 (12.65 kbps).
+     * Used when the caller's SDP offer does not include a {@code mode-set} constraint.
+     * Mode 2 is the safest default — it is within the most restrictive mode-set seen in
+     * practice (e.g. Deutsche Telekom's {@code mode-set=0,1,2}).
+     * When a {@code mode-set} is offered, {@link #forCall(String)} extracts the maximum
+     * allowed mode from that set instead.
      * Passed as the {@code mode} argument to {@code E_IF_encode}.
      */
-    private static final int MODE_23850 = 8;
+    private static final int DEFAULT_ENCODING_MODE = 2;
 
     /** Dynamic payload type for AMR-WB; conventional value used by all major VoLTE stacks. */
     private static final int PAYLOAD_TYPE = 98;
@@ -123,9 +129,9 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     private static final long STATE_SIZE = 0L;
 
     /**
-     * Maximum output bytes from {@code E_IF_encode} at mode 8 (23.85 kbps).
-     * The highest-rate AMR-WB frame is 60 bytes of speech data.
-     * 64 bytes is a rounded-up safe upper bound.
+     * Maximum output bytes from {@code E_IF_encode} at any mode.
+     * The highest-rate AMR-WB frame (mode 8, 23.85 kbps) is 60 bytes of speech data.
+     * 64 bytes is a rounded-up safe upper bound for all modes.
      */
     private static final int MAX_ENCODED_BYTES = 64;
 
@@ -166,26 +172,36 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      */
     private final MemorySegment stateSegment;
 
+    /**
+     * AMR-WB encoding mode for this per-call instance (0–8).
+     * Derived from the caller's offered {@code mode-set} by {@link #forCall(String)};
+     * defaults to {@link #DEFAULT_ENCODING_MODE} when no mode-set constraint is present.
+     */
+    private final int encodingMode;
+
     /** CDI no-args constructor. */
     public AmrWbRtpCodec() {
         this.stateSegment = null;
+        this.encodingMode = DEFAULT_ENCODING_MODE;
     }
 
     /**
      * Per-call constructor — creates a non-CDI encoder instance for exactly one call leg.
      *
-     * <p>Not intended for direct use; called only by {@link #forCall()}.
+     * <p>Not intended for direct use; called only by {@link #forCall(String)}.
      * The {@code stateSegment} must already be reinterpreted to the given arena so that
      * {@code E_IF_exit} is called automatically when the arena closes.
      *
      * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
      * @param callArena       confined arena that owns the encoder state lifetime
      * @param stateSegment    arena-scoped encoder state (from {@code E_IF_init} + reinterpret)
+     * @param encodingMode    AMR-WB encoding mode (0–8) derived from the caller's mode-set
      */
-    AmrWbRtpCodec(MethodHandle eIfEncodeHandle, Arena callArena, MemorySegment stateSegment) {
+    AmrWbRtpCodec(MethodHandle eIfEncodeHandle, Arena callArena, MemorySegment stateSegment, int encodingMode) {
         super(callArena);
         this.eIfEncodeHandle = eIfEncodeHandle;
         this.stateSegment = stateSegment;
+        this.encodingMode = encodingMode;
     }
 
     /**
@@ -242,19 +258,22 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * Returns a new per-call encoder instance with a freshly initialised AMR-WB encoder state.
+     * Returns a new per-call encoder instance initialised at the best mode allowed by the
+     * caller's offered {@code mode-set}.
      *
-     * <p>Calls {@code E_IF_init()} to allocate native encoder state, then reinterprets the
-     * returned pointer to be scoped to a new confined arena.
-     * When the arena closes (via {@link #close()}), {@code E_IF_exit(state)} is called
-     * automatically, and the segment becomes invalid so that any attempt to encode after close
-     * throws {@link IllegalStateException} rather than crashing the JVM.
+     * <p>Parses the {@code mode-set} parameter from {@code offeredFmtp} (e.g.
+     * {@code "octet-align=1;mode-set=0,1,2"}) and selects the highest mode index present.
+     * Falls back to {@link #DEFAULT_ENCODING_MODE} when no {@code mode-set} is offered.
      *
-     * @throws IllegalStateException if the codec is not available (library not loaded),
-     *                               or if {@code E_IF_init} returns a null pointer
+     * <p>RFC 4867 §8.3.2 requires that both parties only use modes from the negotiated set;
+     * using a mode outside the set produces frames the remote decoder will refuse.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
+     * @return a fully initialised per-call {@link AmrWbRtpCodec} with the negotiated mode
+     * @throws IllegalStateException if the codec is not available or {@code E_IF_init} fails
      */
     @Override
-    public RtpCodec forCall() {
+    public RtpCodec forCall(String offeredFmtp) {
         if (!this.available) {
             throw new IllegalStateException(
                     "AMR-WB codec is not available — libvo-amrwbenc was not loaded; check probe() logs");
@@ -266,13 +285,81 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
             throw new IllegalStateException("E_IF_init returned null pointer — cannot create AMR-WB encoder");
         }
 
+        int mode = extractBestMode(offeredFmtp);
+
         Arena arena = Arena.ofConfined();
-        // Bind the library-owned state to the arena's lifetime so that:
-        //  1. E_IF_exit() is called automatically when the arena closes.
-        //  2. Passing the segment to FFM after close() throws IllegalStateException.
         MemorySegment stateBoundToArena = rawStatePtr.reinterpret(STATE_SIZE, arena, this::invokeExit);
 
-        return new AmrWbRtpCodec(this.eIfEncodeHandle, arena, stateBoundToArena);
+        return new AmrWbRtpCodec(this.eIfEncodeHandle, arena, stateBoundToArena, mode);
+    }
+
+    /**
+     * Returns a new per-call encoder instance using the {@link #DEFAULT_ENCODING_MODE}.
+     *
+     * <p>Prefer {@link #forCall(String)} when the caller's offered fmtp is available, so that
+     * the encoder uses the best mode allowed by the caller's {@code mode-set}.
+     */
+    @Override
+    public RtpCodec forCall() {
+        return forCall("");
+    }
+
+    /**
+     * Echoes the caller's offered fmtp in the SDP answer, as required by RFC 4867 §8.3.2.
+     *
+     * <p>When the caller's offer included an {@code a=fmtp} line (e.g.
+     * {@code "octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0"}),
+     * the entire parameter string must be echoed unchanged in the answer so that the remote
+     * IMS media proxy accepts the session.
+     * Falls back to {@link #fmtpParams()} (just {@code "octet-align=1"}) when no fmtp was
+     * offered.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
+     * @return the fmtp string for the SDP answer
+     */
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        if (offeredFmtp.isEmpty()) {
+            return fmtpParams();
+        } else {
+            return offeredFmtp;
+        }
+    }
+
+    /**
+     * Extracts the highest AMR-WB mode index from the {@code mode-set} parameter in the offered
+     * fmtp string.
+     *
+     * <p>For example, {@code "octet-align=1;mode-set=0,1,2"} yields {@code 2}.
+     * Returns {@link #DEFAULT_ENCODING_MODE} when no {@code mode-set} is present or parseable.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
+     * @return the highest allowed AMR-WB mode index (0–8)
+     */
+    private static int extractBestMode(String offeredFmtp) {
+        if (offeredFmtp.isBlank()) {
+            return DEFAULT_ENCODING_MODE;
+        }
+
+        return Arrays.stream(offeredFmtp.split(";"))
+                .map(String::strip)
+                .filter(part -> part.toLowerCase(Locale.ROOT).startsWith("mode-set="))
+                .findFirst()
+                .map(part -> part.substring("mode-set=".length()))
+                .stream()
+                .flatMap(modes -> Arrays.stream(modes.split(",")))
+                .map(String::strip)
+                .filter(s -> !s.isEmpty())
+                .mapToInt(s -> {
+                    try {
+                        return Integer.parseInt(s);
+                    } catch (NumberFormatException numberFormatException) {
+                        return -1;
+                    }
+                })
+                .filter(mode -> mode >= 0)
+                .max()
+                .orElse(DEFAULT_ENCODING_MODE);
     }
 
     @Override
@@ -364,7 +451,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
                 throw new IOException("E_IF_encode failed with error code " + speechBytes);
             }
 
-            return buildOctetAlignedPayload(outputSeg, speechBytes);
+            return buildOctetAlignedPayload(outputSeg, speechBytes, this.encodingMode);
         }
     }
 
@@ -375,13 +462,13 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      * <ul>
      *   <li>CMR = {@code 0xF0} (no codec mode request from sender).</li>
      *   <li>ToC = {@code F=0, FT=mode, Q=1, P=0, P=0} where FT is the AMR-WB frame type index
-     *       (0–8); for mode 8 this yields {@code 0x44}.</li>
+     *       (0–8); for mode 2 this yields {@code 0x14}.</li>
      * </ul>
      */
-    private static byte[] buildOctetAlignedPayload(MemorySegment speechSeg, int speechBytes) {
+    private static byte[] buildOctetAlignedPayload(MemorySegment speechSeg, int speechBytes, int encodingMode) {
         // ToC byte: F(0) | FT(4 bits) | Q(1) | P(1) | P(1)
         // F=0 (no further frames), Q=1 (good quality frame), P=0 (padding).
-        byte toc = (byte) ((MODE_23850 << 3) | 0x04);
+        byte toc = (byte) ((encodingMode << 3) | 0x04);
         byte[] payload = new byte[2 + speechBytes];
         payload[0] = CMR_NO_REQUEST;
         payload[1] = toc;
@@ -403,7 +490,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
 
     private int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
         try {
-            return (int) this.eIfEncodeHandle.invoke(this.stateSegment, MODE_23850, inputSeg, outputSeg, 0);
+            return (int) this.eIfEncodeHandle.invoke(this.stateSegment, this.encodingMode, inputSeg, outputSeg, 0);
         } catch (RuntimeException runtimeException) {
             throw runtimeException;
         } catch (Throwable throwable) {

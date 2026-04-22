@@ -309,10 +309,9 @@ public class SdpNegotiator {
 
         Optional<NegotiatedRtpCodec> selected = codecs.filter(RtpCodec::isAvailable)
                 .sorted(Comparator.comparingInt(RtpCodec::preference))
-                .flatMap(codec ->
-                        negotiatedPt(codec, offeredPts, rtpmap, fmtp)
-                                .map(pt -> new NegotiatedRtpCodec(codec, pt))
-                                .stream())
+                .flatMap(codec -> negotiatedPt(codec, offeredPts, rtpmap, fmtp)
+                        .map(pt -> new NegotiatedRtpCodec(codec, pt, fmtp.getOrDefault(pt, "")))
+                        .stream())
                 .findFirst();
 
         if (selected.isEmpty()) {
@@ -320,7 +319,7 @@ public class SdpNegotiator {
         }
 
         NegotiatedRtpCodec result = selected.orElseGet(
-                () -> new NegotiatedRtpCodec(PcmaRtpCodec.INSTANCE, PcmaRtpCodec.INSTANCE.payloadType()));
+                () -> new NegotiatedRtpCodec(PcmaRtpCodec.INSTANCE, PcmaRtpCodec.INSTANCE.payloadType(), ""));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,

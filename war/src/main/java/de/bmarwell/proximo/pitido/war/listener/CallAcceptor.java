@@ -166,8 +166,11 @@ public class CallAcceptor {
         boolean sessionRegistered = false;
 
         try {
-            Thread.sleep(1_000);
-
+            // No sleep here: the SIP stack handles protocol timing.
+            // A pre-answer delay risks timeouts in strict IMS environments
+            // (e.g. Telekom VoLTE SRVCC pre-alerting) and adds latency for every caller.
+            // The intentional UX pause before audio playback begins lives inside the callFuture
+            // lambda in acceptAndAnnounce(), after the 200 OK has already been sent.
             if (menu.size() == 1) {
                 acceptAndAnnounce(req, menu.firstEntry().getValue(), sipCallId);
             } else {
@@ -175,8 +178,6 @@ public class CallAcceptor {
             }
 
             sessionRegistered = true;
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
         } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.ERROR,
