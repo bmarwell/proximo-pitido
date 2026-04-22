@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.Arrays;
 import javax.enterprise.context.ApplicationScoped;
 
 /**
@@ -61,8 +62,11 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
     /**
      * Payload type for bandwidth-efficient AMR-WB (dynamic; typically 104 from 1&1 Mobilfunk).
-     * Since dynamic payload types vary per call, this is just a placeholder.
-     * The actual PT is negotiated via SDP and provided to the CDI bean after construction.
+     * This is a placeholder used only during factory bean construction.
+     * The {@link #payloadType()} method always returns this constant because the SDP negotiation
+     * framework handles dynamic payload type mapping externally.
+     * The actual PT used in SDP answers and RTP demux is determined by {@link SdpNegotiator},
+     * which wraps this codec in a {@link NegotiatedRtpCodec} with the correct PT.
      */
     private static final int PAYLOAD_TYPE_PLACEHOLDER = 104;
 
@@ -102,8 +106,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      *
      * <p>Since bandwidth-efficient mode is the default when no fmtp parameters are present,
      * this codec accepts empty fmtp strings (no parameters at all).
-     * It explicitly rejects any fmtp string containing {@code octet-align=1}, since that
-     * variant should be handled by the octet-aligned codec.
+     * It accepts any fmtp string that does not explicitly specify {@code octet-align=1};
+     * other parameters (e.g. {@code mode-set}, {@code octet-align=0}) are ignored.
+     * This allows some flexibility in fmtp declarations while still rejecting octet-aligned offers.
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
@@ -112,8 +117,17 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             return true;
         }
 
-        // Reject if octet-align=1 is explicitly present; that's handled by the octet-aligned codec.
-        return !offeredFmtp.contains("octet-align");
+        // Reject only if octet-align=1 is explicitly present (parsed as key=value pairs).
+        // This ensures we match the parent class's parameter parsing style and avoid
+        // false substring matches (e.g., "octet-align=0" or "octet-align=10" should not be rejected).
+        return !Arrays.stream(offeredFmtp.split(";"))
+                .map(String::strip)
+                .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignOneParam);
+    }
+
+    private static boolean isOctetAlignOneParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
     }
 
     /**
@@ -160,12 +174,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                         this.encodingMode);
             }
 
-            // Extract the bandwidth-efficient payload: just take the first speechBytes as-is.
-            byte[] payload = new byte[speechBytes];
-            byte[] data = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
-            System.arraycopy(data, 0, payload, 0, speechBytes);
-
-            return payload;
+            // Extract the bandwidth-efficient payload: convert to byte array and return.
+            // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
+            return outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
         }
     }
 
