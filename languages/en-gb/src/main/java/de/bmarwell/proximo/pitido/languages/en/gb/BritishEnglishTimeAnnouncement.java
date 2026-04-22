@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 
 /**
  * British-English time announcement in the traditional BT speaking-clock style.
@@ -232,7 +233,7 @@ public class BritishEnglishTimeAnnouncement extends AbstractTimeAnnouncement {
     }
 
     static String hourFile(int hour) {
-        return String.format("%03d.opus", hour);
+        return String.format(Locale.ROOT, "%03d.opus", hour);
     }
 
     static String minuteFile(int minute) {

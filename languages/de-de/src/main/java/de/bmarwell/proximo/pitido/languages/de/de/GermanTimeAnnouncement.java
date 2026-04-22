@@ -20,6 +20,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 
 /**
  * German time announcement: <em>"Beim nächsten Ton ist es … Uhr … Minuten und … Sekunden."</em>
@@ -120,7 +121,7 @@ public class GermanTimeAnnouncement extends AbstractTimeAnnouncement {
     }
 
     static String hourFile(int hour) {
-        return String.format("%03d.wav", hour);
+        return String.format(Locale.ROOT, "%03d.wav", hour);
     }
 
     static String minuteFile(int minute) {

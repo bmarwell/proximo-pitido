@@ -18,6 +18,10 @@
     <!-- plugin dependencies -->
     <dependency.palantir.version>2.90.0</dependency.palantir.version>
     <dependency.cleanthat.version>2.25</dependency.cleanthat.version>
+    <dependency.forbiddenapis.version>3.10</dependency.forbiddenapis.version>
+
+    <!-- allow skipping forbidden-apis in specialised workflows -->
+    <forbiddenapis.skip>false</forbiddenapis.skip>
 
     <!-- default empty; overridden at runtime by jacoco-maven-plugin prepare-agent -->
     <argLine />
@@ -245,6 +249,11 @@
           <version>3.15.0</version>
         </plugin>
         <plugin>
+          <groupId>de.thetaphi</groupId>
+          <artifactId>forbiddenapis</artifactId>
+          <version>${dependency.forbiddenapis.version}</version>
+        </plugin>
+        <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-resources-plugin</artifactId>
           <version>3.5.0</version>
@@ -311,6 +320,34 @@
             <arg>-Xlint:all</arg>
           </compilerArgs>
         </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>de.thetaphi</groupId>
+        <artifactId>forbiddenapis</artifactId>
+        <executions>
+          <execution>
+            <id>forbidden-apis-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+            <configuration>
+              <skip>${forbiddenapis.skip}</skip>
+              <failOnUnsupportedJava>false</failOnUnsupportedJava>
+              <ignoreSignaturesOfMissingClasses>true</ignoreSignaturesOfMissingClasses>
+              <bundledSignatures>
+                <bundledSignature>jdk-unsafe</bundledSignature>
+                <bundledSignature>jdk-deprecated</bundledSignature>
+                <bundledSignature>jdk-non-portable</bundledSignature>
+                <bundledSignature>jdk-reflection</bundledSignature>
+              </bundledSignatures>
+              <signaturesFiles>
+                <signaturesFile>${maven.multiModuleProjectDirectory}/forbidden-apis.txt</signaturesFile>
+              </signaturesFiles>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
 
       <plugin>

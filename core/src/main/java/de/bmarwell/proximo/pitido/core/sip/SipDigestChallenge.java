@@ -12,6 +12,8 @@
  */
 package de.bmarwell.proximo.pitido.core.sip;
 
+import java.util.Locale;
+
 /**
  * Parsed representation of a SIP {@code WWW-Authenticate} or {@code Proxy-Authenticate}
  * Digest challenge header.
@@ -36,7 +38,7 @@ public record SipDigestChallenge(String realm, String nonce, String qop, boolean
         String realm = requireParam(header, "realm");
         String nonce = requireParam(header, "nonce");
         String qop = extractParam(header, "qop");
-        boolean stale = header.toLowerCase().contains("stale=true");
+        boolean stale = header.toLowerCase(Locale.ROOT).contains("stale=true");
         return new SipDigestChallenge(realm, nonce, qop, stale);
     }
 
