@@ -73,7 +73,13 @@ public class CallSessionManager {
     }
 
     /**
-     * Handles a BYE: cancels futures, closes media, logs call duration, and sends 200 OK.
+     * Handles a BYE: cancels futures, closes the RTP socket, logs call duration, and sends 200 OK.
+     *
+     * <p>Only the UDP socket is closed here — closing it from any thread is safe and immediately
+     * signals the RTP sender to stop.
+     * The codec (which may hold a confined FFM {@link java.lang.foreign.Arena}) is closed by the
+     * announcement-loop or menu-runner {@code finally} block, which runs on the thread that created
+     * the arena.
      */
     public void handleBye(SipServletRequest req) throws IOException {
         String sessionId = req.getSession().getId();
@@ -92,7 +98,7 @@ public class CallSessionManager {
         callState.callFuture().cancel(true);
         callState.receiverFuture().cancel(true);
         String codecName = callState.media().codec().sdpName();
-        closeMedia(callState.media());
+        closeSocket(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(
                 System.Logger.Level.INFO,
@@ -128,10 +134,27 @@ public class CallSessionManager {
         this.activeCalls.clear();
     }
 
-    static void closeMedia(CallMedia media) {
+    /**
+     * Closes the RTP socket only.
+     * Safe to call from any thread; the UDP socket has no thread-confinement requirement.
+     * Closing it immediately signals the RTP sender to stop sending packets.
+     */
+    static void closeSocket(CallMedia media) {
         if (!media.localSocket().isClosed()) {
             media.localSocket().close();
         }
+    }
+
+    /**
+     * Closes the RTP socket and the codec.
+     *
+     * <p><strong>Must</strong> be called from the thread that created the codec's
+     * {@link java.lang.foreign.Arena} (the announcement-loop or menu-runner executor thread).
+     * Calling this from a different thread (e.g. the Liberty SIP thread) will throw
+     * {@link java.lang.WrongThreadException} for native codecs that use a confined arena.
+     */
+    static void closeMedia(CallMedia media) {
+        closeSocket(media);
 
         try {
             media.codec().close();
