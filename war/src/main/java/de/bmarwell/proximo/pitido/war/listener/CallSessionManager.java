@@ -91,13 +91,21 @@ public class CallSessionManager {
 
         callState.callFuture().cancel(true);
         callState.receiverFuture().cancel(true);
+        String codecName = callState.media().codec().sdpName();
         closeMedia(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "{0}Call ended — duration {1}s",
+                "{0}Call ended — from=[{1}], codec=[{2}], duration={3}s",
                 SipCallHeaders.callPrefix(sessionId),
+                req.getFrom(),
+                codecName,
                 callDuration.toSeconds());
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}Caller identity: {1}",
+                SipCallHeaders.callPrefix(sessionId),
+                callState.callerIdentitySummary());
         this.pendingSelections.remove(sessionId);
         req.createResponse(SipServletResponse.SC_OK).send();
     }
@@ -128,7 +136,7 @@ public class CallSessionManager {
         try {
             media.codec().close();
         } catch (Exception closeException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Error closing codec after call", closeException);
+            LOGGER.log(System.Logger.Level.WARNING, "Error closing codec after call", closeException);
         }
     }
 

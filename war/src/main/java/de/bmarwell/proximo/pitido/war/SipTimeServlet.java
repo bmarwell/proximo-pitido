@@ -79,7 +79,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     protected void doResponse(SipServletResponse response) throws ServletException, IOException {
         int status = response.getStatus();
         String method = response.getMethod();
-        LOGGER.log(System.Logger.Level.INFO, "SIP response [{0}] for method [{1}]", status, method);
+        LOGGER.log(System.Logger.Level.DEBUG, "SIP response [{0}] for method [{1}]", status, method);
 
         if (!"REGISTER".equals(method)) {
             return;
@@ -99,8 +99,6 @@ public class SipTimeServlet extends SipServlet implements Serializable {
                     grantedExpires);
             return;
         }
-
-        LOGGER.log(System.Logger.Level.INFO, "SIP registration completed unsuccessfully (status [{0}])", status);
 
         LOGGER.log(System.Logger.Level.WARNING, "Unexpected REGISTER response [{0}]: {1}", status, response);
     }

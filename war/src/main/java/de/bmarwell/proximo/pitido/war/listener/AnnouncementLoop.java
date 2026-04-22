@@ -65,24 +65,12 @@ public class AnnouncementLoop {
      * {@link #CALL_MAX_DURATION} elapses.
      * On exit, removes the call from session state and closes the media socket.
      */
-    void play(
-            SipSession session,
-            AudioPlayer player,
-            LanguageFactory factory,
-            String sessionId,
-            CallMedia media,
-            String callerIdentitySummary) {
+    void play(SipSession session, AudioPlayer player, LanguageFactory factory, String sessionId, CallMedia media) {
         LOGGER.log(
-                System.Logger.Level.INFO,
+                System.Logger.Level.DEBUG,
                 "{0}Announcement loop starting — language [{1}]",
                 SipCallHeaders.callPrefix(sessionId),
                 factory.displayName());
-        LOGGER.log(
-                System.Logger.Level.DEBUG,
-                "{0}Announcement loop context: codec=[{1}], caller={2}",
-                SipCallHeaders.callPrefix(sessionId),
-                media.codec().sdpName(),
-                callerIdentitySummary);
 
         Instant deadline = Instant.now().plus(CALL_MAX_DURATION);
 
