@@ -116,7 +116,7 @@ public class SipRegistrationListener {
     @Inject
     LocalSipHostProvider localSipHostProvider;
 
-    @Resource
+    @Resource(lookup = "concurrent/scheduler")
     ManagedScheduledExecutorService managedScheduledExecutorService;
 
     /**

@@ -87,7 +87,7 @@ public class CallAcceptor {
     @Inject
     HoldHandler holdHandler;
 
-    @Resource
+    @Resource(lookup = "concurrent/codecExecutor")
     ManagedExecutorService managedExecutorService;
 
     /**

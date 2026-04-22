@@ -43,6 +43,22 @@
   <cdi enableImplicitBeanArchives="false" />
 
   <!--
+    Named managed executor services.
+    ioExecutor:    virtual-thread pool for SIP registration retries and DTMF dispatch.
+                   Both are I/O-bound short tasks; virtual threads are well-suited.
+    codecExecutor: platform-thread pool for call/codec work and announcement playback.
+                   Platform threads are required because OGG/Opus and AMR-WB decoders
+                   use the Foreign Function & Memory API with Arena.ofConfined(), which
+                   binds the arena to the creating thread; a virtual thread yielding to a
+                   different carrier thread raises WrongThreadException.
+    scheduler:     managed scheduled executor for the SIP re-registration timer.
+                   Scheduling tasks are I/O-bound, so virtual threads are acceptable.
+  -->
+  <managedExecutorService id="ioExecutor" jndiName="concurrent/ioExecutor" virtualThread="true" />
+  <managedExecutorService id="codecExecutor" jndiName="concurrent/codecExecutor" />
+  <managedScheduledExecutorService id="scheduler" jndiName="concurrent/scheduler" virtualThread="true" />
+
+  <!--
     Default runtime logging profile.
     Liberty base level stays at AUDIT for framework noise control.
     All classes under de.bmarwell.proximo.pitido.* are set to fine (DEBUG) so that technical details are captured in trace.log without appearing in docker compose logs.
