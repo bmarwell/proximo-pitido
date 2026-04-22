@@ -181,18 +181,16 @@ public class CallAcceptor {
         singleMenu.put(1, factory);
 
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            // forCall() must run on the announcement thread so that the confined Arena is owned
-            // by the thread that will also call encode() and close() — preventing WrongThreadException.
-            var callCodec = media.codec().forCall();
-
             try {
                 Thread.sleep(1_000);
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
-                callCodec.close();
                 return;
             }
 
+            // forCall() must run on the announcement thread so that the confined Arena is owned
+            // by the thread that will also call encode() and close() — preventing WrongThreadException.
+            var callCodec = media.codec().forCall();
             AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
 
             try {

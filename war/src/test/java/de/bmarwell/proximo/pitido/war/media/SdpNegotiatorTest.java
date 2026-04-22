@@ -201,7 +201,7 @@ class SdpNegotiatorTest {
     }
 
     @Test
-    void selectCodec_doesNotCallForCallEagerly_delegateIsOriginalBean() {
+    void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
         // given — a stateful codec stub whose forCall() returns a distinct per-call instance
         RtpCodec perCallInstance = mock(RtpCodec.class);
         when(perCallInstance.sdpName()).thenReturn("PCMA");
@@ -223,5 +223,7 @@ class SdpNegotiatorTest {
         // the announcement thread must call it, not the SDP-negotiation thread.
         org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall();
         assertEquals(8, selected.payloadType());
+        // The returned wrapper must hold the original descriptor, not a per-call instance.
+        assertEquals(descriptorStub, ((NegotiatedRtpCodec) selected).delegate());
     }
 }

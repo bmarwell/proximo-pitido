@@ -87,20 +87,6 @@ public class RtpAudioPlayer implements AudioPlayer {
     }
 
     /**
-     * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
-     *
-     * @param callMedia         the negotiated call media; the socket must still be open
-     * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
-     * @deprecated Use {@link #RtpAudioPlayer(CallMedia, RtpCodec, PcmDecoderFactory)} instead.
-     *             Passing the codec explicitly ensures the confined arena is created on the
-     *             thread that will encode and close it, preventing {@link WrongThreadException}.
-     */
-    @Deprecated
-    public RtpAudioPlayer(CallMedia callMedia, PcmDecoderFactory pcmDecoderFactory) {
-        this(callMedia, callMedia.codec(), pcmDecoderFactory);
-    }
-
-    /**
      * Sends silence RTP packets for exactly {@code duration}, keeping the receiver's jitter
      * buffer alive so the next audio plays with the correct timing gap.
      *
