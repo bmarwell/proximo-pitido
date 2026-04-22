@@ -330,3 +330,7 @@ dist
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/maven,intellij+all,visualstudiocode,maven,java,netbeans,node,typescript
+
+# Próximo Pitido deploy helpers
+deploy/.last-built-sha
+deploy/.env

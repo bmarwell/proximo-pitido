@@ -1,0 +1,40 @@
+# Próximo Pitido — docker-compose deployment example
+#
+# Copy this file alongside Containerfile and env.template.
+# Rename env.template to .env and fill in your SIP credentials before starting.
+#
+# Start:   docker compose up -d
+# Update:  ./update.sh
+# Logs:    docker compose logs -f
+# Stop:    docker compose down
+
+services:
+  proximo-pitido:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        GIT_REF: main
+        # CACHE_BUST is set by update.sh to the current HEAD SHA.
+        # Override here only if you want to pin to a specific commit.
+        CACHE_BUST: ""
+    image: "proximo-pitido:latest"
+    container_name: proximo-pitido
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "9080:9080/tcp"         # Liberty management / health endpoint
+      - "5060:5060/tcp"         # SIP signalling (TCP)
+      - "5060:5060/udp"         # SIP signalling (UDP)
+      - "5061:5061/tcp"         # SIP over TLS
+      - "5061:5061/udp"
+      - "16384-16484:16384-16484/udp"  # RTP media (100-port window)
+
+    # ── InstantOn (option C) only ─────────────────────────────────────────────
+    # Uncomment the block below when using checkpoint.sh in the Containerfile.
+    # The host kernel must support CRIU (Linux ≥ 5.9).
+    #cap_add:
+    #  - CHECKPOINT_RESTORE
+    #  - SYS_PTRACE
+    #security_opt:
+    #  - seccomp=unconfined
