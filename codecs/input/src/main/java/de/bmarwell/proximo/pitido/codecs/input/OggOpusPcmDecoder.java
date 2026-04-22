@@ -30,7 +30,8 @@ import javax.enterprise.context.ApplicationScoped;
 import org.apache.tika.mime.MediaType;
 
 /**
- * Decodes Opus audio stored in an OGG container to 8 kHz mono 16-bit PCM.
+ * Decodes Opus audio stored in an OGG container to mono 16-bit PCM at the sample rate requested
+ * by the caller.
  *
  * <p>OGG pages are read manually (no external OGG library required).
  * Opus packets are decoded via the Foreign Function and Memory (FFM) API,
@@ -38,7 +39,11 @@ import org.apache.tika.mime.MediaType;
  * The system library must be installed: {@code apt install libopus0} on Debian/Ubuntu,
  * or {@code pacman -S opus} on Arch Linux.
  *
- * <p>The decoder is initialised at 8 000 Hz to avoid resampling before RTP/PCMA encoding.
+ * <p>libopus natively supports multiple output rates (8, 12, 16, 24, or 48 kHz);
+ * the rate is chosen at decoder-create time via
+ * {@link #open(InputStream, int)}.
+ * This allows wideband codecs such as G.722 to receive 16 kHz PCM directly,
+ * avoiding the lossy linear-interpolation upsample that would otherwise be required.
  *
  * <p>The first two OGG logical bitstream packets (OpusHead and OpusTags) are silently skipped
  * as required by RFC 7845.
@@ -48,17 +53,11 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
     private static final System.Logger LOGGER = System.getLogger(OggOpusPcmDecoder.class.getName());
 
-    /** 8 kHz decoder sample rate — matches RTP/PCMA requirement.
-     *
-     * <p>TODO: make this configurable via {@code RtpCodec.inputSampleRate()} so that wideband
-     * codecs (e.g. G.722 at 16 kHz) receive the correct PCM rate from the decode pipeline.
-     * The Opus decoder supports multiple output rates; it would simply need to be re-created
-     * with the target rate instead of 8 000.
+    /**
+     * Maximum Opus frame duration: 120 ms × sample rate / 1000.
+     * Used as a multiplier when computing the per-call buffer size in {@link #open(InputStream, int)}.
      */
-    private static final int SAMPLE_RATE = 8_000;
-
-    /** Maximum decoded samples for one Opus frame (120 ms × 8 000 Hz). */
-    private static final int MAX_FRAME_SAMPLES = 960;
+    private static final int MAX_FRAME_DURATION_MS = 120;
 
     // -------------------------------------------------------------------------
     // FFM binding to libopus
@@ -146,26 +145,34 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
     @Override
     public PcmStream open(InputStream in) throws IOException {
+        return open(in, 8_000);
+    }
+
+    @Override
+    public PcmStream open(InputStream in, int targetSampleRate) throws IOException {
         if (this.loadError != null) {
             throw this.loadError;
         }
 
         try (Arena callArena = Arena.ofConfined()) {
             MemorySegment errSeg = callArena.allocate(ValueLayout.JAVA_INT);
-            MemorySegment decoder = invokeCreate(errSeg);
+            MemorySegment decoder = invokeCreate(errSeg, targetSampleRate);
             int error = errSeg.get(ValueLayout.JAVA_INT, 0L);
 
             if (decoder == null || decoder.address() == 0L || error != 0) {
                 throw new IOException("opus_decoder_create failed with error " + error);
             }
 
-            return new OggOpusPcmStream(in, this.opusDecode, this.opusDecoderDestroy, decoder);
+            int maxFrameSamples = MAX_FRAME_DURATION_MS * targetSampleRate / 1_000;
+
+            return new OggOpusPcmStream(
+                    in, this.opusDecode, this.opusDecoderDestroy, decoder, targetSampleRate, maxFrameSamples);
         }
     }
 
-    private MemorySegment invokeCreate(MemorySegment errSeg) throws IOException {
+    private MemorySegment invokeCreate(MemorySegment errSeg, int sampleRate) throws IOException {
         try {
-            return (MemorySegment) this.opusDecoderCreate.invoke(SAMPLE_RATE, 1, errSeg);
+            return (MemorySegment) this.opusDecoderCreate.invoke(sampleRate, 1, errSeg);
         } catch (RuntimeException runtimeException) {
             throw runtimeException;
         } catch (Throwable throwable) {
@@ -189,6 +196,9 @@ public class OggOpusPcmDecoder implements PcmDecoder {
          */
         private final MemorySegment decoder;
 
+        private final int streamSampleRate;
+        private final int maxFrameSamples;
+
         /** Packet queue: OGG packets waiting to be decoded. */
         private final Deque<byte[]> packetQueue = new ArrayDeque<>();
 
@@ -207,14 +217,26 @@ public class OggOpusPcmDecoder implements PcmDecoder {
         private boolean endOfStream = false;
 
         OggOpusPcmStream(
-                InputStream in, MethodHandle opusDecode, MethodHandle opusDecoderDestroy, MemorySegment decoder)
+                InputStream in,
+                MethodHandle opusDecode,
+                MethodHandle opusDecoderDestroy,
+                MemorySegment decoder,
+                int sampleRate,
+                int maxFrameSamples)
                 throws IOException {
             this.in = in;
             this.opusDecode = opusDecode;
             this.opusDecoderDestroy = opusDecoderDestroy;
             this.decoder = decoder;
+            this.streamSampleRate = sampleRate;
+            this.maxFrameSamples = maxFrameSamples;
             readNextPage();
             skipHeaderPackets();
+        }
+
+        @Override
+        public int sampleRate() {
+            return this.streamSampleRate;
         }
 
         @Override
@@ -250,7 +272,7 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
             try (Arena callArena = Arena.ofConfined()) {
                 MemorySegment inputSeg = callArena.allocateFrom(ValueLayout.JAVA_BYTE, packet);
-                MemorySegment pcmSeg = callArena.allocate(ValueLayout.JAVA_SHORT, MAX_FRAME_SAMPLES);
+                MemorySegment pcmSeg = callArena.allocate(ValueLayout.JAVA_SHORT, this.maxFrameSamples);
 
                 int samples = invokeDecode(inputSeg, packet.length, pcmSeg);
 
@@ -273,7 +295,8 @@ public class OggOpusPcmDecoder implements PcmDecoder {
 
         private int invokeDecode(MemorySegment inputSeg, int packetLength, MemorySegment pcmSeg) throws IOException {
             try {
-                return (int) this.opusDecode.invoke(this.decoder, inputSeg, packetLength, pcmSeg, MAX_FRAME_SAMPLES, 0);
+                return (int)
+                        this.opusDecode.invoke(this.decoder, inputSeg, packetLength, pcmSeg, this.maxFrameSamples, 0);
             } catch (RuntimeException runtimeException) {
                 throw runtimeException;
             } catch (Throwable throwable) {
