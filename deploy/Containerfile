@@ -1,0 +1,106 @@
+# =============================================================================
+# Próximo Pitido — container image
+# =============================================================================
+#
+# Two-stage build:
+#   Stage 1 (builder) — Eclipse Temurin HotSpot: compiles the Maven project.
+#   Stage 2 (runtime) — IBM Open Liberty on OpenJ9: serves the SIP application.
+#
+# Startup-time options (choose ONE block in Stage 2; the others stay commented):
+#
+#   Option A — no SCC (default)
+#     Fastest image build (~30 s on a modern CPU).
+#     Cold startup in ~15–20 s.
+#     Best choice when builds are frequent or hardware is modest.
+#
+#   Option B — OpenJ9 Shared Class Cache (SCC)
+#     Image build takes ~600 s (Liberty warms up the JVM and freezes the cache).
+#     Cold startup in ~3–5 s thereafter.
+#     Best choice when the image is built once and restarted many times.
+#
+#   Option C — InstantOn (IBM CRIU checkpoint/restore)
+#     Image build takes ~60 s (Liberty checkpoints after the app is ready).
+#     Startup in <1 s — the container resumes from a frozen process snapshot.
+#     Requires extra Linux capabilities when running (see docker-compose.yml).
+#     Best choice for auto-scaling or very latency-sensitive restarts.
+#     Needs the host kernel to support CRIU (Linux ≥ 5.9, CAP_CHECKPOINT_RESTORE).
+#
+# =============================================================================
+
+# ── Stage 1: Build ───────────────────────────────────────────────────────────
+# Eclipse Temurin (Eclipse Adoptium) — community-maintained HotSpot JDK,
+# no Oracle licence required.
+FROM eclipse-temurin:25-jdk-alpine AS builder
+
+RUN apk add --no-cache git
+
+# CACHE_BUST is set by the deploy script to the current HEAD SHA.
+# Docker reuses the git clone layer when the SHA is unchanged and rebuilds it
+# (together with all subsequent layers) only when main has new commits.
+ARG CACHE_BUST=
+ARG GIT_REF=main
+
+RUN echo "Building ref: ${GIT_REF} (${CACHE_BUST})" \
+    && git clone --depth=1 --branch="${GIT_REF}" \
+       https://github.com/bmarwell/proximo-pitido.git /build
+
+WORKDIR /build
+
+# The Maven local repository is a BuildKit cache mount.
+# It is shared across builds on the same host and is never baked into the image.
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw --batch-mode --no-transfer-progress \
+           -pl war -am -DskipTests \
+           clean package
+
+# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
+# OpenJ9 is kept at runtime for its lower resident-set-size compared with HotSpot.
+FROM icr.io/appcafe/open-liberty:kernel-slim-java25-openj9-ubi-minimal
+
+# Install native libraries required by the audio codecs (FFM/Panama bindings):
+#   opus         → libopus.so.0        (OGG/Opus decoding)
+#   spandsp      → libspandsp.so.2     (G.722 wideband encoding)
+#   vo-amrwbenc  → libvo-amrwbenc.so.0 (AMR-WB encoding, required for VoLTE callers)
+#
+# spandsp and vo-amrwbenc are absent from the standard UBI repositories;
+# EPEL 9 and RPM Fusion free are added first.
+USER root
+RUN rpm -i https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+    && rpm -i https://mirrors.rpmfusion.org/free/el/rpmfusion-free-release-9.noarch.rpm \
+    && microdnf install -y --nodocs opus spandsp vo-amrwbenc \
+    && microdnf clean all
+USER 1001
+
+# Copy Liberty server configuration (server.xml, dar.properties, sip.xml).
+# server.env is intentionally absent from the image; supply it via env_file at runtime.
+COPY --from=builder --chown=1001:0 /build/war/src/main/liberty/config/ /config/
+
+# Download and install only the Liberty features declared in server.xml.
+# This layer is cached until server.xml changes, so WAR-only updates skip it.
+RUN features.sh
+
+COPY --from=builder --chown=1001:0 /build/war/target/proximo-pitido-war-*.war /config/dropins/
+
+# ── Startup-time option A: no SCC (default) ──────────────────────────────────
+# Fastest build; Liberty starts cold in ~15–20 s.
+ENV OPENJ9_SCC=false
+RUN configure.sh
+
+# ── Startup-time option B: OpenJ9 Shared Class Cache ─────────────────────────
+# Comment out option A above and uncomment these two lines.
+# The image build will take ~600 s; subsequent cold starts will be ~3–5 s.
+#ENV OPENJ9_SCC=true
+#RUN configure.sh
+
+# ── Startup-time option C: InstantOn (IBM CRIU checkpoint/restore) ────────────
+# Comment out option A entirely and uncomment the RUN line below instead.
+# Also enable the extra capabilities in docker-compose.yml (see comments there).
+# Build requires: docker build --cap-add=CHECKPOINT_RESTORE --cap-add=SYS_PTRACE
+#                              --security-opt seccomp=unconfined
+# Startup will be <1 s; the container resumes from a frozen process snapshot.
+#RUN checkpoint.sh afterAppStart
+
+EXPOSE 5060/udp
+EXPOSE 5060/tcp
+EXPOSE 5061/tcp
+EXPOSE 9080/tcp
