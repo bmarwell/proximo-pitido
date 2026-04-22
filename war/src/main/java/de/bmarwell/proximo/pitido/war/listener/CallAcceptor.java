@@ -158,6 +158,21 @@ public class CallAcceptor {
             throw ioException;
         }
 
+        // Give the caller's handset 1 second to ring after 180 Ringing,
+        // then accept the call. Without this delay, the ringing tone is cut short
+        // and the caller hears the announcement immediately after dialling.
+        // We delay the 200 OK (not the handler task) to ensure the SIP stack
+        // can process the 180 response before we send 200 OK, avoiding
+        // rapid-fire 180+200 that might confuse some SIP endpoints.
+        try {
+            Thread.sleep(1_000);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            this.callSessionManager.releaseSipCallId(sipCallId);
+
+            return;
+        }
+
         this.managedExecutorService.execute(() -> processAcceptedInvite(req, menu, sessionId, sipCallId));
     }
 
@@ -166,11 +181,9 @@ public class CallAcceptor {
         boolean sessionRegistered = false;
 
         try {
-            // No sleep here: the SIP stack handles protocol timing.
-            // A pre-answer delay risks timeouts in strict IMS environments
-            // (e.g. Telekom VoLTE SRVCC pre-alerting) and adds latency for every caller.
-            // The intentional UX pause before audio playback begins lives inside the callFuture
-            // lambda in acceptAndAnnounce(), after the 200 OK has already been sent.
+            // Ringing delay happens before 200 OK is sent (in accept() method).
+            // Audio playback can begin immediately after 200 OK, as the caller's handset
+            // is now ready to receive the RTP stream (having finished ringing).
             if (menu.size() == 1) {
                 acceptAndAnnounce(req, menu.firstEntry().getValue(), sipCallId);
             } else {
@@ -209,13 +222,6 @@ public class CallAcceptor {
         singleMenu.put(1, factory);
 
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            try {
-                Thread.sleep(1_000);
-            } catch (InterruptedException interruptedException) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
             // forCall() must run on the announcement thread so that the confined Arena is owned
             // by the thread that will also call encode() and close() — preventing WrongThreadException.
             var callCodec = media.codec().forCall();
@@ -257,6 +263,13 @@ public class CallAcceptor {
                 callerIdentitySummary);
 
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
+            try {
+                Thread.sleep(1_000);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
             // forCall() must run on the menu thread so that the confined Arena is owned
             // by the thread that will also call encode() and close() — preventing WrongThreadException.
             var callCodec = media.codec().forCall();
