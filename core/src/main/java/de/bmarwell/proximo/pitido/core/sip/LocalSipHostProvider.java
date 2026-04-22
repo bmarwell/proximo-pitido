@@ -73,7 +73,7 @@ public class LocalSipHostProvider {
     public String get() {
         if (this.configuredHost.isPresent()) {
             String host = this.configuredHost.get();
-            LOGGER.log(System.Logger.Level.INFO, "Local SIP host (configured): {0}", host);
+            LOGGER.log(System.Logger.Level.INFO, "SIP Contact address (sip.public.host / SIP_PUBLIC_HOST): {0}", host);
 
             return host;
         }
@@ -88,7 +88,10 @@ public class LocalSipHostProvider {
         Optional<String> publicIp = this.publicIpDiscoveryService.discover();
 
         if (publicIp.isPresent()) {
-            LOGGER.log(System.Logger.Level.INFO, "Local SIP host (public IP discovered): {0}", publicIp.get());
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "SIP Contact address (public IP via PublicIpDiscoveryService): {0}",
+                    publicIp.get());
 
             return publicIp.get();
         }
@@ -137,7 +140,13 @@ public class LocalSipHostProvider {
             socket.connect(InetAddress.getByName(registrarHost), 5060);
             InetAddress localAddress = socket.getLocalAddress();
 
-            if (localAddress.isLoopbackAddress() || localAddress.isAnyLocalAddress()) {
+            if (localAddress.isLoopbackAddress()
+                    || localAddress.isAnyLocalAddress()
+                    || localAddress.isLinkLocalAddress()) {
+                return Optional.empty();
+            }
+
+            if (!(localAddress instanceof Inet4Address)) {
                 return Optional.empty();
             }
 

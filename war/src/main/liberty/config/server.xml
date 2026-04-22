@@ -20,7 +20,7 @@
     If unset, the endpoint binds to all interfaces ("*").
     Set this only when the host has multiple NICs and you need to force a specific one.
     SIP_PUBLIC_HOST (server.env): public IP advertised in the Contact header.
-    Port 5060 must be forwarded on the router: external 5060 → container port 5060.
+    Port 5060 must be reachable externally (forward on router or expose in container).
   -->
   <variable name="sip.bind.host" value="${env.SIP_LOCAL_HOST}" defaultValue="*" />
   <sipEndpoint id="defaultSipEndpoint"
