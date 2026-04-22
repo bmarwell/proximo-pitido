@@ -120,6 +120,22 @@ public interface RtpCodec extends AutoCloseable {
     byte[] encode(short[] pcmFrame) throws IOException;
 
     /**
+     * Number of channels declared in the SDP {@code a=rtpmap} encoding-parameters field.
+     *
+     * <p>Most voice codecs are mono and omit this field (the default is 1).
+     * Opus declares 2 channels in the SDP per RFC 7587 §5, even when encoding mono audio,
+     * for historical interoperability reasons.
+     *
+     * <p>The default returns {@code 1}; codecs that require a different value (e.g.
+     * {@link OpusRtpCodec}) override this method.
+     *
+     * @return the SDP channel count, usually {@code 1}
+     */
+    default int sdpChannelCount() {
+        return 1;
+    }
+
+    /**
      * Codec name used in the SDP {@code a=rtpmap} attribute, e.g. {@code "PCMA"} or
      * {@code "G722"}.
      */

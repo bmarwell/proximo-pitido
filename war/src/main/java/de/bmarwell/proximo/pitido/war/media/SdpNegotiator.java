@@ -226,8 +226,13 @@ public class SdpNegotiator {
                 .append(" ")
                 .append(codec.sdpName())
                 .append("/")
-                .append(codec.rtpClockRate())
-                .append("\r\n");
+                .append(codec.rtpClockRate());
+
+        if (codec.sdpChannelCount() > 1) {
+            sdp.append("/").append(codec.sdpChannelCount());
+        }
+
+        sdp.append("\r\n");
 
         if (!codec.fmtpParams().isEmpty()) {
             sdp.append("a=fmtp:")
