@@ -84,6 +84,9 @@ public class CallAcceptor {
     @Inject
     AnnouncementLoop announcementLoop;
 
+    @Inject
+    HoldHandler holdHandler;
+
     @Resource
     ManagedExecutorService managedExecutorService;
 
@@ -96,6 +99,14 @@ public class CallAcceptor {
      */
     public void accept(SipServletRequest req) throws IOException {
         String callId = req.getSession().getId();
+
+        if (this.callSessionManager.get(callId) != null) {
+            // Re-INVITE on an established session: handle hold/unhold.
+            this.holdHandler.handle(req);
+
+            return;
+        }
+
         LOGGER.log(
                 System.Logger.Level.DEBUG,
                 "{0}Incoming call from [{1}]",

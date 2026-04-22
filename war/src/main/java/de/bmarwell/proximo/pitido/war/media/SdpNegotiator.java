@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import javax.enterprise.context.ApplicationScoped;
 import javax.enterprise.inject.Instance;
@@ -102,7 +103,7 @@ public class SdpNegotiator {
         String sdpAnswer = buildSdpAnswer(localIp, localPort, codec, telephoneEventPt);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
-        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec, telephoneEventPt);
+        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec, telephoneEventPt, new AtomicBoolean(false));
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {
