@@ -67,7 +67,7 @@ public class MenuRunner {
             Thread.sleep(5_000);
             runMenuLoop(player, menu, sessionId);
         } catch (InterruptedException interruptedException) {
-            Thread.interrupted();
+            Thread.currentThread().interrupt();
         } finally {
             LanguageFactory chosen = this.callSessionManager.takePendingSelection(sessionId);
 
