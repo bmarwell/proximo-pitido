@@ -44,7 +44,7 @@ public class DtmfDispatcher {
     @Inject
     CallSessionManager callSessionManager;
 
-    @Resource
+    @Resource(lookup = "concurrent/ioExecutor")
     ManagedExecutorService managedExecutorService;
 
     /**

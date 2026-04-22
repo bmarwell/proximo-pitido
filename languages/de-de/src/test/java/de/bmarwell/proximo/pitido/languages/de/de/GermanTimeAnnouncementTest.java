@@ -13,7 +13,6 @@
 package de.bmarwell.proximo.pitido.languages.de.de;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.bmarwell.proximo.pitido.api.PlaybackReceipt;
@@ -22,6 +21,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class GermanTimeAnnouncementTest {
@@ -85,7 +86,10 @@ class GermanTimeAnnouncementTest {
         var player = new RecordingAudioPlayer();
         var announcement = new GermanTimeAnnouncement(player, clock);
 
-        Thread thread = Thread.ofVirtual().start(() -> {
+        // Tests run outside the container; Executors.newVirtualThreadPerTaskExecutor() is the
+        // correct substitute for ManagedExecutorService in a plain JUnit test.
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        var future = executor.submit(() -> {
             try {
                 announcement.announce();
             } catch (InterruptedException interruptedException) {
@@ -97,9 +101,10 @@ class GermanTimeAnnouncementTest {
 
         // Allow the announcement to start, then interrupt it during waitUntil().
         Thread.sleep(50);
-        thread.interrupt();
-        thread.join(500);
-
-        assertFalse(thread.isAlive(), "Announcement thread must stop after interrupt");
+        future.cancel(true);
+        executor.shutdown();
+        assertTrue(
+                executor.awaitTermination(500, TimeUnit.MILLISECONDS),
+                "Announcement task must stop within 500 ms after interrupt");
     }
 }
