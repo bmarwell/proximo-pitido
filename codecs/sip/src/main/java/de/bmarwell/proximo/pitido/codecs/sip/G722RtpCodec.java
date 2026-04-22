@@ -74,7 +74,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see PcmaRtpCodec
  */
 @ApplicationScoped
-public final class G722RtpCodec implements RtpCodec {
+public final class G722RtpCodec extends NativeRtpCodec {
 
     private static final System.Logger LOGGER = System.getLogger(G722RtpCodec.class.getName());
 
@@ -94,22 +94,10 @@ public final class G722RtpCodec implements RtpCodec {
     private static final int G722_OPTIONS = 0;
 
     // CDI factory bean fields — set by @PostConstruct; null in per-call instances.
-    private boolean available = false;
     private MethodHandle g722EncodeInitHandle;
 
     // Shared between factory and per-call instances.
     private MethodHandle g722EncodeHandle;
-
-    // Per-call instance fields — null in the CDI factory bean.
-
-    /**
-     * Confined arena owning the native encoder state for this call leg.
-     * {@code null} in the CDI factory bean.
-     *
-     * <p>Closed explicitly by {@link #close()} when the call ends, releasing the native
-     * encoder state immediately rather than waiting for GC.
-     */
-    private final Arena callArena;
 
     /**
      * Allocated and initialised {@code g722_encode_state_t} for one call leg.
@@ -119,7 +107,6 @@ public final class G722RtpCodec implements RtpCodec {
 
     /** CDI no-args constructor. */
     public G722RtpCodec() {
-        this.callArena = null;
         this.stateSegment = null;
     }
 
@@ -129,14 +116,13 @@ public final class G722RtpCodec implements RtpCodec {
      * <p>Not intended for direct use; called only by {@link #forCall()}.
      *
      * @param g722EncodeHandle downcall handle for {@code g722_encode}, resolved at probe time
-     * @param callArena        GC-managed arena owning the encoder state for the call's lifetime
+     * @param callArena        confined arena owning the encoder state for the call's lifetime
      * @param stateSegment     allocated and initialised {@code g722_encode_state_t}
      */
     G722RtpCodec(MethodHandle g722EncodeHandle, Arena callArena, MemorySegment stateSegment) {
+        super(callArena);
         this.g722EncodeHandle = g722EncodeHandle;
-        this.callArena = callArena;
         this.stateSegment = stateSegment;
-        this.available = true;
     }
 
     /**
@@ -184,11 +170,6 @@ public final class G722RtpCodec implements RtpCodec {
     }
 
     @Override
-    public boolean isAvailable() {
-        return this.available;
-    }
-
-    @Override
     public int preference() {
         // Preferred over PCMA when available: wideband audio sounds significantly better.
         return 50;
@@ -201,7 +182,8 @@ public final class G722RtpCodec implements RtpCodec {
      * Sharing ADPCM predictor state across calls corrupts the audio stream.
      *
      * <p>The returned instance is not a CDI bean.
-     * It holds a GC-managed {@link Arena} and an initialised {@code g722_encode_state_t}.
+     * It holds a confined {@link Arena} and an initialised {@code g722_encode_state_t};
+     * call {@link #close()} when the call ends.
      *
      * @throws IllegalStateException if {@code g722_encode_init} returns a null pointer
      */
@@ -287,16 +269,8 @@ public final class G722RtpCodec implements RtpCodec {
 
     /**
      * Closes the confined arena, releasing the native {@code g722_encode_state_t} segment.
-     *
-     * <p>A no-op when called on the CDI factory bean (whose {@link #callArena} is {@code null}).
+     * Inherited from {@link NativeRtpCodec}; no-op on the CDI factory bean.
      */
-    @Override
-    public void close() {
-        if (this.callArena != null) {
-            this.callArena.close();
-        }
-    }
-
     private MemorySegment invokeEncodeInit(MemorySegment state) {
         try {
             return (MemorySegment) this.g722EncodeInitHandle.invoke(state, G722_RATE, G722_OPTIONS);
