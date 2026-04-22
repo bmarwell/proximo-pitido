@@ -5,9 +5,10 @@
  * any specific SIP servlet container lifecycle.
  *
  * <h2>Native access</h2>
- * {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec} uses the Foreign Function and
- * Memory (FFM) API ({@code java.lang.foreign}) to call {@code libspandsp.so} directly for
- * G.722 ADPCM encoding.
+ * {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec},
+ * {@link de.bmarwell.proximo.pitido.codecs.sip.OpusRtpCodec}, and
+ * {@link de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodec} use the Foreign Function and
+ * Memory (FFM) API ({@code java.lang.foreign}) to call native libraries directly.
  * At runtime the JVM must be started with
  * {@code --enable-native-access=de.bmarwell.proximo.pitido.codecs.sip}.
  */
