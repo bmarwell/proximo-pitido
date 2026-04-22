@@ -58,6 +58,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final InetSocketAddress remoteRtp;
     private final PcmDecoderFactory pcmDecoderFactory;
     private final RtpCodec codec;
+    private final CallMedia callMedia;
     private final int ssrc;
     private int seqNumber;
     private long timestamp;
@@ -70,6 +71,7 @@ public class RtpAudioPlayer implements AudioPlayer {
      * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
      */
     public RtpAudioPlayer(CallMedia callMedia, PcmDecoderFactory pcmDecoderFactory) {
+        this.callMedia = callMedia;
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
@@ -105,6 +107,12 @@ public class RtpAudioPlayer implements AudioPlayer {
         for (long i = 0; i < packets; i++) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new InterruptedException("RTP silence interrupted");
+            }
+
+            if (this.callMedia.isHeld()) {
+                this.timestamp += this.codec.rtpTimestampIncrement();
+                Thread.sleep(20);
+                continue;
             }
 
             try {
@@ -152,6 +160,14 @@ public class RtpAudioPlayer implements AudioPlayer {
             while (true) {
                 if (Thread.currentThread().isInterrupted()) {
                     throw new InterruptedException("RTP playback interrupted");
+                }
+
+                if (this.callMedia.isHeld()) {
+                    // Call is on hold: pause PCM consumption and RTP sending.
+                    // Advance the RTP timestamp so the timeline stays consistent on resume.
+                    this.timestamp += this.codec.rtpTimestampIncrement();
+                    Thread.sleep(20);
+                    continue;
                 }
 
                 int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
