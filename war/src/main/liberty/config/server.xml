@@ -22,9 +22,9 @@
     SIP_PUBLIC_HOST (server.env): public IP advertised in the Contact header.
     Port 5060 must be reachable externally (forward on router or expose in container).
   -->
-  <variable name="sip.bind.host" value="${env.SIP_LOCAL_HOST}" defaultValue="*" />
+  <variable name="SIP_LOCAL_HOST" defaultValue="*" />
   <sipEndpoint id="defaultSipEndpoint"
-    host="${sip.bind.host}"
+    host="${SIP_LOCAL_HOST}"
     sipUDPPort="5060"
     sipTCPPort="5060"
     sipTLSPort="5061"
