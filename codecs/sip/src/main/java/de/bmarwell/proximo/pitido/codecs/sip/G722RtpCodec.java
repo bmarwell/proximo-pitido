@@ -44,6 +44,7 @@ import javax.enterprise.context.ApplicationScoped;
  * <ul>
  *   <li>Debian / Ubuntu: {@code apt install libspandsp2}</li>
  *   <li>Arch Linux: {@code pacman -S spandsp}</li>
+ *   <li>RHEL / UBI 9: {@code rpm -i https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && microdnf install spandsp}</li>
  * </ul>
  *
  * <p>The FFM binding calls two functions:
@@ -140,7 +141,7 @@ public final class G722RtpCodec implements RtpCodec {
     }
 
     /**
-     * Probes for {@code libspandsp.so} and binds the required FFM method handles.
+     * Probes for {@code libspandsp.so.2} and binds the required FFM method handles.
      *
      * <p>Called once by the CDI container after construction.
      * Sets {@link #available} to {@code true} when the library is found and all symbols resolve.
@@ -150,7 +151,7 @@ public final class G722RtpCodec implements RtpCodec {
     @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
     void probe() {
         try {
-            SymbolLookup spandsp = SymbolLookup.libraryLookup("libspandsp.so", Arena.global());
+            SymbolLookup spandsp = SymbolLookup.libraryLookup("libspandsp.so.2", Arena.global());
             Linker linker = Linker.nativeLinker();
 
             this.g722EncodeInitHandle = linker.downcallHandle(

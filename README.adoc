@@ -175,25 +175,30 @@ Logs: `war/target/wlp-usr/servers/proximo-pitido/logs/messages.log`
 Some features require native shared libraries installed on the host OS.
 Without them the feature is silently unavailable at runtime and a pure-Java fallback (where one exists) is used instead.
 
-[cols="1,2,2,2"]
+[cols="1,2,2,2,2"]
 |===
-|Library |Debian / Ubuntu |Arch Linux |Feature
+|Library |Debian / Ubuntu |Arch Linux |RHEL / UBI 9 (Docker) |Feature
 
-|`libopus0`
+|`libopus.so.0`
 |`sudo apt install libopus0`
 |`sudo pacman -S opus`
+|`microdnf install opus`
 |OGG/Opus audio decoding — *required* for the bundled language packs (Opus is the only supported format for language plug-ins)
+
+|`libspandsp.so.2`
+|`sudo apt install libspandsp2`
+|`sudo pacman -S spandsp`
+a|Enable EPEL first, then: +
+`rpm -i https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm` +
+`microdnf install spandsp`
+|G.722 HD Voice (50–7 000 Hz) wideband codec.
+`G722RtpCodec.isAvailable()` returns `false` when absent and the call falls back to PCMA.
 
 |`libsoxr0`
 |`sudo apt install libsoxr0`
 |`sudo pacman -S libsoxr`
+|_not yet packaged in UBI_
 |High-quality stereo-to-mono channel mixing (sample-rate-aware resampling).
 Falls back to the built-in Java mixer when absent.
 The FFM binding is not yet implemented; the library is detected but the Java path is used unconditionally for now.
-
-|`libg72x` _(future)_
-|not yet packaged — build from source
-|`yay -S libg72x` _(AUR)_
-|G.722 HD Voice (50–7 000 Hz) codec.
-Not yet implemented; `G722RtpCodec.isAvailable()` always returns `false`.
 |===
