@@ -68,14 +68,17 @@ public class RtpAudioPlayer implements AudioPlayer {
      * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
      *
      * @param callMedia         the negotiated call media; the socket must still be open
+     * @param callCodec         the per-call codec instance obtained by calling
+     *                          {@code callMedia.codec().forCall()} on the announcement thread;
+     *                          must be closed by the caller after the call ends
      * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
      */
-    public RtpAudioPlayer(CallMedia callMedia, PcmDecoderFactory pcmDecoderFactory) {
+    public RtpAudioPlayer(CallMedia callMedia, RtpCodec callCodec, PcmDecoderFactory pcmDecoderFactory) {
         this.callMedia = callMedia;
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
-        this.codec = callMedia.codec();
+        this.codec = callCodec;
 
         Random rng = new Random();
         this.ssrc = rng.nextInt();

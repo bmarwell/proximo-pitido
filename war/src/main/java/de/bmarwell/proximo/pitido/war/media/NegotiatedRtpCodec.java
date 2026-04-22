@@ -16,8 +16,8 @@ import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import java.io.IOException;
 
 /**
- * Wraps a per-call {@link RtpCodec} instance and overrides {@link #payloadType()} to return the
- * payload type actually negotiated with the caller rather than the codec's static default.
+ * Wraps a {@link RtpCodec} and overrides {@link #payloadType()} to return the payload type
+ * actually negotiated with the caller rather than the codec's static default.
  *
  * <p>VoLTE callers (e.g. Deutsche Telekom) assign dynamic payload types (96–127) per-call via
  * {@code a=rtpmap} lines.
@@ -26,9 +26,22 @@ import java.io.IOException;
  * This wrapper carries the actual PT assigned by the caller so that outgoing RTP packet headers
  * and the SDP answer use the same PT value the caller expects.
  *
- * <p>All methods other than {@link #payloadType()} delegate to the wrapped per-call codec instance.
+ * <h2>Lifecycle</h2>
  *
- * @param delegate               the per-call codec instance obtained from {@link RtpCodec#forCall()}
+ * <p>{@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator#negotiate} returns an instance
+ * whose {@code delegate} is the CDI bean descriptor — no confined arena is allocated yet.
+ * The announcement or menu-runner lambda calls {@link #forCall()} at its start, on the executor
+ * thread that will also call {@link #encode} and {@link #close}.
+ * This guarantees that the {@link java.lang.foreign.Arena#ofConfined() confined arena} created by
+ * native codecs is owned by the thread that uses and closes it, preventing
+ * {@link java.lang.WrongThreadException}.
+ *
+ * <p>All methods other than {@link #payloadType()} and {@link #forCall()} delegate transparently
+ * to the wrapped codec instance.
+ *
+ * @param delegate               the codec instance; either a CDI bean descriptor (before
+ *                               {@link #forCall()}) or a per-call instance (after
+ *                               {@link #forCall()})
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
  */
 record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) implements RtpCodec {

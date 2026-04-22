@@ -199,4 +199,31 @@ class SdpNegotiatorTest {
         assertEquals("AMR-WB", selected.sdpName(), "Selected codec must be AMR-WB");
         assertEquals(110, selected.payloadType(), "Negotiated PT must be 110 (octet-aligned), not 104 (BW-efficient)");
     }
+
+    @Test
+    void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
+        // given — a stateful codec stub whose forCall() returns a distinct per-call instance
+        RtpCodec perCallInstance = mock(RtpCodec.class);
+        when(perCallInstance.sdpName()).thenReturn("PCMA");
+        when(perCallInstance.payloadType()).thenReturn(8);
+
+        RtpCodec descriptorStub = mock(RtpCodec.class);
+        when(descriptorStub.isAvailable()).thenReturn(true);
+        when(descriptorStub.preference()).thenReturn(100);
+        when(descriptorStub.sdpName()).thenReturn("PCMA");
+        when(descriptorStub.rtpClockRate()).thenReturn(8000);
+        when(descriptorStub.payloadType()).thenReturn(8);
+        when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
+        when(descriptorStub.forCall()).thenReturn(perCallInstance);
+
+        // when
+        RtpCodec selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
+
+        // then — forCall() must NOT have been called during codec selection;
+        // the announcement thread must call it, not the SDP-negotiation thread.
+        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall();
+        assertEquals(8, selected.payloadType());
+        // The returned wrapper must hold the original descriptor, not a per-call instance.
+        assertEquals(descriptorStub, ((NegotiatedRtpCodec) selected).delegate());
+    }
 }
