@@ -17,6 +17,7 @@ import de.bmarwell.proximo.pitido.war.media.CallMedia;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.PreDestroy;
 import javax.enterprise.context.ApplicationScoped;
@@ -30,6 +31,11 @@ import javax.servlet.sip.SipSession;
  * <p>Stores per-call {@link CallState}, records pending DTMF language selections, and handles
  * orderly teardown on BYE or Liberty shutdown.
  * All other handler beans read and write call state through this class.
+ *
+ * <p>Telekom (and other IMS providers) may fork the same INVITE over two parallel TCP paths.
+ * The SIP Call-ID is the same on both forks.
+ * {@code claimedSipCallIds} tracks which SIP Call-IDs are currently being handled so that the
+ * second fork can be rejected with {@code 486 Busy Here} before it creates a second session.
  */
 @ApplicationScoped
 public class CallSessionManager {
@@ -39,10 +45,30 @@ public class CallSessionManager {
     private final ConcurrentHashMap<String, CallState> activeCalls = new ConcurrentHashMap<>();
 
     /**
+     * SIP Call-IDs currently being handled, claimed atomically before {@code 180 Ringing} is sent.
+     */
+    private final Set<String> claimedSipCallIds = ConcurrentHashMap.newKeySet();
+
+    /**
      * Language selections written by the DTMF dispatcher; read (and cleared) by the menu runner
      * once the menu playback is interrupted.
      */
     private final ConcurrentHashMap<String, LanguageFactory> pendingSelections = new ConcurrentHashMap<>();
+
+    /**
+     * Atomically claims a SIP Call-ID.
+     * Returns {@code true} if the claim succeeded (no other session was already handling this
+     * Call-ID), or {@code false} if the Call-ID was already claimed — indicating a duplicate
+     * INVITE fork that should be rejected.
+     */
+    boolean tryClaimSipCallId(String sipCallId) {
+        return this.claimedSipCallIds.add(sipCallId);
+    }
+
+    /** Releases a previously claimed SIP Call-ID. */
+    void releaseSipCallId(String sipCallId) {
+        this.claimedSipCallIds.remove(sipCallId);
+    }
 
     void register(String sessionId, CallState state) {
         this.activeCalls.put(sessionId, state);
@@ -53,7 +79,13 @@ public class CallSessionManager {
     }
 
     CallState remove(String sessionId) {
-        return this.activeCalls.remove(sessionId);
+        CallState removed = this.activeCalls.remove(sessionId);
+
+        if (removed != null) {
+            releaseSipCallId(removed.sipCallId());
+        }
+
+        return removed;
     }
 
     /**
@@ -88,7 +120,7 @@ public class CallSessionManager {
                 "{0}BYE received from [{1}]",
                 SipCallHeaders.callPrefix(sessionId),
                 req.getFrom());
-        CallState callState = this.activeCalls.remove(sessionId);
+        CallState callState = this.remove(sessionId);
 
         if (callState == null) {
             req.createResponse(SipServletResponse.SC_OK).send();
@@ -132,6 +164,7 @@ public class CallSessionManager {
             sendBye(callState.session());
         });
         this.activeCalls.clear();
+        this.claimedSipCallIds.clear();
     }
 
     /**

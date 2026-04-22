@@ -98,11 +98,25 @@ public class CallAcceptor {
      * executor task.
      */
     public void accept(SipServletRequest req) throws IOException {
-        String callId = req.getSession().getId();
+        String sessionId = req.getSession().getId();
+        String sipCallId = req.getCallId();
 
-        if (this.callSessionManager.get(callId) != null) {
+        if (this.callSessionManager.get(sessionId) != null) {
             // Re-INVITE on an established session: handle hold/unhold.
             this.holdHandler.handle(req);
+
+            return;
+        }
+
+        if (!this.callSessionManager.tryClaimSipCallId(sipCallId)) {
+            // Duplicate INVITE fork for the same SIP Call-ID — Telekom routes INVITEs over
+            // multiple TCP paths simultaneously; reject this fork so only one session is created.
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "{0}Rejecting duplicate INVITE fork for SIP Call-ID [{1}]",
+                    SipCallHeaders.callPrefix(sessionId),
+                    sipCallId);
+            req.createResponse(SipServletResponse.SC_BUSY_HERE).send();
 
             return;
         }
@@ -110,7 +124,7 @@ public class CallAcceptor {
         LOGGER.log(
                 System.Logger.Level.INFO,
                 "{0}INVITE from [{1}] to [{2}]",
-                SipCallHeaders.callPrefix(callId),
+                SipCallHeaders.callPrefix(sessionId),
                 req.getFrom(),
                 req.getTo());
 
@@ -118,8 +132,9 @@ public class CallAcceptor {
             LOGGER.log(
                     System.Logger.Level.INFO,
                     "{0}Rejecting blacklisted call from [{1}]",
-                    SipCallHeaders.callPrefix(callId),
+                    SipCallHeaders.callPrefix(sessionId),
                     req.getFrom());
+            this.callSessionManager.releaseSipCallId(sipCallId);
             req.createResponse(SipServletResponse.SC_FORBIDDEN).send();
 
             return;
@@ -129,43 +144,55 @@ public class CallAcceptor {
         var menu = buildLanguageMenu(sorted);
 
         if (menu.isEmpty()) {
-            rejectNoLanguage(req, callId);
+            this.callSessionManager.releaseSipCallId(sipCallId);
+            rejectNoLanguage(req, sessionId);
 
             return;
         }
 
-        req.createResponse(SipServletResponse.SC_RINGING).send();
-        this.managedExecutorService.execute(() -> processAcceptedInvite(req, menu, callId));
+        try {
+            req.createResponse(SipServletResponse.SC_RINGING).send();
+        } catch (IOException ioException) {
+            this.callSessionManager.releaseSipCallId(sipCallId);
+
+            throw ioException;
+        }
+
+        this.managedExecutorService.execute(() -> processAcceptedInvite(req, menu, sessionId, sipCallId));
     }
 
     private void processAcceptedInvite(
-            SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu, String callId) {
+            SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu, String sessionId, String sipCallId) {
+        boolean sessionRegistered = false;
+
         try {
             Thread.sleep(1_000);
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
-            return;
-        }
 
-        try {
             if (menu.size() == 1) {
-                acceptAndAnnounce(req, menu.firstEntry().getValue());
-
-                return;
+                acceptAndAnnounce(req, menu.firstEntry().getValue(), sipCallId);
+            } else {
+                acceptAndPlayMenu(req, menu, sipCallId);
             }
 
-            acceptAndPlayMenu(req, menu);
+            sessionRegistered = true;
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
         } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.ERROR,
                     "{0}Failed to accept call from [{1}]",
-                    SipCallHeaders.callPrefix(callId),
+                    SipCallHeaders.callPrefix(sessionId),
                     req.getFrom(),
                     ioException);
+        } finally {
+            if (!sessionRegistered) {
+                this.callSessionManager.releaseSipCallId(sipCallId);
+            }
         }
     }
 
-    private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory) throws IOException {
+    private void acceptAndAnnounce(SipServletRequest req, LanguageFactory factory, String sipCallId)
+            throws IOException {
         SipSession session = req.getSession();
         String sessionId = session.getId();
         CallMedia media = negotiateAndRespond(req, sessionId, "language [" + factory.displayName() + "]");
@@ -203,6 +230,7 @@ public class CallAcceptor {
         this.callSessionManager.register(
                 sessionId,
                 new CallState(
+                        sipCallId,
                         session,
                         callFuture,
                         CompletableFuture.completedFuture(null),
@@ -212,7 +240,7 @@ public class CallAcceptor {
                         callerIdentitySummary));
     }
 
-    private void acceptAndPlayMenu(SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu)
+    private void acceptAndPlayMenu(SipServletRequest req, SequencedMap<Integer, LanguageFactory> menu, String sipCallId)
             throws IOException {
         SipSession session = req.getSession();
         String sessionId = session.getId();
@@ -243,7 +271,8 @@ public class CallAcceptor {
 
         this.callSessionManager.register(
                 sessionId,
-                new CallState(session, callFuture, receiverFuture, menu, media, startTime, callerIdentitySummary));
+                new CallState(
+                        sipCallId, session, callFuture, receiverFuture, menu, media, startTime, callerIdentitySummary));
     }
 
     /**
@@ -303,11 +332,11 @@ public class CallAcceptor {
         return menu;
     }
 
-    private static void rejectNoLanguage(SipServletRequest req, String callId) throws IOException {
+    private static void rejectNoLanguage(SipServletRequest req, String sessionId) throws IOException {
         LOGGER.log(
                 System.Logger.Level.WARNING,
                 "{0}No language factories registered — rejecting incoming call with 480 Temporarily Unavailable",
-                SipCallHeaders.callPrefix(callId));
+                SipCallHeaders.callPrefix(sessionId));
         req.createResponse(SipServletResponse.SC_TEMPORARLY_UNAVAILABLE).send();
     }
 }
