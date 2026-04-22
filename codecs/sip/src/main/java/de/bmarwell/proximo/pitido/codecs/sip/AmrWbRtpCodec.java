@@ -451,7 +451,20 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
                 throw new IOException("E_IF_encode failed with error code " + speechBytes);
             }
 
-            return buildOctetAlignedPayload(outputSeg, speechBytes, this.encodingMode);
+            // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) even though we
+            // request octet-aligned. The first byte of encoder output is the ToC byte.
+            // For octet-aligned payloads, we must strip it and prepend our own ToC.
+            byte expectedToC = (byte) ((this.encodingMode << 3) | 0x04);
+            byte firstEncoderByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
+            int offset = 0;
+            int actualSpeechBytes = speechBytes;
+
+            if (firstEncoderByte == expectedToC && speechBytes >= 33) {
+                offset = 1;
+                actualSpeechBytes = speechBytes - 1;
+            }
+
+            return buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
         }
     }
 
@@ -464,15 +477,22 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      *   <li>ToC = {@code F=0, FT=mode, Q=1, P=0, P=0} where FT is the AMR-WB frame type index
      *       (0–8); for mode 2 this yields {@code 0x14}.</li>
      * </ul>
+     *
+     * @param speechSeg encoder output segment containing potentially offset speech bytes
+     * @param speechBytes number of speech bytes to copy (after offset applied)
+     * @param encodingMode AMR-WB mode (0–8) to encode in the ToC byte
+     * @param offset byte offset into speechSeg where actual speech begins (0 for normal, 1 if encoder
+     *     prepended a ToC)
      */
-    private static byte[] buildOctetAlignedPayload(MemorySegment speechSeg, int speechBytes, int encodingMode) {
+    private static byte[] buildOctetAlignedPayload(
+            MemorySegment speechSeg, int speechBytes, int encodingMode, int offset) {
         // ToC byte: F(0) | FT(4 bits) | Q(1) | P(1) | P(1)
         // F=0 (no further frames), Q=1 (good quality frame), P=0 (padding).
         byte toc = (byte) ((encodingMode << 3) | 0x04);
         byte[] payload = new byte[2 + speechBytes];
         payload[0] = CMR_NO_REQUEST;
         payload[1] = toc;
-        byte[] speechData = speechSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+        byte[] speechData = speechSeg.asSlice(offset, speechBytes).toArray(ValueLayout.JAVA_BYTE);
         System.arraycopy(speechData, 0, payload, 2, speechBytes);
 
         return payload;
