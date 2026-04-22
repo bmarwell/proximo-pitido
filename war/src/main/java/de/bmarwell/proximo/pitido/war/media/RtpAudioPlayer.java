@@ -52,7 +52,6 @@ import java.util.Random;
 public class RtpAudioPlayer implements AudioPlayer {
 
     private static final System.Logger LOGGER = System.getLogger(RtpAudioPlayer.class.getName());
-    private static final int DECODE_PIPELINE_SAMPLE_RATE = 8_000;
     private static final int RTP_PACKETS_PER_SECOND = 50;
 
     private final DatagramSocket socket;
@@ -126,6 +125,11 @@ public class RtpAudioPlayer implements AudioPlayer {
      * {@link RtpCodec#inputSampleRate()} Hz, encodes each 20 ms frame via the negotiated codec,
      * and sends it as an RTP packet.
      *
+     * <p>Decoders that support multi-rate output (e.g. {@link de.bmarwell.proximo.pitido.codecs.input.OggOpusPcmDecoder})
+     * will produce samples at exactly {@link RtpCodec#inputSampleRate()}, avoiding any upsampling.
+     * Decoders that do not (e.g. deprecated WAV) fall back to 8 kHz output; the pipeline then
+     * upsamples to match the codec's expectation.
+     *
      * <p>Playback stops immediately when the thread is interrupted.
      *
      * @param resourcePath classpath path of the audio file (e.g. {@code /audio/de/012.opus})
@@ -138,12 +142,12 @@ public class RtpAudioPlayer implements AudioPlayer {
         advanceTimestampForSilence();
 
         try (InputStream rawStream = openResource(resourcePath);
-                PcmStream pcm = this.pcmDecoderFactory.forPath(resourcePath).open(rawStream)) {
-            int decoderSamplesPerPacket = DECODE_PIPELINE_SAMPLE_RATE / RTP_PACKETS_PER_SECOND;
-            int codecInputRate = this.codec.inputSampleRate();
+                PcmStream pcm =
+                        this.pcmDecoderFactory.forPath(resourcePath).open(rawStream, this.codec.inputSampleRate())) {
+            int decoderSamplesPerPacket = pcm.sampleRate() / RTP_PACKETS_PER_SECOND;
             short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
             short[] codecFrameBuf = new short[this.codec.samplesPerFrame()];
-            validateFrameSizing(codecInputRate, decoderSamplesPerPacket, codecFrameBuf.length);
+            validateFrameSizing(decoderSamplesPerPacket, codecFrameBuf.length);
 
             while (true) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -161,7 +165,7 @@ public class RtpAudioPlayer implements AudioPlayer {
                     Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
                 }
 
-                adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf, codecInputRate);
+                adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
                 sendRtpPacket(this.codec.encode(codecFrameBuf));
                 this.lastPacketSentAt = Instant.now();
                 Thread.sleep(20);
@@ -226,32 +230,22 @@ public class RtpAudioPlayer implements AudioPlayer {
         return stream;
     }
 
-    private static void validateFrameSizing(int codecInputRate, int decoderSamplesPerPacket, int codecSamplesPerPacket)
-            throws IOException {
-        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE) {
-            if (codecSamplesPerPacket != decoderSamplesPerPacket) {
-                throw new IOException("Codec frame size mismatch for 8 kHz pipeline: expected "
-                        + decoderSamplesPerPacket + " samples, got: " + codecSamplesPerPacket);
-            }
-
+    private static void validateFrameSizing(int decoderSamplesPerPacket, int codecSamplesPerPacket) throws IOException {
+        if (decoderSamplesPerPacket == codecSamplesPerPacket) {
             return;
         }
 
-        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE * 2) {
-            if (codecSamplesPerPacket != decoderSamplesPerPacket * 2) {
-                throw new IOException("Codec frame size mismatch for 16 kHz pipeline: expected "
-                        + (decoderSamplesPerPacket * 2) + " samples, got: " + codecSamplesPerPacket);
-            }
-
+        if (codecSamplesPerPacket == decoderSamplesPerPacket * 2) {
+            // Decoder is at 8 kHz (e.g. deprecated WAV), codec needs 16 kHz — will upsample.
             return;
         }
 
-        throw new IOException("Unsupported codec input sample rate: " + codecInputRate
-                + " Hz (decoder pipeline currently provides only " + DECODE_PIPELINE_SAMPLE_RATE + " Hz)");
+        throw new IOException("Codec frame size mismatch: decoder provides " + decoderSamplesPerPacket
+                + " samples but codec expects " + codecSamplesPerPacket);
     }
 
-    private static void adaptPcmFrameForCodec(short[] decoderFrameBuf, short[] codecFrameBuf, int codecInputRate) {
-        if (codecInputRate == DECODE_PIPELINE_SAMPLE_RATE) {
+    private static void adaptPcmFrameForCodec(short[] decoderFrameBuf, short[] codecFrameBuf) {
+        if (decoderFrameBuf.length == codecFrameBuf.length) {
             System.arraycopy(decoderFrameBuf, 0, codecFrameBuf, 0, decoderFrameBuf.length);
             return;
         }

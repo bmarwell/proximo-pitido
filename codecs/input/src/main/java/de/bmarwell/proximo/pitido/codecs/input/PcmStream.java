@@ -16,13 +16,28 @@ import java.io.Closeable;
 import java.io.IOException;
 
 /**
- * A stream of decoded 8 kHz mono 16-bit PCM audio samples.
+ * A stream of decoded mono 16-bit PCM audio samples.
  *
- * <p>Callers should read in chunks of 160 samples (20 ms at 8 kHz) to match one RTP packet.
- * The last chunk of a file may be partially filled; the caller must zero-pad it to 160 samples
+ * <p>The actual sample rate is reported by {@link #sampleRate()}.
+ * The caller should read in chunks of {@code sampleRate() / 50} samples (20 ms per RTP packet).
+ * The last chunk of a file may be partially filled; the caller must zero-pad it to a full frame
  * before encoding.
  */
 public interface PcmStream extends Closeable {
+
+    /**
+     * Returns the PCM sample rate in Hz of this stream.
+     *
+     * <p>The default is 8 000 Hz, which suits G.711 A-law (PCMA) and G.711 μ-law (PCMU).
+     * Decoders that support multiple output rates (e.g. {@link OggOpusPcmDecoder}) may return
+     * a higher rate when the caller requests one via
+     * {@link PcmDecoder#open(java.io.InputStream, int)}.
+     *
+     * @return sample rate in Hz, e.g. {@code 8_000} or {@code 16_000}
+     */
+    default int sampleRate() {
+        return 8_000;
+    }
 
     /**
      * Reads up to {@code len} decoded PCM samples into {@code buf} starting at {@code off}.
