@@ -33,7 +33,7 @@ jobs:
           show-progress: false
 
       - name: Initialise CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
 
@@ -57,4 +57,4 @@ jobs:
           compile
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
