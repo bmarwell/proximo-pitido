@@ -61,10 +61,9 @@ import javax.enterprise.context.ApplicationScoped;
  * would corrupt audio.
  * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall()} allocates a
  * fresh {@link Arena} and {@code g722_encode_state_t} segment for each call leg and returns a
- * plain (non-CDI) {@code G722RtpCodec} instance.
- *
- * <p>TODO: extend {@link RtpCodec} with {@link AutoCloseable} so per-call arenas are released
- * promptly when the call ends rather than relying on GC.
+ * plain (non-CDI) {@code G722RtpCodec} instance that implements {@link AutoCloseable}.
+ * Callers must invoke {@link #close()} when the call ends to release the native encoder state
+ * promptly; {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager} handles this.
  *
  * <h2>G.729 — will not be implemented</h2>
  *
@@ -104,11 +103,11 @@ public final class G722RtpCodec implements RtpCodec {
     // Per-call instance fields — null in the CDI factory bean.
 
     /**
-     * GC-managed arena owning the native encoder state for this call leg.
+     * Confined arena owning the native encoder state for this call leg.
      * {@code null} in the CDI factory bean.
      *
-     * <p>Using {@link Arena#ofAuto()} avoids resource leaks until {@link RtpCodec} is extended
-     * with {@link AutoCloseable} and the caller can close it explicitly.
+     * <p>Closed explicitly by {@link #close()} when the call ends, releasing the native
+     * encoder state immediately rather than waiting for GC.
      */
     private final Arena callArena;
 
@@ -208,7 +207,7 @@ public final class G722RtpCodec implements RtpCodec {
      */
     @Override
     public RtpCodec forCall() {
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofConfined();
         MemorySegment state = arena.allocate(STATE_SIZE, STATE_ALIGN);
         MemorySegment initialised = invokeEncodeInit(state);
 
@@ -284,6 +283,18 @@ public final class G722RtpCodec implements RtpCodec {
     @Override
     public String fmtpParams() {
         return "";
+    }
+
+    /**
+     * Closes the confined arena, releasing the native {@code g722_encode_state_t} segment.
+     *
+     * <p>A no-op when called on the CDI factory bean (whose {@link #callArena} is {@code null}).
+     */
+    @Override
+    public void close() {
+        if (this.callArena != null) {
+            this.callArena.close();
+        }
     }
 
     private MemorySegment invokeEncodeInit(MemorySegment state) {

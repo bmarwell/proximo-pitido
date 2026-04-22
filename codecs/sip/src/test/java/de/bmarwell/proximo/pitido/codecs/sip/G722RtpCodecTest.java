@@ -91,6 +91,32 @@ class G722RtpCodecTest {
     // -------------------------------------------------------------------------
 
     @Test
+    void closeOnFactoryBean_isNoOp() {
+        // given: a fresh factory bean (no callArena)
+        var factory = new G722RtpCodec();
+
+        // when / then: close() must not throw on the CDI factory bean
+        factory.close();
+    }
+
+    @Test
+    void closeOnPerCallInstance_releasesArena() {
+        // given
+        G722RtpCodec factory = new G722RtpCodec();
+        factory.probe();
+
+        assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
+
+        RtpCodec callInstance = factory.forCall();
+
+        // when
+        callInstance.close();
+
+        // then: encoding after close should fail (arena is closed)
+        assertThrows(Exception.class, () -> callInstance.encode(new short[320]));
+    }
+
+    @Test
     void forCallReturnsDifferentInstance() {
         G722RtpCodec factory = new G722RtpCodec();
         factory.probe();
