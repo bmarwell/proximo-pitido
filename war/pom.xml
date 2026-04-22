@@ -99,8 +99,7 @@
   </dependencies>
 
   <build>
-    <finalName>${artifactId}</finalName>
-    <!-- maven-war-plugin appends .war; ${project.build.finalName} = proximo-pitido-war without extension -->
+    <finalName>proximo-pitido</finalName>
     <plugins>
       <plugin>
         <groupId>io.openliberty.tools</groupId>
