@@ -45,10 +45,9 @@
   <!--
     Default runtime logging profile.
     Liberty base level stays at AUDIT for framework noise control.
-    All classes under de.bmarwell.proximo.pitido.* are set to fine (DEBUG) so that
-    technical details are captured in trace.log without appearing in docker compose logs.
-    RtpAudioPlayer and RtpDtmfReceiver are set to finest because their per-packet logging
-    is extremely verbose and is only useful for RTP-level diagnosis.
+    All classes under de.bmarwell.proximo.pitido.* are set to fine (DEBUG) so that technical details are captured in trace.log without appearing in docker compose logs.
+    This replaces the previous class-by-class list (SipCallHandler, SipRegistrationListener, LanguageInfoListener): SipCallHandler is a routing-only delegate with no log statements of its own; the package wildcard covers all actual logging classes without needing to enumerate them individually.
+    RtpAudioPlayer and RtpDtmfReceiver are set to finest because their per-packet logging is extremely verbose and is only useful for RTP-level diagnosis.
 
     Optional trace selectors to enable when diagnosing specific problems:
     - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=finest
