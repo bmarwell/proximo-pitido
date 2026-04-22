@@ -26,6 +26,7 @@ module de.bmarwell.proximo.pitido.core {
 
     // JDK platform modules
     requires java.naming; // javax.naming.* — JNDI SRV DNS lookup (package-private use only)
+    requires java.net.http; // java.net.http.HttpClient — public IP discovery
 
     // MicroProfile Config — provided by Liberty; annotation-only use (@ConfigProperty)
     requires static microprofile.config.api;
