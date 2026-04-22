@@ -61,8 +61,8 @@ class HoldHandlerTest {
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=sendrecv\r\n";
         AtomicBoolean held = new AtomicBoolean(false);
         CallMedia media = new CallMedia(null, null, sdpAnswer, null, -1, held);
-        CallState callState =
-                new CallState(sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
+        CallState callState = new CallState(
+                "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-1");
         when(req.getSession()).thenReturn(sipSession);
         when(req.getContent()).thenReturn(sdpOffer.getBytes(StandardCharsets.UTF_8));
@@ -88,8 +88,8 @@ class HoldHandlerTest {
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=sendrecv\r\n";
         AtomicBoolean held = new AtomicBoolean(false);
         CallMedia media = new CallMedia(null, null, sdpAnswer, null, -1, held);
-        CallState callState =
-                new CallState(sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
+        CallState callState = new CallState(
+                "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-2");
         when(req.getSession()).thenReturn(sipSession);
         when(req.getContent()).thenReturn(sdpOffer.getBytes(StandardCharsets.UTF_8));
@@ -115,8 +115,8 @@ class HoldHandlerTest {
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=recvonly\r\n";
         AtomicBoolean held = new AtomicBoolean(true);
         CallMedia media = new CallMedia(null, null, sdpAnswer, null, -1, held);
-        CallState callState =
-                new CallState(sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
+        CallState callState = new CallState(
+                "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-3");
         when(req.getSession()).thenReturn(sipSession);
         when(req.getContent()).thenReturn(sdpOffer.getBytes(StandardCharsets.UTF_8));

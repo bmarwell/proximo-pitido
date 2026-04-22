@@ -24,8 +24,13 @@ import javax.servlet.sip.SipSession;
  *
  * <p>Stored in {@link CallSessionManager} and accessed by all handler beans that need to
  * cancel futures, close media, or determine which language was selected.
+ *
+ * <p>{@code sipCallId} is the SIP {@code Call-ID} header value, used to detect and reject
+ * duplicate INVITE forks from the provider before they result in two active sessions for the
+ * same logical call.
  */
 record CallState(
+        String sipCallId,
         SipSession session,
         Future<?> callFuture,
         Future<?> receiverFuture,
