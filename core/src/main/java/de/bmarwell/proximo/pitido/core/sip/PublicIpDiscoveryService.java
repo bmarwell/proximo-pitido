@@ -12,7 +12,9 @@
  */
 package de.bmarwell.proximo.pitido.core.sip;
 
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,8 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import java.util.function.Supplier;
 import javax.enterprise.context.ApplicationScoped;
 import javax.ws.rs.ProcessingException;
 import javax.ws.rs.client.Client;
@@ -35,7 +36,9 @@ import javax.ws.rs.core.MediaType;
  * The result is cached for {@value #CACHE_HOURS} hour so that repeated calls during a registration
  * cycle do not generate unnecessary HTTP traffic.
  *
- * <p>Each HTTP request times out after {@value #REQUEST_TIMEOUT_SECONDS} seconds.
+ * <p>A fresh JAX-RS {@link Client} is created for each {@link #discover()} invocation and closed
+ * immediately afterwards.
+ * Each HTTP request times out after {@value #REQUEST_TIMEOUT_SECONDS} seconds.
  * A failed request is logged at DEBUG level and the next service is tried.
  * When all services fail, {@link Optional#empty()} is returned; the caller is responsible for
  * falling back to a locally detected address.
@@ -43,7 +46,7 @@ import javax.ws.rs.core.MediaType;
  * <h2>Services queried (in order)</h2>
  *
  * <ol>
- *   <li>{@code https://ident.me} — plain text, IPv4 or IPv6</li>
+ *   <li>{@code https://v4.ident.me} — plain text, IPv4 only</li>
  *   <li>{@code https://api.ipify.org} — plain text, IPv4 only</li>
  *   <li>{@code https://checkip.amazonaws.com} — plain text, IPv4 only</li>
  * </ol>
@@ -53,14 +56,22 @@ public class PublicIpDiscoveryService {
 
     private static final System.Logger LOGGER = System.getLogger(PublicIpDiscoveryService.class.getName());
 
-    static final List<String> DISCOVERY_URLS =
-            List.of("https://ident.me", "https://api.ipify.org", "https://checkip.amazonaws.com");
+    static final List<URI> DISCOVERY_URLS = List.of(
+            URI.create("https://v4.ident.me"),
+            URI.create("https://api.ipify.org"),
+            URI.create("https://checkip.amazonaws.com"));
 
     private static final int CACHE_HOURS = 1;
     private static final long REQUEST_TIMEOUT_SECONDS = 2L;
 
-    /** The JAX-RS client; created in {@link #init()} and closed in {@link #close()}. */
-    Client client;
+    /**
+     * Factory used to create a short-lived JAX-RS {@link Client} per discovery invocation.
+     * Package-private so tests can substitute a supplier that returns a mock client.
+     */
+    Supplier<Client> clientFactory = () -> ClientBuilder.newBuilder()
+            .connectTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build();
 
     private final AtomicReference<String> cachedIp = new AtomicReference<>();
     private volatile Instant cacheExpiry = Instant.MIN;
@@ -68,25 +79,10 @@ public class PublicIpDiscoveryService {
     /** CDI no-args constructor. */
     public PublicIpDiscoveryService() {}
 
-    @PostConstruct
-    void init() {
-        this.client = ClientBuilder.newBuilder()
-                .connectTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                .build();
-    }
-
-    @PreDestroy
-    void close() {
-        if (this.client != null) {
-            this.client.close();
-        }
-    }
-
     /**
-     * Returns the public IP address of this host, querying remote services if the cache is stale.
+     * Returns the public IPv4 address of this host, querying remote services if the cache is stale.
      *
-     * @return the discovered IP address, or {@link Optional#empty()} when all services are
+     * @return the discovered IPv4 address, or {@link Optional#empty()} when all services are
      *     unreachable
      */
     public Optional<String> discover() {
@@ -100,28 +96,33 @@ public class PublicIpDiscoveryService {
     }
 
     private Optional<String> queryDiscoveryServices() {
-        for (String url : DISCOVERY_URLS) {
-            Optional<String> ip = queryService(url);
+        Client client = this.clientFactory.get();
 
-            if (ip.isPresent()) {
-                this.cachedIp.set(ip.get());
-                this.cacheExpiry = Instant.now().plus(Duration.ofHours(CACHE_HOURS));
-                return ip;
+        try {
+            for (URI url : DISCOVERY_URLS) {
+                Optional<String> ip = queryService(client, url);
+
+                if (ip.isPresent()) {
+                    this.cachedIp.set(ip.get());
+                    this.cacheExpiry = Instant.now().plus(Duration.ofHours(CACHE_HOURS));
+                    return ip;
+                }
             }
+        } finally {
+            client.close();
         }
 
         return Optional.empty();
     }
 
-    private Optional<String> queryService(String url) {
+    private Optional<String> queryService(Client client, URI url) {
         try {
-            String body = this.client
-                    .target(url)
+            String body = client.target(url)
                     .request(MediaType.TEXT_PLAIN_TYPE)
                     .get(String.class)
                     .strip();
 
-            if (!isValidIpAddress(body)) {
+            if (!isValidPublicIpv4Address(body)) {
                 LOGGER.log(System.Logger.Level.DEBUG, "Unexpected response from {0}: {1}", url, body);
                 return Optional.empty();
             }
@@ -138,14 +139,21 @@ public class PublicIpDiscoveryService {
         }
     }
 
-    private static boolean isValidIpAddress(String candidate) {
-        if (candidate == null || candidate.isBlank() || candidate.length() > 45) {
+    /**
+     * Returns {@code true} only when {@code candidate} is a literal dotted-decimal IPv4 address.
+     *
+     * <p>Uses a round-trip check — {@link InetAddress#getHostAddress()} must equal the original
+     * input — to reject DNS hostnames that {@link InetAddress#getByName(String)} would otherwise
+     * silently resolve.
+     */
+    static boolean isValidPublicIpv4Address(String candidate) {
+        if (candidate == null || candidate.isBlank() || candidate.length() > 15) {
             return false;
         }
 
         try {
-            InetAddress.getByName(candidate);
-            return true;
+            InetAddress addr = InetAddress.getByName(candidate);
+            return addr instanceof Inet4Address && addr.getHostAddress().equals(candidate);
         } catch (UnknownHostException unknownHostException) {
             return false;
         }
