@@ -97,10 +97,13 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     private static final System.Logger LOGGER = System.getLogger(AmrWbRtpCodec.class.getName());
 
     /**
-     * AMR-WB encoding mode 8: 23.85 kbps — the highest quality mode.
+     * AMR-WB encoding mode 2: 12.65 kbps.
+     * Deutsche Telekom's VoLTE SDP offers restrict {@code mode-set=0,1,2}, so mode 2 is the
+     * highest quality mode universally compatible with Telekom IMS callers.
+     * 12.65 kbps delivers wideband quality adequate for a speaking-clock announcement.
      * Passed as the {@code mode} argument to {@code E_IF_encode}.
      */
-    private static final int MODE_23850 = 8;
+    private static final int MODE_12650 = 2;
 
     /** Dynamic payload type for AMR-WB; conventional value used by all major VoLTE stacks. */
     private static final int PAYLOAD_TYPE = 98;
@@ -375,13 +378,13 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      * <ul>
      *   <li>CMR = {@code 0xF0} (no codec mode request from sender).</li>
      *   <li>ToC = {@code F=0, FT=mode, Q=1, P=0, P=0} where FT is the AMR-WB frame type index
-     *       (0–8); for mode 8 this yields {@code 0x44}.</li>
+     *       (0–8); for mode 2 this yields {@code 0x14}.</li>
      * </ul>
      */
     private static byte[] buildOctetAlignedPayload(MemorySegment speechSeg, int speechBytes) {
         // ToC byte: F(0) | FT(4 bits) | Q(1) | P(1) | P(1)
         // F=0 (no further frames), Q=1 (good quality frame), P=0 (padding).
-        byte toc = (byte) ((MODE_23850 << 3) | 0x04);
+        byte toc = (byte) ((MODE_12650 << 3) | 0x04);
         byte[] payload = new byte[2 + speechBytes];
         payload[0] = CMR_NO_REQUEST;
         payload[1] = toc;
@@ -403,7 +406,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
 
     private int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
         try {
-            return (int) this.eIfEncodeHandle.invoke(this.stateSegment, MODE_23850, inputSeg, outputSeg, 0);
+            return (int) this.eIfEncodeHandle.invoke(this.stateSegment, MODE_12650, inputSeg, outputSeg, 0);
         } catch (RuntimeException runtimeException) {
             throw runtimeException;
         } catch (Throwable throwable) {

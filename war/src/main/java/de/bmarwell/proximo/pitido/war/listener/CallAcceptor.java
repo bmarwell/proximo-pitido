@@ -166,8 +166,6 @@ public class CallAcceptor {
         boolean sessionRegistered = false;
 
         try {
-            Thread.sleep(1_000);
-
             if (menu.size() == 1) {
                 acceptAndAnnounce(req, menu.firstEntry().getValue(), sipCallId);
             } else {
@@ -175,8 +173,6 @@ public class CallAcceptor {
             }
 
             sessionRegistered = true;
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
         } catch (IOException ioException) {
             LOGGER.log(
                     System.Logger.Level.ERROR,

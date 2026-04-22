@@ -43,8 +43,11 @@ import java.io.IOException;
  *                               {@link #forCall()}) or a per-call instance (after
  *                               {@link #forCall()})
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
+ * @param offeredFmtp            the raw {@code a=fmtp} parameter string from the caller's SDP offer
+ *                               for this payload type; empty string if no {@code a=fmtp} line was
+ *                               present in the offer
  */
-record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) implements RtpCodec {
+record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String offeredFmtp) implements RtpCodec {
 
     /**
      * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.
@@ -67,7 +70,7 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) implemen
 
     @Override
     public RtpCodec forCall() {
-        return new NegotiatedRtpCodec(this.delegate.forCall(), this.negotiatedPayloadType);
+        return new NegotiatedRtpCodec(this.delegate.forCall(), this.negotiatedPayloadType, this.offeredFmtp);
     }
 
     @Override
@@ -107,7 +110,10 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType) implemen
 
     @Override
     public String fmtpParams() {
-        return this.delegate.fmtpParams();
+        // Echo the caller's offered fmtp in the SDP answer (RFC 4867 §8.3.2 requires mode-set
+        // to be present in the answer if the offerer included it).
+        // Fall back to the codec's own defaults only when the offer had no a=fmtp line.
+        return this.offeredFmtp.isEmpty() ? this.delegate.fmtpParams() : this.offeredFmtp;
     }
 
     @Override
