@@ -12,7 +12,10 @@
  */
 package de.bmarwell.proximo.pitido.core.sip;
 
+import java.io.IOException;
+import java.net.DatagramSocket;
 import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Collections;
@@ -33,9 +36,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  *       {@code SIP_REGISTRATION_ENABLED=true} and {@code SIP_PUBLIC_HOST} is absent.
  *       Behind NAT (home router, Docker host), a local IP in the Contact header is unreachable
  *       from the registrar, so a public IP is necessary.</li>
+ *   <li>Outbound interface IP detected via a connected {@link DatagramSocket} pointed at the
+ *       configured SIP registrar — reliable in Docker and Podman environments because it consults
+ *       the OS routing table rather than enumerating network interfaces.
+ *       No data is sent; the socket is used only for routing-table lookup.</li>
  *   <li>First non-loopback, non-link-local IPv4 address on any active network interface —
- *       used when registration is disabled (softphone / dev mode) or when all public-IP
- *       discovery services are unreachable.</li>
+ *       final fallback used when registration is disabled or all other detection methods fail.</li>
  * </ol>
  */
 @ApplicationScoped
@@ -50,6 +56,10 @@ public class LocalSipHostProvider {
     Optional<String> configuredHost;
 
     @Inject
+    @ConfigProperty(name = "sip.registrar")
+    Optional<String> registrar;
+
+    @Inject
     @ConfigProperty(name = "sip.registration.enabled", defaultValue = "true")
     boolean registrationEnabled;
 
@@ -62,16 +72,24 @@ public class LocalSipHostProvider {
     /** Returns the address to advertise in the SIP {@code Contact} header. */
     public String get() {
         if (this.configuredHost.isPresent()) {
-            return this.configuredHost.get();
+            String host = this.configuredHost.get();
+            LOGGER.log(System.Logger.Level.INFO, "Local SIP host (configured): {0}", host);
+
+            return host;
         }
 
         if (!this.registrationEnabled) {
-            return detectLocalAddress();
+            String host = detectLocalAddress();
+            LOGGER.log(System.Logger.Level.INFO, "Local SIP host (auto-detected, registration disabled): {0}", host);
+
+            return host;
         }
 
         Optional<String> publicIp = this.publicIpDiscoveryService.discover();
 
         if (publicIp.isPresent()) {
+            LOGGER.log(System.Logger.Level.INFO, "Local SIP host (public IP discovered): {0}", publicIp.get());
+
             return publicIp.get();
         }
 
@@ -79,10 +97,21 @@ public class LocalSipHostProvider {
                 System.Logger.Level.WARNING,
                 "All public IP discovery services unreachable; falling back to local IP for Contact header."
                         + " Incoming calls may fail if this host is behind NAT.");
-        return detectLocalAddress();
+        String host = detectLocalAddress();
+        LOGGER.log(System.Logger.Level.INFO, "Local SIP host (auto-detected fallback): {0}", host);
+
+        return host;
     }
 
     private String detectLocalAddress() {
+        if (this.registrar.isPresent()) {
+            Optional<String> routedAddress = detectViaRouting(this.registrar.get());
+
+            if (routedAddress.isPresent()) {
+                return routedAddress.get();
+            }
+        }
+
         try {
             return findLocalIpv4Address().orElse(FALLBACK_ADDRESS);
         } catch (SocketException socketException) {
@@ -90,7 +119,37 @@ public class LocalSipHostProvider {
                     System.Logger.Level.WARNING,
                     "Could not auto-detect local SIP host, using loopback",
                     socketException);
+
             return FALLBACK_ADDRESS;
+        }
+    }
+
+    /**
+     * Determines the outbound interface IP by connecting a UDP socket to the registrar.
+     *
+     * <p>No data is sent.
+     * The OS routing table selects the correct interface, which is the one Liberty will use
+     * for outbound SIP connections — making this reliable in Docker and Podman environments
+     * where interface enumeration may return multiple candidates.
+     */
+    private Optional<String> detectViaRouting(String registrarHost) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.connect(InetAddress.getByName(registrarHost), 5060);
+            InetAddress localAddress = socket.getLocalAddress();
+
+            if (localAddress.isLoopbackAddress() || localAddress.isAnyLocalAddress()) {
+                return Optional.empty();
+            }
+
+            return Optional.of(localAddress.getHostAddress());
+        } catch (IOException ioException) {
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "Routing-table IP detection failed for registrar [{0}], falling back to NIC enumeration",
+                    registrarHost,
+                    ioException);
+
+            return Optional.empty();
         }
     }
 
