@@ -36,6 +36,38 @@ import java.io.IOException;
 public interface RtpCodec extends AutoCloseable {
 
     /**
+     * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,
+     * given the parameter string from the caller's SDP offer.
+     *
+     * <p>The default implementation ignores the offered fmtp and returns {@link #fmtpParams()},
+     * which is correct for most codecs.
+     * Codecs that must echo specific offered parameters in the answer (e.g. AMR-WB mode-set
+     * per RFC 4867 §8.3.2) must override this method.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
+     * @return the fmtp parameter string for the SDP answer; empty string if no {@code a=fmtp}
+     *         line should be emitted
+     */
+    default String fmtpAnswer(String offeredFmtp) {
+        return fmtpParams();
+    }
+
+    /**
+     * Returns a codec instance suitable for exactly one call leg, with awareness of the
+     * offered fmtp parameters.
+     *
+     * <p>The default implementation ignores {@code offeredFmtp} and delegates to
+     * {@link #forCall()}.
+     * Codecs that adapt their encoding behaviour based on offered parameters (e.g. AMR-WB
+     * selecting the best allowed mode from {@code mode-set}) must override this method.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
+     */
+    default RtpCodec forCall(String offeredFmtp) {
+        return forCall();
+    }
+
+    /**
      * Returns {@code true} if this codec can be used on the current host.
      *
      * <p>Pure-Java codecs (e.g. PCMA) always return {@code true}.

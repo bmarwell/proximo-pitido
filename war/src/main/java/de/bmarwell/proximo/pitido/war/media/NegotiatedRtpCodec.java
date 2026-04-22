@@ -70,7 +70,8 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
 
     @Override
     public RtpCodec forCall() {
-        return new NegotiatedRtpCodec(this.delegate.forCall(), this.negotiatedPayloadType, this.offeredFmtp);
+        return new NegotiatedRtpCodec(
+                this.delegate.forCall(this.offeredFmtp), this.negotiatedPayloadType, this.offeredFmtp);
     }
 
     @Override
@@ -110,10 +111,8 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
 
     @Override
     public String fmtpParams() {
-        // Echo the caller's offered fmtp in the SDP answer (RFC 4867 §8.3.2 requires mode-set
-        // to be present in the answer if the offerer included it).
-        // Fall back to the codec's own defaults only when the offer had no a=fmtp line.
-        return this.offeredFmtp.isEmpty() ? this.delegate.fmtpParams() : this.offeredFmtp;
+        // Delegate to the codec's own answer logic (e.g. AMR-WB echoes mode-set per RFC 4867 §8.3.2).
+        return this.delegate.fmtpAnswer(this.offeredFmtp);
     }
 
     @Override
