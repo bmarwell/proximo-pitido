@@ -108,10 +108,11 @@ public class CallAcceptor {
         }
 
         LOGGER.log(
-                System.Logger.Level.DEBUG,
-                "{0}Incoming call from [{1}]",
+                System.Logger.Level.INFO,
+                "{0}INVITE from [{1}] to [{2}]",
                 SipCallHeaders.callPrefix(callId),
-                req.getFrom());
+                req.getFrom(),
+                req.getTo());
 
         if (this.sipCallBlacklist.isBlacklisted(req)) {
             LOGGER.log(
@@ -171,6 +172,11 @@ public class CallAcceptor {
 
         Instant startTime = Instant.now();
         String callerIdentitySummary = SipCallHeaders.buildCallerIdentitySummary(req);
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}Caller identity: {1}",
+                SipCallHeaders.callPrefix(sessionId),
+                callerIdentitySummary);
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
@@ -183,7 +189,7 @@ public class CallAcceptor {
                 return;
             }
 
-            this.announcementLoop.play(session, player, factory, sessionId, media, callerIdentitySummary);
+            this.announcementLoop.play(session, player, factory, sessionId, media);
         });
 
         this.callSessionManager.register(
@@ -208,9 +214,14 @@ public class CallAcceptor {
         AudioPlayer player = new RtpAudioPlayer(media, this.pcmDecoderFactory);
         Instant startTime = Instant.now();
         String callerIdentitySummary = SipCallHeaders.buildCallerIdentitySummary(req);
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}Caller identity: {1}",
+                SipCallHeaders.callPrefix(sessionId),
+                callerIdentitySummary);
 
-        Future<?> callFuture = this.managedExecutorService.submit(
-                () -> this.menuRunner.run(session, player, menu, sessionId, media, callerIdentitySummary));
+        Future<?> callFuture =
+                this.managedExecutorService.submit(() -> this.menuRunner.run(session, player, menu, sessionId, media));
         Future<?> receiverFuture = this.dtmfDispatcher.startReceiver(media, sessionId);
 
         this.callSessionManager.register(
@@ -226,18 +237,14 @@ public class CallAcceptor {
      */
     private CallMedia negotiateAndRespond(SipServletRequest req, String sessionId, String description)
             throws IOException {
-        LOGGER.log(
-                System.Logger.Level.DEBUG,
-                "{0}Accepting call from [{1}]",
-                SipCallHeaders.callPrefix(sessionId),
-                req.getFrom());
         CallMedia media = this.sdpNegotiator.negotiate(req);
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "{0}Call accepted — {1}, codec [{2}]",
+                "{0}200 OK — {1}, codec [{2}], remote RTP [{3}]",
                 SipCallHeaders.callPrefix(sessionId),
                 description,
-                media.codec().sdpName());
+                media.codec().sdpName(),
+                media.remoteRtp());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");
         response.send();

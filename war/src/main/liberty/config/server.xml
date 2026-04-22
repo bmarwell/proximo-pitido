@@ -45,23 +45,23 @@
   <!--
     Default runtime logging profile.
     Liberty base level stays at AUDIT for framework noise control.
-    SipCallHandler runs at DEBUG by default to inspect caller identity headers, codec choices, DTMF input, and call lifecycle transitions.
-    SipRegistrationListener runs at INFO by default to track REGISTER/auth progress without per-attempt DEBUG noise.
+    All classes under de.bmarwell.proximo.pitido.* are set to fine (DEBUG) so that
+    technical details are captured in trace.log without appearing in docker compose logs.
+    RtpAudioPlayer and RtpDtmfReceiver are set to finest because their per-packet logging
+    is extremely verbose and is only useful for RTP-level diagnosis.
 
     Optional trace selectors to enable when diagnosing specific problems:
-    - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=debug
+    - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=finest
       Shows parsed SDP offer details, selected RTP endpoint data, and codec matching.
-    - de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=debug
-      Shows RTP packetisationz/send-path details and is usually too verbose for normal operation.
-    - de.bmarwell.proximo.pitido.codecs.input.*=debug
+    - de.bmarwell.proximo.pitido.codecs.input.*=finest
       Shows native decoder and mixer capability probes (opus/soxr) and fallback decisions.
-    - de.bmarwell.proximo.pitido.codecs.sip.*=debug
+    - de.bmarwell.proximo.pitido.codecs.sip.*=finest
       Shows SIP codec availability probes (for example, G.722 native encoder readiness).
   -->
   <logging
     consoleLogLevel="INFO"
     consoleFormat="TBASIC"
-    traceSpecification="*=audit:de.bmarwell.proximo.pitido.war.listener.SipCallHandler=finest:de.bmarwell.proximo.pitido.war.listener.SipRegistrationListener=fine:de.bmarwell.proximo.pitido.war.listener.LanguageInfoListener=fine:de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver=finest"
+    traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=fine:de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=finest:de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver=finest"
     hideMessage="CWOWB1009W,CWSCT0017E"
     isoDateFormat="true"
   />

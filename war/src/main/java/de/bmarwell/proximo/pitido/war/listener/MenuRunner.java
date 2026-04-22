@@ -62,8 +62,7 @@ public class MenuRunner {
             AudioPlayer player,
             SequencedMap<Integer, LanguageFactory> menu,
             String sessionId,
-            CallMedia media,
-            String callerIdentitySummary) {
+            CallMedia media) {
         try {
             Thread.sleep(5_000);
             runMenuLoop(player, menu, sessionId);
@@ -73,7 +72,7 @@ public class MenuRunner {
             LanguageFactory chosen = this.callSessionManager.takePendingSelection(sessionId);
 
             if (chosen != null) {
-                this.announcementLoop.play(session, player, chosen, sessionId, media, callerIdentitySummary);
+                this.announcementLoop.play(session, player, chosen, sessionId, media);
             } else {
                 LOGGER.log(
                         System.Logger.Level.INFO,
