@@ -152,6 +152,20 @@ OPTIONS:   ("Proximo Pitido", "DAR:From", "NEUTRAL", "", "NO_ROUTE", "0")
 
 `server.env` is intentionally excluded from version control (contains secrets).
 
+=== Timezone
+
+The announced time uses the JVM default timezone, which OpenJDK on Linux resolves in this order:
+
+. `TZ` environment variable — the standard Docker mechanism.
+  Set `TZ=Europe/Berlin` in `docker-compose.yml` or pass `-e TZ=Europe/Berlin` to `docker run`.
+. `/etc/localtime` inside the container — stock Docker images default to UTC.
+
+Without `TZ`, callers will hear the time in UTC.
+Use IANA timezone IDs such as `Europe/Berlin`, `Europe/London`, `America/New_York`, or `Asia/Tokyo`.
+
+NOTE: `user.country` and `user.region` are locale settings for language formatting (decimal separators, date order, etc.).
+They have no effect on timezone resolution.
+
 == Known quirks
 
 * Liberty `sipEndpoint host="*"` resolves to `127.0.1.1` on this system — bind to the LAN IP explicitly via `SIP_LOCAL_HOST`.
@@ -202,3 +216,25 @@ a|Enable EPEL first, then: +
 Falls back to the built-in Java mixer when absent.
 The FFM binding is not yet implemented; the library is detected but the Java path is used unconditionally for now.
 |===
+
+== Running with Docker
+
+A minimal `docker-compose.yml` example:
+
+[source,yaml]
+----
+services:
+  proximo-pitido:
+    image: ghcr.io/bmarwell/proximo-pitido:latest
+    environment:
+      TZ: "Europe/Berlin"
+      SIP_REGISTRAR: "tel.t-online.de"
+      SIP_SIPID: "4915112345678"
+      SIP_USER_ID: "4915112345678@t-online.de"
+      SIP_USER_PASSWORD: "secret"
+      SIP_LOCAL_HOST: "192.168.1.100"
+    network_mode: host
+----
+
+`TZ` must be set to an https://en.wikipedia.org/wiki/List_of_tz_database_time_zones[IANA timezone ID].
+Without it, the container defaults to UTC and callers hear the time in UTC.

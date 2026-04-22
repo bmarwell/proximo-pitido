@@ -31,6 +31,23 @@ import javax.servlet.sip.SipSession;
  *
  * <p>On exit (for any reason), removes the session from {@link CallSessionManager} and closes
  * the media socket so no resources leak.
+ *
+ * <h2>Timezone</h2>
+ *
+ * <p>{@link Clock#systemDefaultZone()} is used to obtain the current local time.
+ * OpenJDK on Linux resolves the JVM default timezone in the following order:
+ *
+ * <ol>
+ *   <li>{@code TZ} environment variable — set this in {@code docker-compose.yml} or via
+ *       {@code docker run -e TZ=Europe/Berlin} to configure the announced timezone.</li>
+ *   <li>{@code /etc/localtime} — the container or OS default.
+ *       Stock Docker images default to UTC, which is why announcements are in UTC when
+ *       {@code TZ} is not set.</li>
+ * </ol>
+ *
+ * <p>Note: {@code user.country} and {@code user.region} are locale settings that control
+ * language formatting (decimal separators, date order, etc.) but have <em>no effect</em>
+ * on timezone resolution.
  */
 @ApplicationScoped
 public class AnnouncementLoop {
