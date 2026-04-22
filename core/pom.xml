@@ -38,6 +38,27 @@
       <artifactId>microprofile-config-api</artifactId>
       <scope>provided</scope>
     </dependency>
+
+    <!-- JAX-RS 2.1 client API — provided at runtime by Liberty's jaxrsClient feature -->
+    <dependency>
+      <groupId>javax.ws.rs</groupId>
+      <artifactId>javax.ws.rs-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- JAXB API — satisfies the compile-time java.xml.bind transitive requirement from javax.ws.rs-api -->
+    <dependency>
+      <groupId>javax.xml.bind</groupId>
+      <artifactId>jaxb-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Apache CXF: JAX-RS client implementation for tests -->
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-rt-rs-client</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

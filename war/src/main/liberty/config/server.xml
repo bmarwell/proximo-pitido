@@ -7,6 +7,8 @@
     <feature>servlet</feature>
     <feature>cdi</feature>
     <feature>concurrent</feature>
+    <feature>jaxrsClient</feature>
+    <feature>jaxb</feature>
 
     <platform>microProfile-4.1</platform>
     <feature>mpConfig</feature>
