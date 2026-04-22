@@ -93,7 +93,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see NativeRtpCodec
  */
 @ApplicationScoped
-public final class AmrWbRtpCodec extends NativeRtpCodec {
+public class AmrWbRtpCodec extends NativeRtpCodec {
 
     private static final System.Logger LOGGER = System.getLogger(AmrWbRtpCodec.class.getName());
 
@@ -133,7 +133,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      * The highest-rate AMR-WB frame (mode 8, 23.85 kbps) is 60 bytes of speech data.
      * 64 bytes is a rounded-up safe upper bound for all modes.
      */
-    private static final int MAX_ENCODED_BYTES = 64;
+    protected static final int MAX_ENCODED_BYTES = 64;
 
     /**
      * CMR byte prepended to every RTP payload (RFC 4867 §4.4.1).
@@ -152,7 +152,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     // Shared between factory and per-call instances
     // -------------------------------------------------------------------------
 
-    private MethodHandle eIfEncodeHandle;
+    protected MethodHandle eIfEncodeHandle;
 
     // -------------------------------------------------------------------------
     // Per-call instance field — null in the CDI factory bean
@@ -170,14 +170,14 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
      *       {@link IllegalStateException} (FFM scope check), preventing use-after-free crashes.</li>
      * </ul>
      */
-    private final MemorySegment stateSegment;
+    protected final MemorySegment stateSegment;
 
     /**
      * AMR-WB encoding mode for this per-call instance (0–8).
      * Derived from the caller's offered {@code mode-set} by {@link #forCall(String)};
      * defaults to {@link #DEFAULT_ENCODING_MODE} when no mode-set constraint is present.
      */
-    private final int encodingMode;
+    protected final int encodingMode;
 
     /** CDI no-args constructor. */
     public AmrWbRtpCodec() {
@@ -403,10 +403,16 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
     /**
      * This implementation requires octet-aligned packetisation (RFC 4867 §4.4).
      *
-     * <p>Callers may advertise AMR-WB under multiple dynamic payload types: one for
-     * bandwidth-efficient mode (no {@code octet-align=1} in fmtp) and one for octet-aligned mode.
-     * This implementation only encodes octet-aligned frames, so only the payload type whose fmtp
-     * declares {@code octet-align=1} is accepted.
+     * <p>Callers may advertise AMR-WB under multiple dynamic payload types or modes:
+     * <ul>
+     *   <li>Octet-aligned: requires {@code a=fmtp} with {@code octet-align=1} parameter.
+     *       This is the preferred RFC 4867 §4.4 format; the codec will only accept this variant.
+     *   <li>Bandwidth-efficient (RFC 4867 §4.3): indicated by the {@code /1} suffix in
+     *       {@code a=rtpmap} (e.g. {@code a=rtpmap:104 AMR-WB/16000/1}) with no {@code a=fmtp}
+     *       or {@code a=fmtp} omitting the {@code octet-align} parameter.
+     *       This codec does not support bandwidth-efficient packetisation; callers offering only
+     *       this variant will fall back to G.722 or other available codecs.
+     * </ul>
      *
      * <p>Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2,
      * so values such as {@code octet-align=10} are not falsely matched.
@@ -488,7 +494,7 @@ public final class AmrWbRtpCodec extends NativeRtpCodec {
         }
     }
 
-    private int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
+    protected int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
         try {
             return (int) this.eIfEncodeHandle.invoke(this.stateSegment, this.encodingMode, inputSeg, outputSeg, 0);
         } catch (RuntimeException runtimeException) {
