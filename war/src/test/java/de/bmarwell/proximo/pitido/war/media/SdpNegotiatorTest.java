@@ -103,17 +103,13 @@ class SdpNegotiatorTest {
     }
 
     @Test
-    void buildSdpAnswer_withTelephoneEvent_includesTelephoneEventLineAndSendrecv() {
+    void buildSdpAnswer_withTelephoneEvent_includesTelephoneEventLineAndSendonly() {
         // given — simulate the result of negotiate() for a simple PCMA + telephone-event offer
-        // The static method is package-private; test via the observable SDP string built inline
-        // using the same format as buildSdpAnswer (called reflectively through negotiate is heavier;
-        // testing the known output format is sufficient).
         String localIp = "192.168.1.1";
         int localPort = 20000;
         int telephoneEventPt = 101;
 
-        // when — call the package-private helper directly
-        // (same package, so direct access is allowed)
+        // when
         String sdpAnswer = invokeBuildSdpAnswer(localIp, localPort, telephoneEventPt);
 
         // then
@@ -121,11 +117,12 @@ class SdpNegotiatorTest {
                 sdpAnswer.contains("a=rtpmap:101 telephone-event/8000"),
                 "SDP answer must include telephone-event rtpmap");
         assertTrue(sdpAnswer.contains("a=fmtp:101 0-15"), "SDP answer must include telephone-event fmtp");
-        assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv when telephone-event is present");
+        assertTrue(
+                sdpAnswer.contains("a=sendonly"), "SDP answer must use sendonly — speaking clock never receives audio");
     }
 
     @Test
-    void buildSdpAnswer_withoutTelephoneEvent_isSendrecv() {
+    void buildSdpAnswer_withoutTelephoneEvent_isSendonly() {
         // given
         String localIp = "192.168.1.1";
         int localPort = 20000;
@@ -135,7 +132,7 @@ class SdpNegotiatorTest {
         String sdpAnswer = invokeBuildSdpAnswer(localIp, localPort, telephoneEventPt);
 
         // then
-        assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv even without telephone-event");
+        assertTrue(sdpAnswer.contains("a=sendonly"), "SDP answer must use sendonly even without telephone-event");
     }
 
     /**

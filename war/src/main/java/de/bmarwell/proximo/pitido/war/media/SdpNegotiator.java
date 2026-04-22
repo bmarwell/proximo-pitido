@@ -428,7 +428,7 @@ public class SdpNegotiator {
             sdp.append("a=fmtp:").append(telephoneEventPt).append(" 0-15\r\n");
         }
 
-        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendrecv\r\n");
+        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendonly\r\n");
 
         return sdp.toString();
     }
