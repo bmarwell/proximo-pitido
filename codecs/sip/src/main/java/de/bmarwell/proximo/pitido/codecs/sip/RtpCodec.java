@@ -148,6 +148,24 @@ public interface RtpCodec extends AutoCloseable {
     String fmtpParams();
 
     /**
+     * Returns {@code true} if the given {@code a=fmtp} parameter string from the SDP offer is
+     * compatible with this codec's packetisation requirements.
+     *
+     * <p>The default returns {@code true}, meaning the codec accepts any (or no) fmtp parameters.
+     * Codecs that have a mandatory packetisation mode — such as AMR-WB in octet-aligned mode —
+     * must override this method and reject offers that do not declare the required parameter.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer
+     *                    (the part after {@code "a=fmtp:<pt> "}), or an empty string if the
+     *                    caller did not include an {@code a=fmtp} line for this payload type
+     * @return {@code true} if the offer is compatible; {@code false} if the packetisation mode
+     *         is incompatible and this payload type must be skipped during negotiation
+     */
+    default boolean matchesFmtp(String offeredFmtp) {
+        return true;
+    }
+
+    /**
      * Releases any native resources held by this per-call codec instance.
      *
      * <p>Stateless codecs (e.g. PCMA) return {@code this} from {@link #forCall()} and must not
