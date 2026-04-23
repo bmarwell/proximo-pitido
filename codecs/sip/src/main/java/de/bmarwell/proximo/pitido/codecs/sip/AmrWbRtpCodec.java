@@ -327,25 +327,36 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * Echoes the caller's offered fmtp in the SDP answer, as required by RFC 4867 §8.3.2.
+     * Builds the SDP answer fmtp parameters for octet-aligned AMR-WB.
      *
      * <p>When the caller's offer included an {@code a=fmtp} line (e.g.
-     * {@code "octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0"}),
-     * the entire parameter string must be echoed unchanged in the answer so that the remote
-     * IMS media proxy accepts the session.
-     * Falls back to {@link #fmtpParams()} (just {@code "octet-align=1"}) when no fmtp was
-     * offered.
+     * {@code "mode-set=0,1,2;mode-change-capability=2;max-red=0"}),
+     * we must echo the parameters in the answer but ensure {@code octet-align=1} is present
+     * so the remote understands we are using octet-aligned format.
+     * Falls back to {@link #fmtpParams()} when no fmtp was offered.
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
-     * @return the fmtp string for the SDP answer
+     * @return the fmtp string for the SDP answer, with {@code octet-align=1} guaranteed
      */
     @Override
     public String fmtpAnswer(String offeredFmtp) {
         if (offeredFmtp.isEmpty()) {
             return fmtpParams();
-        } else {
+        }
+
+        boolean hasExplicitOctetAlign =
+                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+
+        if (hasExplicitOctetAlign) {
             return offeredFmtp;
         }
+
+        return offeredFmtp + ";octet-align=1";
+    }
+
+    private static boolean isOctetAlignParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());
     }
 
     /**
@@ -434,32 +445,33 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * </ul>
      *
      * <p>Accepts both explicit {@code octet-align=1} and empty fmtp (ambiguous default case).
-     * Rejects offers that explicitly specify {@code octet-align=0} or bandwidth-efficient variants.
+     * Also accepts fmtp with mode parameters (e.g. {@code mode-set=0,1,2}) that do not explicitly
+     * specify {@code octet-align=0}.
+     * Rejects only offers that explicitly specify {@code octet-align=0} (caller wants bandwidth-efficient).
      * Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2.
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        // Accept explicit octet-align=1
-        boolean hasExplicitOctetAlign =
-                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignOneParam);
+        // Reject only explicit octet-align=0 (caller explicitly wants bandwidth-efficient)
+        boolean hasExplicitOctetAlignZero =
+                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignZeroParam);
 
-        if (hasExplicitOctetAlign) {
-            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched octet-align=1");
-            return true;
-        }
-
-        // Accept empty fmtp as fallback (ambiguous default; assume octet-aligned when not specified)
-        boolean isEmpty = offeredFmtp.isEmpty();
-        if (isEmpty) {
-            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp (fallback)");
-        } else {
+        if (hasExplicitOctetAlignZero) {
             LOGGER.log(
                     System.Logger.Level.TRACE,
-                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (not empty, no octet-align=1): {0}",
+                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (explicit octet-align=0): {0}",
                     offeredFmtp);
+            return false;
         }
 
-        return isEmpty;
+        // Accept everything else: octet-align=1 (explicit), empty (ambiguous), mode params (no alignment spec)
+        if (offeredFmtp.isEmpty()) {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp (fallback)");
+        } else {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched: {0}", offeredFmtp);
+        }
+
+        return true;
     }
 
     private static boolean isOctetAlignOneParam(String param) {
@@ -467,9 +479,9 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
         return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
     }
 
-    private static boolean isOctetAlignParam(String param) {
+    private static boolean isOctetAlignZeroParam(String param) {
         String[] kv = param.split("=", 2);
-        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "0".equals(kv[1].strip());
     }
 
     /**

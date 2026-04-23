@@ -134,44 +134,41 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     }
 
     /**
-     * Accepts AMR-WB when the caller offers it WITHOUT {@code octet-align=1}.
+     * Accepts AMR-WB ONLY when the caller explicitly specifies {@code octet-align=0}.
      *
-     * <p>Since bandwidth-efficient mode is the default when no fmtp parameters are present,
-     * this codec accepts empty fmtp strings (no parameters at all).
-     * It accepts any fmtp string that does not explicitly specify {@code octet-align=1};
-     * other parameters (e.g. {@code mode-set}, {@code octet-align=0}) are ignored.
-     * This allows some flexibility in fmtp declarations while still rejecting octet-aligned offers.
+     * <p>This codec is narrowly scoped to handle explicit bandwidth-efficient requests.
+     * It REJECTS empty fmtp (ambiguous — now handled by octet-aligned codec).
+     * It REJECTS fmtp with mode parameters that don't explicitly request bandwidth-efficient.
+     * It ACCEPTS ONLY explicit {@code octet-align=0} (caller wants bandwidth-efficient format).
+     *
+     * <p>This narrow matching ensures octet-aligned codec (preference 40) wins for ambiguous offers,
+     * while still supporting callers that explicitly request bandwidth-efficient (preference 41).
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        // Bandwidth-efficient is the default: accept empty fmtp.
-        if (offeredFmtp.isEmpty()) {
-            LOGGER.log(System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched empty fmtp");
+        // Only accept explicit octet-align=0 (explicit bandwidth-efficient request)
+        boolean hasExplicitOctetAlignZero = Arrays.stream(offeredFmtp.split(";"))
+                .map(String::strip)
+                .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignZeroParam);
+
+        if (hasExplicitOctetAlignZero) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched (explicit octet-align=0): {0}",
+                    offeredFmtp);
             return true;
         }
 
-        // Reject only if octet-align=1 is explicitly present (parsed as key=value pairs).
-        // This ensures we match the parent class's parameter parsing style and avoid
-        // false substring matches (e.g., "octet-align=0" or "octet-align=10" should not be rejected).
-        boolean hasExplicitOctetAlign = Arrays.stream(offeredFmtp.split(";"))
-                .map(String::strip)
-                .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignOneParam);
-
-        if (hasExplicitOctetAlign) {
-            LOGGER.log(
-                    System.Logger.Level.TRACE,
-                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected (has octet-align=1): {0}",
-                    offeredFmtp);
-            return false;
-        }
-
-        LOGGER.log(System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched: {0}", offeredFmtp);
-        return true;
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected (no explicit octet-align=0): {0}",
+                offeredFmtp);
+        return false;
     }
 
-    private static boolean isOctetAlignOneParam(String param) {
+    private static boolean isOctetAlignZeroParam(String param) {
         String[] kv = param.split("=", 2);
-        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "0".equals(kv[1].strip());
     }
 
     /**
@@ -257,5 +254,16 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     public String fmtpParams() {
         // Bandwidth-efficient mode requires no fmtp parameters.
         return "";
+    }
+
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        // Bandwidth-efficient always echoes back the offered fmtp unchanged.
+        // Do NOT append octet-align=1 (which the parent class does).
+        if (offeredFmtp.isEmpty()) {
+            return fmtpParams();
+        }
+
+        return offeredFmtp;
     }
 }
