@@ -254,9 +254,10 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     public int preference() {
         // Preferred over G.722 (50) for mobile VoLTE callers: lower bitrate, same wideband quality.
         // PSTN trunks never offer AMR-WB, so this codec activates only for mobile callers.
-        // Preference is 41 (octet-aligned): tried second, after bandwidth-efficient (preference 40).
-        // RFC 4867 specifies bandwidth-efficient as the DEFAULT packetisation format.
-        return 41;
+        // Preference is 40 (octet-aligned): tried first to diagnose bandwidth-efficient audio issues.
+        // RFC 4867 specifies bandwidth-efficient as the DEFAULT packetisation format, but we
+        // temporarily prioritise octet-aligned to test if the audio corruption is codec-format-specific.
+        return 40;
     }
 
     /**
@@ -422,25 +423,34 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * This implementation requires octet-aligned packetisation (RFC 4867 §4.4).
+     * This implementation uses octet-aligned packetisation (RFC 4867 §4.4).
      *
      * <p>Callers may advertise AMR-WB under multiple dynamic payload types or modes:
      * <ul>
-     *   <li>Octet-aligned: requires {@code a=fmtp} with {@code octet-align=1} parameter.
-     *       This is the preferred RFC 4867 §4.4 format; the codec will only accept this variant.
-     *   <li>Bandwidth-efficient (RFC 4867 §4.3): indicated by the {@code /1} suffix in
-     *       {@code a=rtpmap} (e.g. {@code a=rtpmap:104 AMR-WB/16000/1}) with no {@code a=fmtp}
-     *       or {@code a=fmtp} omitting the {@code octet-align} parameter.
-     *       This codec does not support bandwidth-efficient packetisation; callers offering only
-     *       this variant will fall back to G.722 or other available codecs.
+     *   <li>Octet-aligned: indicated by {@code a=fmtp} with {@code octet-align=1} parameter,
+     *       OR by empty fmtp when no packetisation format is specified (RFC 4867 default).
+     *       This is the preferred RFC 4867 §4.4 format.
+     *   <li>Bandwidth-efficient (RFC 4867 §4.3): explicitly specified with bandwidthEfficient codec.
      * </ul>
      *
-     * <p>Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2,
-     * so values such as {@code octet-align=10} are not falsely matched.
+     * <p>Accepts both explicit {@code octet-align=1} and empty fmtp (ambiguous default case).
+     * Rejects offers that explicitly specify {@code octet-align=0} or bandwidth-efficient variants.
+     * Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2.
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        return Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+        // Accept explicit octet-align=1
+        if (Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignOneParam)) {
+            return true;
+        }
+
+        // Accept empty fmtp as fallback (ambiguous default; assume octet-aligned when not specified)
+        return offeredFmtp.isEmpty();
+    }
+
+    private static boolean isOctetAlignOneParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
     }
 
     private static boolean isOctetAlignParam(String param) {

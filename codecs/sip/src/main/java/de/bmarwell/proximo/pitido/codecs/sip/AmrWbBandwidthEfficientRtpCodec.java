@@ -72,10 +72,10 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     private static final int PAYLOAD_TYPE_PLACEHOLDER = 104;
 
     /**
-     * Preference order: octet-aligned is preferred (lower number = higher preference).
-     * Bandwidth-efficient is a fallback when the caller doesn't offer octet-aligned.
+     * Preference order: bandwidth-efficient is now preferred (lower number = higher preference).
+     * Temporarily increased to 41 to test if octet-aligned codec resolves audio corruption.
      */
-    private static final int PREFERENCE = 40;
+    private static final int PREFERENCE = 41;
 
     /**
      * Preference order: bandwidth-efficient is tried first (lower number = higher preference).
