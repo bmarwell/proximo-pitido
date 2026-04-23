@@ -176,7 +176,16 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
             // Extract the bandwidth-efficient payload: convert to byte array and return.
             // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
-            return outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+            byte[] payload = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB bandwidth-efficient encode: encodingMode={0} encoderOutputBytes={1} payloadBytes={2}",
+                    this.encodingMode,
+                    speechBytes,
+                    payload.length);
+
+            return payload;
         }
     }
 
