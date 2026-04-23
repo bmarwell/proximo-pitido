@@ -22,6 +22,8 @@ services:
     container_name: proximo-pitido
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - ./logging-trace.xml:/config/logging-trace.xml
     ports:
       - "9080:9080/tcp"         # Liberty management / health endpoint
       - "5060:5060/tcp"         # SIP signalling (TCP)

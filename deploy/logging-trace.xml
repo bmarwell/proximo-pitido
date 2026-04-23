@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<server description="Proximo Pitido TRACE logging configuration snippet">
+
+    <!--
+        Mount this file into the Liberty config directory via docker-compose.yml:
+
+            volumes:
+              - ./logging-trace.xml:/config/logging-trace.xml
+
+        Open Liberty will automatically include this snippet when merging configurations.
+        This enables TRACE logging for RTP audio transmission and AMR-WB codec diagnostics.
+    -->
+
+    <!-- Enable TRACE (finest) logging for RTP audio transmission and codec diagnostics -->
+    <logging traceSpecification="*=audit:de.bmarwell.proximo.pitido.*=fine:de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=finest:de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver=finest:de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodec=finest:de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodec=finest"/>
+
+</server>
