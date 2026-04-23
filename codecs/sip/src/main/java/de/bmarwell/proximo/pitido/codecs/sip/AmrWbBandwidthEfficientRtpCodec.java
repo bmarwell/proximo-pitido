@@ -298,18 +298,89 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
             byte[] payload = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
 
-            // Analyze ToC byte for diagnostics
-            if (payload.length > 0) {
-                byte tocAndCmrByte = payload[0];
+            // RFC 4867 §4.3: Bandwidth-efficient ToC packing is different from octet-aligned!
+            // The encoder outputs octet-aligned ToC format: F(1)|FT(4)|Q(1)|P(2)
+            // We must convert to BW-efficient format: CMR(4)|F(1)|FT(3)|FT(1)|Q(1)|...
+            //
+            // For a single frame, the packing is:
+            // - Byte 1 bits 7-4: CMR (4 bits)
+            // - Byte 1 bits 3: F (1 bit)
+            // - Byte 1 bits 2-0: FT high 3 bits
+            // - Byte 2 bits 7-6: FT low 1 bit, Q
+            // - Byte 2 bits 5-0: Speech data starts here (or padding if more frames)
 
-                // RFC 4867 §4.3: In bandwidth-efficient mode, the first byte contains both CMR and ToC
-                // Bits 7-4: CMR (4 bits) — Codec Mode Request (0-8 = mode request, 15 = "no request")
-                // Bits 3-0: Start of ToC field (continues into following bytes for multi-frame payloads)
-                int cmrBits = (tocAndCmrByte >> 4) & 0x0F;
-                int tocByte = tocAndCmrByte;
-                int frameType = (tocByte >> 3) & 0x0F;
-                int qualityBit = (tocByte >> 2) & 0x01;
-                int continuationBit = (tocByte >> 7) & 0x01;
+            if (payload.length > 1) {
+                // Extract octet-aligned ToC from encoder output
+                byte encoderOctetAlignedToc = payload[0];
+
+                // Octet-aligned format: 0|FT(4)|Q|00
+                int ftFromEncoder = (encoderOctetAlignedToc >> 3) & 0x0F;
+                int qFromEncoder = (encoderOctetAlignedToc >> 2) & 0x01;
+
+                // Build BW-efficient format
+                // Byte 0: [CMR(4)][F(1)][FT high 3 bits]
+                int f = 0; // Single frame, no continuation
+                int ftHigh3 = (ftFromEncoder >> 1) & 0x07;
+                byte bwEfficientByte0 = (byte)
+                        (((this.encodingMode & 0x0F) << 4)
+                                | // CMR
+                                ((f & 0x01) << 3)
+                                | // F
+                                (ftHigh3 & 0x07) // FT high 3 bits
+                        );
+
+                // Byte 1: [FT low 1 bit][Q][first 6 bits of speech data]
+                // Extract first 6 bits from encoder's byte 1 (which contains ToC[1:2] + padding + speech start)
+                // In encoder output: byte[1] =
+                // [ToC_bit_1][ToC_bit_0][0][0][speech_bit_3][speech_bit_2][speech_bit_1][speech_bit_0]
+                // We want the speech bits (bottom 6 bits when ToC is stripped): payload[1] has 8 bits, we take bits 5-0
+                int ftLow1 = ftFromEncoder & 0x01;
+                int speechBits6from1 = payload[1] & 0x3F; // Bottom 6 bits of payload[1] contain first 6 bits of speech
+                byte bwEfficientByte1 = (byte)
+                        (((ftLow1 & 0x01) << 7)
+                                | // FT low bit (bit 7)
+                                ((qFromEncoder & 0x01) << 6)
+                                | // Q (bit 6)
+                                (speechBits6from1 & 0x3F) // Speech bits 5-0
+                        );
+
+                // For remaining speech bytes, they shift position by 2 bits because we consumed 2 bits
+                // But actually, they don't need to shift — they stay in the same positions
+                // The remaining 31 bytes of speech from payload[2..32] go to newPayload[2..32]
+
+                // Rebuild payload with BW-efficient format
+                byte[] newPayload = new byte[payload.length];
+                newPayload[0] = bwEfficientByte0;
+                newPayload[1] = bwEfficientByte1;
+                System.arraycopy(payload, 2, newPayload, 2, payload.length - 2);
+                payload = newPayload;
+
+                LOGGER.log(
+                        System.Logger.Level.TRACE,
+                        "BW-efficient ToC conversion: encoder format 0x{0} → BW-efficient 0x{1}0x{2} (mode={3}, F={4}, FT={5}, Q={6})",
+                        String.format(java.util.Locale.ROOT, "%02x", encoderOctetAlignedToc & 0xFF),
+                        String.format(java.util.Locale.ROOT, "%02x", bwEfficientByte0 & 0xFF),
+                        String.format(java.util.Locale.ROOT, "%02x", bwEfficientByte1 & 0xFF),
+                        this.encodingMode,
+                        f,
+                        ftFromEncoder,
+                        qFromEncoder);
+            }
+
+            // Analyze ToC byte for diagnostics
+            if (payload.length > 1) {
+                byte bwEfficientByte0 = payload[0];
+                byte bwEfficientByte1 = payload[1];
+
+                // RFC 4867 §4.3 BW-efficient format:
+                // Byte 0: [CMR(4)][F(1)][FT_high(3)]
+                // Byte 1: [FT_low(1)][Q(1)][speech(6)]
+                int cmrBits = (bwEfficientByte0 >> 4) & 0x0F;
+                int f = (bwEfficientByte0 >> 3) & 0x01;
+                int ftHigh3 = (bwEfficientByte0 & 0x07);
+                int ftLow1 = (bwEfficientByte1 >> 7) & 0x01;
+                int qualityBit = (bwEfficientByte1 >> 6) & 0x01;
+                int frameType = (ftHigh3 << 1) | ftLow1; // Reconstruct 4-bit FT
 
                 // Build hex dump of first few bytes for diagnostic
                 StringBuilder hexDump = new StringBuilder();
@@ -324,14 +395,13 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
                 LOGGER.log(
                         System.Logger.Level.TRACE,
-                        "AMR-WB BW-efficient payload: encodingMode={0} expectedToC=0x{1} payloadBytes={2} CMR={3} frameType={4} quality={5} continuation={6} hex=[{7}]",
+                        "AMR-WB BW-efficient payload: encodingMode={0} payloadBytes={1} CMR={2} F={3} FT={4} Q={5} hex=[{6}]",
                         this.encodingMode,
-                        String.format(java.util.Locale.ROOT, "%02x", expectedToC & 0xFF),
                         payload.length,
                         cmrBits,
+                        f,
                         frameType,
                         qualityBit,
-                        continuationBit,
                         hexDump.toString());
 
                 if (frameType != this.encodingMode) {
@@ -347,18 +417,6 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                             System.Logger.Level.WARNING,
                             "ToC quality bit is {0} (expected 1=good) — frame may be corrupted",
                             qualityBit);
-                }
-
-                if (cmrBits == 15) {
-                    LOGGER.log(
-                            System.Logger.Level.TRACE,
-                            "CMR = 15 (no codec mode request) — remote decoder uses its own mode");
-                } else if (cmrBits != this.encodingMode) {
-                    LOGGER.log(
-                            System.Logger.Level.INFO,
-                            "CMR ({0}) does not match encodingMode ({1}) — telling remote decoder to use different mode",
-                            cmrBits,
-                            this.encodingMode);
                 }
             }
 
@@ -404,19 +462,37 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
     @Override
     public String fmtpAnswer(String offeredFmtp) {
-        // Bandwidth-efficient always echoes back the offered fmtp unchanged.
-        // Do NOT append octet-align=1 (which the parent class does).
+        // RFC 4867 §8.3.3 (bandwidth-efficient mode):
+        // When no explicit mode-set is offered, the remote decoder does not know which
+        // mode we will use for encoding. We must advertise our chosen encoding mode
+        // explicitly via mode-set in the answer, so the remote decoder knows what to expect.
+        //
+        // For example, if the caller offers "mode-change-capability=2;max-red=0" (no mode-set),
+        // we respond with "mode-set=2;mode-change-capability=2;max-red=0" to signal
+        // "I will encode in mode 2; expect mode-2 frames."
+
         String answer;
         if (offeredFmtp.isEmpty()) {
             answer = fmtpParams();
         } else {
-            answer = offeredFmtp;
+            // Check if mode-set is already in the offer
+            boolean hasExplicitModeSet = offeredFmtp.contains("mode-set=");
+
+            if (hasExplicitModeSet) {
+                // Caller already advertised mode-set; echo their offer unchanged
+                answer = offeredFmtp;
+            } else {
+                // No mode-set in offer; we must add our encoding mode to the answer
+                // so the remote decoder knows which mode we're using
+                answer = "mode-set=" + this.encodingMode + ";" + offeredFmtp;
+            }
         }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
-                "AmrWbBandwidthEfficientRtpCodec.fmtpAnswer: offeredFmtp=''{0}'' → answer=''{1}''",
+                "AmrWbBandwidthEfficientRtpCodec.fmtpAnswer: offeredFmtp=''{0}'' encodingMode={1} → answer=''{2}''",
                 offeredFmtp,
+                this.encodingMode,
                 answer);
 
         return answer;
