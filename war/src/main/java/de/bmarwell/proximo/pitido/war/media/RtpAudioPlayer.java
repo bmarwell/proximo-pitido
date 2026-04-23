@@ -313,6 +313,16 @@ public class RtpAudioPlayer implements AudioPlayer {
         packet[11] = (byte) (ssrc & 0xFF);
         System.arraycopy(payload, 0, packet, 12, payload.length);
 
+        boolean markerBit = (packet[1] & 0x80) != 0;
+
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "Sending RTP packet: seqNum={0} ts={1} marker={2} payloadBytes={3}",
+                this.seqNumber,
+                timestamp,
+                markerBit,
+                payload.length);
+
         this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
