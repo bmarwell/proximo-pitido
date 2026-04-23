@@ -354,7 +354,20 @@ public class SdpNegotiator {
         Optional<Integer> fromRtpmap = rtpmap.entrySet().stream()
                 .filter(entry -> offeredPts.contains(entry.getKey()))
                 .filter(entry -> entry.getValue().equals(codecKey))
-                .filter(entry -> codec.matchesFmtp(fmtp.getOrDefault(entry.getKey(), "")))
+                .filter(entry -> {
+                    String offeredFmtp = fmtp.getOrDefault(entry.getKey(), "");
+                    boolean matches = codec.matchesFmtp(offeredFmtp);
+
+                    LOGGER.log(
+                            System.Logger.Level.TRACE,
+                            "negotiatedPt: codec={0} PT={1} offeredFmtp=''{2}'' matches={3}",
+                            codec.sdpName(),
+                            entry.getKey(),
+                            offeredFmtp,
+                            matches);
+
+                    return matches;
+                })
                 .map(Map.Entry::getKey)
                 .findFirst();
 
@@ -416,11 +429,19 @@ public class SdpNegotiator {
 
         sdp.append("\r\n");
 
-        if (!codec.fmtpParams().isEmpty()) {
+        String fmtpParams = codec.fmtpParams();
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "SDP answer fmtp: codec={0} PT={1} fmtpParams=''{2}''",
+                codec.sdpName(),
+                codec.payloadType(),
+                fmtpParams);
+
+        if (!fmtpParams.isEmpty()) {
             sdp.append("a=fmtp:")
                     .append(codec.payloadType())
                     .append(" ")
-                    .append(codec.fmtpParams())
+                    .append(fmtpParams)
                     .append("\r\n");
         }
 

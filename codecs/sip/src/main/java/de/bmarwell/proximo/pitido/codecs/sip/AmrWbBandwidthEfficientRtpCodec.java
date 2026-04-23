@@ -212,11 +212,65 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             MemorySegment inputSeg = frameArena.allocateFrom(ValueLayout.JAVA_SHORT, pcmFrame);
             MemorySegment outputSeg = frameArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
 
+            // Log PCM input sample range for diagnostics
+            short minSample = Short.MAX_VALUE;
+            short maxSample = Short.MIN_VALUE;
+            for (short sample : pcmFrame) {
+                if (sample < minSample) minSample = sample;
+                if (sample > maxSample) maxSample = sample;
+            }
+            short firstSample;
+            if (pcmFrame.length > 0) {
+                firstSample = pcmFrame[0];
+            } else {
+                firstSample = 0;
+            }
+            short lastSample;
+            if (pcmFrame.length > 0) {
+                lastSample = pcmFrame[pcmFrame.length - 1];
+            } else {
+                lastSample = 0;
+            }
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB bandwidth-efficient encode: starting with encodingMode={0}, pcmSamples={1}, pcmRange=[{2},{3}], first={4}, last={5}",
+                    this.encodingMode,
+                    pcmFrame.length,
+                    minSample,
+                    maxSample,
+                    firstSample,
+                    lastSample);
+
             int speechBytes = invokeEncode(inputSeg, outputSeg);
+
+            LOGGER.log(System.Logger.Level.TRACE, "Encoder returned speechBytes={0}", speechBytes);
 
             if (speechBytes < 0) {
                 throw new IOException("E_IF_encode failed with error code " + speechBytes);
             }
+
+            // Log a sample of the encoder output to verify it's not all zeros or garbage
+            byte firstByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
+            byte secondByte;
+            if (speechBytes > 1) {
+                secondByte = outputSeg.get(ValueLayout.JAVA_BYTE, 1);
+            } else {
+                secondByte = 0;
+            }
+            byte thirdByte;
+            if (speechBytes > 2) {
+                thirdByte = outputSeg.get(ValueLayout.JAVA_BYTE, 2);
+            } else {
+                thirdByte = 0;
+            }
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "Encoder output first 3 bytes (hex): {0} {1} {2}",
+                    String.format("%02x", firstByte & 0xFF),
+                    String.format("%02x", secondByte & 0xFF),
+                    String.format("%02x", thirdByte & 0xFF));
 
             // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) natively.
             // For bandwidth-efficient RTP payloads, we can use the encoder output as-is,
@@ -233,29 +287,86 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                         String.format(java.util.Locale.ROOT, "%02x", firstEncoderByte & 0xFF),
                         String.format(java.util.Locale.ROOT, "%02x", expectedToC & 0xFF),
                         this.encodingMode);
+            } else {
+                LOGGER.log(
+                        System.Logger.Level.TRACE,
+                        "Encoder output first byte matches expected ToC (0x{0})",
+                        String.format(java.util.Locale.ROOT, "%02x", firstEncoderByte & 0xFF));
             }
 
             // Extract the bandwidth-efficient payload: convert to byte array and return.
             // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
             byte[] payload = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
-            String payloadHex;
 
+            // Analyze ToC byte for diagnostics
             if (payload.length > 0) {
-                payloadHex = String.format("%02x", payload[0] & 0xFF);
-            } else {
-                payloadHex = "empty";
-            }
-            if (payload.length > 1) {
-                payloadHex += String.format(" + %d speech bytes", payload.length - 1);
+                byte tocAndCmrByte = payload[0];
+
+                // RFC 4867 §4.3: In bandwidth-efficient mode, the first byte contains both CMR and ToC
+                // Bits 7-4: CMR (4 bits) — Codec Mode Request (0-8 = mode request, 15 = "no request")
+                // Bits 3-0: Start of ToC field (continues into following bytes for multi-frame payloads)
+                int cmrBits = (tocAndCmrByte >> 4) & 0x0F;
+                int tocByte = tocAndCmrByte;
+                int frameType = (tocByte >> 3) & 0x0F;
+                int qualityBit = (tocByte >> 2) & 0x01;
+                int continuationBit = (tocByte >> 7) & 0x01;
+
+                // Build hex dump of first few bytes for diagnostic
+                StringBuilder hexDump = new StringBuilder();
+                int bytesToShow = Math.min(10, payload.length);
+                for (int i = 0; i < bytesToShow; i++) {
+                    if (i > 0) hexDump.append(' ');
+                    hexDump.append(String.format("%02x", payload[i] & 0xFF));
+                }
+                if (payload.length > bytesToShow) {
+                    hexDump.append(String.format(" ... (%d more)", payload.length - bytesToShow));
+                }
+
+                LOGGER.log(
+                        System.Logger.Level.TRACE,
+                        "AMR-WB BW-efficient payload: encodingMode={0} expectedToC=0x{1} payloadBytes={2} CMR={3} frameType={4} quality={5} continuation={6} hex=[{7}]",
+                        this.encodingMode,
+                        String.format(java.util.Locale.ROOT, "%02x", expectedToC & 0xFF),
+                        payload.length,
+                        cmrBits,
+                        frameType,
+                        qualityBit,
+                        continuationBit,
+                        hexDump.toString());
+
+                if (frameType != this.encodingMode) {
+                    LOGGER.log(
+                            System.Logger.Level.WARNING,
+                            "ToC frame type ({0}) does not match encodingMode ({1}) — possible encoder mode mismatch",
+                            frameType,
+                            this.encodingMode);
+                }
+
+                if (qualityBit != 1) {
+                    LOGGER.log(
+                            System.Logger.Level.WARNING,
+                            "ToC quality bit is {0} (expected 1=good) — frame may be corrupted",
+                            qualityBit);
+                }
+
+                if (cmrBits == 15) {
+                    LOGGER.log(
+                            System.Logger.Level.TRACE,
+                            "CMR = 15 (no codec mode request) — remote decoder uses its own mode");
+                } else if (cmrBits != this.encodingMode) {
+                    LOGGER.log(
+                            System.Logger.Level.INFO,
+                            "CMR ({0}) does not match encodingMode ({1}) — telling remote decoder to use different mode",
+                            cmrBits,
+                            this.encodingMode);
+                }
             }
 
             LOGGER.log(
                     System.Logger.Level.TRACE,
-                    "AMR-WB bandwidth-efficient encode: encodingMode={0} encoderOutputBytes={1} payloadBytes={2} payload=[{3}]",
-                    this.encodingMode,
+                    "AMR-WB bandwidth-efficient encode complete: speechBytes={0} payloadBytes={1}",
                     speechBytes,
-                    payload.length,
-                    payloadHex);
+                    payload.length);
 
             return payload;
         }
@@ -278,6 +389,10 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     @Override
     protected RtpCodec createForCallInstance(
             MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbBandwidthEfficientRtpCodec.createForCallInstance: creating instance with encodingMode={0}",
+                encodingMode);
         return new AmrWbBandwidthEfficientRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
@@ -291,10 +406,19 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     public String fmtpAnswer(String offeredFmtp) {
         // Bandwidth-efficient always echoes back the offered fmtp unchanged.
         // Do NOT append octet-align=1 (which the parent class does).
+        String answer;
         if (offeredFmtp.isEmpty()) {
-            return fmtpParams();
+            answer = fmtpParams();
+        } else {
+            answer = offeredFmtp;
         }
 
-        return offeredFmtp;
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbBandwidthEfficientRtpCodec.fmtpAnswer: offeredFmtp=''{0}'' → answer=''{1}''",
+                offeredFmtp,
+                answer);
+
+        return answer;
     }
 }

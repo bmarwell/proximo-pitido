@@ -112,7 +112,18 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
     @Override
     public String fmtpParams() {
         // Delegate to the codec's own answer logic (e.g. AMR-WB echoes mode-set per RFC 4867 §8.3.2).
-        return this.delegate.fmtpAnswer(this.offeredFmtp);
+        String answer = this.delegate.fmtpAnswer(this.offeredFmtp);
+
+        System.getLogger(NegotiatedRtpCodec.class.getName())
+                .log(
+                        System.Logger.Level.TRACE,
+                        "NegotiatedRtpCodec.fmtpParams: codec={0} PT={1} offeredFmtp=''{2}'' answerFmtp=''{3}''",
+                        this.delegate.sdpName(),
+                        this.negotiatedPayloadType,
+                        this.offeredFmtp,
+                        answer);
+
+        return answer;
     }
 
     @Override
