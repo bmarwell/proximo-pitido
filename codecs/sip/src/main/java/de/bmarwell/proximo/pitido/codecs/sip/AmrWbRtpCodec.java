@@ -470,7 +470,18 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
                 actualSpeechBytes = speechBytes - 1;
             }
 
-            return buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
+            byte[] payload = buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB octet-aligned encode: encodingMode={0} encoderOutputBytes={1} offset={2} tocDetected={3} payloadBytes={4}",
+                    this.encodingMode,
+                    speechBytes,
+                    offset,
+                    firstEncoderByte == expectedToC,
+                    payload.length);
+
+            return payload;
         }
     }
 
