@@ -254,7 +254,9 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     public int preference() {
         // Preferred over G.722 (50) for mobile VoLTE callers: lower bitrate, same wideband quality.
         // PSTN trunks never offer AMR-WB, so this codec activates only for mobile callers.
-        return 40;
+        // Preference is 41 (octet-aligned): tried second, after bandwidth-efficient (preference 40).
+        // RFC 4867 specifies bandwidth-efficient as the DEFAULT packetisation format.
+        return 41;
     }
 
     /**
