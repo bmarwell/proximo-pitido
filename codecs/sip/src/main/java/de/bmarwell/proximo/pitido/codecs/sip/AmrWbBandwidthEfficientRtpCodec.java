@@ -321,8 +321,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                 // Byte 0: [CMR(4)][F(1)][FT high 3 bits]
                 int f = 0; // Single frame, no continuation
                 int ftHigh3 = (ftFromEncoder >> 1) & 0x07;
+                int cmr = this.encodingMode; // Send the encoding mode we're actually using
                 byte bwEfficientByte0 = (byte)
-                        (((this.encodingMode & 0x0F) << 4)
+                        (((cmr & 0x0F) << 4)
                                 | // CMR
                                 ((f & 0x01) << 3)
                                 | // F
@@ -344,15 +345,27 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                                 (speechBits6from1 & 0x3F) // Speech bits 5-0
                         );
 
-                // For remaining speech bytes, they shift position by 2 bits because we consumed 2 bits
-                // But actually, they don't need to shift — they stay in the same positions
-                // The remaining 31 bytes of speech from payload[2..32] go to newPayload[2..32]
+                // For remaining speech bytes, they need bit-shifting because we only consumed 6 bits from byte 1
+                // Encoder byte 1 contains: [ToC(2)][P(2)][speech_bits(4)]
+                // We took bottom 6 bits, leaving top 2 bits of speech from byte 1 + all of bytes 2+ to shift
+                // Shift the speech stream right by 2 bits to account for the 2 bits we moved to byte 1
 
-                // Rebuild payload with BW-efficient format
                 byte[] newPayload = new byte[payload.length];
                 newPayload[0] = bwEfficientByte0;
                 newPayload[1] = bwEfficientByte1;
-                System.arraycopy(payload, 2, newPayload, 2, payload.length - 2);
+
+                // Shift remaining speech right by 2 bits
+                // payload[1] bits 7-6 (2 bits) go to newPayload[2] bits 7-6
+                // payload[2] bits 7-0 go to newPayload[2] bits 5-0 + newPayload[3] bits 7-6
+                // ... and so on for all remaining bytes
+                int carryover = (payload[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
+                for (int i = 2; i < payload.length; i++) {
+                    newPayload[i] = (byte)
+                            (((payload[i] & 0xFF) >> 2) // Current byte shifted right by 2
+                                    | ((carryover & 0x03) << 6) // Carryover from previous byte to top 2 bits
+                            );
+                    carryover = (payload[i] & 0x03); // Save bottom 2 bits for next iteration
+                }
                 payload = newPayload;
 
                 LOGGER.log(
@@ -403,21 +416,6 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                         frameType,
                         qualityBit,
                         hexDump.toString());
-
-                if (frameType != this.encodingMode) {
-                    LOGGER.log(
-                            System.Logger.Level.WARNING,
-                            "ToC frame type ({0}) does not match encodingMode ({1}) — possible encoder mode mismatch",
-                            frameType,
-                            this.encodingMode);
-                }
-
-                if (qualityBit != 1) {
-                    LOGGER.log(
-                            System.Logger.Level.WARNING,
-                            "ToC quality bit is {0} (expected 1=good) — frame may be corrupted",
-                            qualityBit);
-                }
             }
 
             LOGGER.log(
@@ -462,31 +460,10 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
     @Override
     public String fmtpAnswer(String offeredFmtp) {
-        // RFC 4867 §8.3.3 (bandwidth-efficient mode):
-        // When no explicit mode-set is offered, the remote decoder does not know which
-        // mode we will use for encoding. We must advertise our chosen encoding mode
-        // explicitly via mode-set in the answer, so the remote decoder knows what to expect.
-        //
-        // For example, if the caller offers "mode-change-capability=2;max-red=0" (no mode-set),
-        // we respond with "mode-set=2;mode-change-capability=2;max-red=0" to signal
-        // "I will encode in mode 2; expect mode-2 frames."
-
-        String answer;
-        if (offeredFmtp.isEmpty()) {
-            answer = fmtpParams();
-        } else {
-            // Check if mode-set is already in the offer
-            boolean hasExplicitModeSet = offeredFmtp.contains("mode-set=");
-
-            if (hasExplicitModeSet) {
-                // Caller already advertised mode-set; echo their offer unchanged
-                answer = offeredFmtp;
-            } else {
-                // No mode-set in offer; we must add our encoding mode to the answer
-                // so the remote decoder knows which mode we're using
-                answer = "mode-set=" + this.encodingMode + ";" + offeredFmtp;
-            }
-        }
+        // RFC 4867: Simply echo back the offered fmtp.
+        // The remote side knows what we're sending via the CMR field in each frame.
+        // (CMR is set to our encoding mode; the decoder will adapt to what we send.)
+        String answer = offeredFmtp;
 
         LOGGER.log(
                 System.Logger.Level.TRACE,

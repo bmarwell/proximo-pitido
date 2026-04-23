@@ -106,7 +106,9 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * allowed mode from that set instead.
      * Passed as the {@code mode} argument to {@code E_IF_encode}.
      */
-    private static final int DEFAULT_ENCODING_MODE = 2;
+    private static final int DEFAULT_ENCODING_MODE = Integer.parseInt(System.getenv()
+            .getOrDefault(
+                    "AMR_WB_DEFAULT_MODE", "2")); // Can override with AMR_WB_DEFAULT_MODE=1 for lower bitrate testing
 
     /** Dynamic payload type for AMR-WB; conventional value used by all major VoLTE stacks. */
     private static final int PAYLOAD_TYPE = 98;
