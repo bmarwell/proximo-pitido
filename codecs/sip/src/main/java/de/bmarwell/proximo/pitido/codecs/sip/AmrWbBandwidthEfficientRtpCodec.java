@@ -92,6 +92,11 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      */
     private static final int RTP_CLOCK_RATE = 16_000;
 
+    /** CDI no-args constructor. */
+    public AmrWbBandwidthEfficientRtpCodec() {
+        super();
+    }
+
     /**
      * Package-scoped constructor for per-call instances created by {@link #createForCallInstance}.
      *
