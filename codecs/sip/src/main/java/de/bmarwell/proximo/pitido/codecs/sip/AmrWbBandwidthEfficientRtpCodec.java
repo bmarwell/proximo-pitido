@@ -146,7 +146,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        // Only accept explicit octet-align=0 (explicit bandwidth-efficient request)
+        // Match explicit octet-align=0 OR mode params without explicit octet-align
         boolean hasExplicitOctetAlignZero = Arrays.stream(offeredFmtp.split(";"))
                 .map(String::strip)
                 .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignZeroParam);
@@ -159,16 +159,36 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             return true;
         }
 
+        // Also match mode params without explicit octet-align (pragmatic: assume BW-efficient when alignment not
+        // specified)
+        String[] params = offeredFmtp.split(";");
+        boolean hasOctetAlignExplicit =
+                Arrays.stream(params).map(String::strip).anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignParam);
+        boolean hasModeParams = Arrays.stream(params)
+                .map(String::strip)
+                .anyMatch(p -> p.startsWith("mode-") || p.startsWith("max-red"));
+
+        if (hasModeParams && !hasOctetAlignExplicit) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched (mode params without explicit octet-align): {0}",
+                    offeredFmtp);
+            return true;
+        }
+
         LOGGER.log(
-                System.Logger.Level.TRACE,
-                "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected (no explicit octet-align=0): {0}",
-                offeredFmtp);
+                System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected: {0}", offeredFmtp);
         return false;
     }
 
     private static boolean isOctetAlignZeroParam(String param) {
         String[] kv = param.split("=", 2);
         return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "0".equals(kv[1].strip());
+    }
+
+    private static boolean isOctetAlignParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());
     }
 
     /**

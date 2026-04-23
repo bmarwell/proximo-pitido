@@ -452,7 +452,7 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        // Reject only explicit octet-align=0 (caller explicitly wants bandwidth-efficient)
+        // Reject explicit octet-align=0 (caller explicitly wants bandwidth-efficient)
         boolean hasExplicitOctetAlignZero =
                 Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignZeroParam);
 
@@ -464,9 +464,25 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
             return false;
         }
 
-        // Accept everything else: octet-align=1 (explicit), empty (ambiguous), mode params (no alignment spec)
+        // Reject mode parameters without explicit octet-align (pragmatic: such offers usually expect BW-efficient)
+        String[] params = offeredFmtp.split(";");
+        boolean hasOctetAlignExplicit =
+                Arrays.stream(params).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+        boolean hasModeParams = Arrays.stream(params)
+                .map(String::strip)
+                .anyMatch(p -> p.startsWith("mode-") || p.startsWith("max-red"));
+
+        if (hasModeParams && !hasOctetAlignExplicit) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (mode params without explicit octet-align): {0}",
+                    offeredFmtp);
+            return false;
+        }
+
+        // Accept: empty fmtp or explicit octet-align=1
         if (offeredFmtp.isEmpty()) {
-            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp (fallback)");
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp");
         } else {
             LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched: {0}", offeredFmtp);
         }
