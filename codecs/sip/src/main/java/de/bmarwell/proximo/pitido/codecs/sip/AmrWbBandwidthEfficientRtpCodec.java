@@ -74,7 +74,17 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      * Preference order: octet-aligned is preferred (lower number = higher preference).
      * Bandwidth-efficient is a fallback when the caller doesn't offer octet-aligned.
      */
-    private static final int PREFERENCE = 1;
+    private static final int PREFERENCE = 40;
+
+    /**
+     * Preference order: bandwidth-efficient is tried first (lower number = higher preference).
+     * Octet-aligned is tried second, only when explicitly offered ("octet-align=1" in SDP).
+     *
+     * <p>RFC 4867 specifies bandwidth-efficient as the DEFAULT AMR-WB packetisation format.
+     * Using bandwidth-efficient first (preference 40) ensures compatibility with endpoints that
+     * advertise only bandwidth-efficient support and do not send octet-align=1 fmtp parameter.
+     * Octet-aligned codec has preference 41 (tried second) and requires explicit "octet-align=1".
+     */
 
     /**
      * RTP clock rate for AMR-WB: 16 kHz (wideband).
