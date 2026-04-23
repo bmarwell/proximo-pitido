@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.Arrays;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -71,15 +72,46 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     private static final int PAYLOAD_TYPE_PLACEHOLDER = 104;
 
     /**
-     * Preference order: octet-aligned is preferred (lower number = higher preference).
-     * Bandwidth-efficient is a fallback when the caller doesn't offer octet-aligned.
+     * Preference order: bandwidth-efficient is now preferred (lower number = higher preference).
+     * Temporarily increased to 41 to test if octet-aligned codec resolves audio corruption.
      */
-    private static final int PREFERENCE = 1;
+    private static final int PREFERENCE = 41;
+
+    /**
+     * Preference order: bandwidth-efficient is tried first (lower number = higher preference).
+     * Octet-aligned is tried second, only when explicitly offered ("octet-align=1" in SDP).
+     *
+     * <p>RFC 4867 specifies bandwidth-efficient as the DEFAULT AMR-WB packetisation format.
+     * Using bandwidth-efficient first (preference 40) ensures compatibility with endpoints that
+     * advertise only bandwidth-efficient support and do not send octet-align=1 fmtp parameter.
+     * Octet-aligned codec has preference 41 (tried second) and requires explicit "octet-align=1".
+     */
 
     /**
      * RTP clock rate for AMR-WB: 16 kHz (wideband).
      */
     private static final int RTP_CLOCK_RATE = 16_000;
+
+    /** CDI no-args constructor. */
+    public AmrWbBandwidthEfficientRtpCodec() {
+        super();
+    }
+
+    /**
+     * Package-scoped constructor for per-call instances created by {@link #createForCallInstance}.
+     *
+     * <p>Not intended for direct use outside this package.
+     * The encoder state is already initialised and bound to the arena.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     */
+    AmrWbBandwidthEfficientRtpCodec(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        super(eIfEncodeHandle, arena, stateSegment, encodingMode);
+    }
 
     @Override
     public String sdpName() {
@@ -102,32 +134,61 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     }
 
     /**
-     * Accepts AMR-WB when the caller offers it WITHOUT {@code octet-align=1}.
+     * Accepts AMR-WB ONLY when the caller explicitly specifies {@code octet-align=0}.
      *
-     * <p>Since bandwidth-efficient mode is the default when no fmtp parameters are present,
-     * this codec accepts empty fmtp strings (no parameters at all).
-     * It accepts any fmtp string that does not explicitly specify {@code octet-align=1};
-     * other parameters (e.g. {@code mode-set}, {@code octet-align=0}) are ignored.
-     * This allows some flexibility in fmtp declarations while still rejecting octet-aligned offers.
+     * <p>This codec is narrowly scoped to handle explicit bandwidth-efficient requests.
+     * It REJECTS empty fmtp (ambiguous — now handled by octet-aligned codec).
+     * It REJECTS fmtp with mode parameters that don't explicitly request bandwidth-efficient.
+     * It ACCEPTS ONLY explicit {@code octet-align=0} (caller wants bandwidth-efficient format).
+     *
+     * <p>This narrow matching ensures octet-aligned codec (preference 40) wins for ambiguous offers,
+     * while still supporting callers that explicitly request bandwidth-efficient (preference 41).
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        // Bandwidth-efficient is the default: accept empty fmtp.
-        if (offeredFmtp.isEmpty()) {
+        // Match explicit octet-align=0 OR mode params without explicit octet-align
+        boolean hasExplicitOctetAlignZero = Arrays.stream(offeredFmtp.split(";"))
+                .map(String::strip)
+                .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignZeroParam);
+
+        if (hasExplicitOctetAlignZero) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched (explicit octet-align=0): {0}",
+                    offeredFmtp);
             return true;
         }
 
-        // Reject only if octet-align=1 is explicitly present (parsed as key=value pairs).
-        // This ensures we match the parent class's parameter parsing style and avoid
-        // false substring matches (e.g., "octet-align=0" or "octet-align=10" should not be rejected).
-        return !Arrays.stream(offeredFmtp.split(";"))
+        // Also match mode params without explicit octet-align (pragmatic: assume BW-efficient when alignment not
+        // specified)
+        String[] params = offeredFmtp.split(";");
+        boolean hasOctetAlignExplicit =
+                Arrays.stream(params).map(String::strip).anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignParam);
+        boolean hasModeParams = Arrays.stream(params)
                 .map(String::strip)
-                .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignOneParam);
+                .anyMatch(p -> p.startsWith("mode-") || p.startsWith("max-red"));
+
+        if (hasModeParams && !hasOctetAlignExplicit) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched (mode params without explicit octet-align): {0}",
+                    offeredFmtp);
+            return true;
+        }
+
+        LOGGER.log(
+                System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected: {0}", offeredFmtp);
+        return false;
     }
 
-    private static boolean isOctetAlignOneParam(String param) {
+    private static boolean isOctetAlignZeroParam(String param) {
         String[] kv = param.split("=", 2);
-        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "0".equals(kv[1].strip());
+    }
+
+    private static boolean isOctetAlignParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());
     }
 
     /**
@@ -176,13 +237,53 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
             // Extract the bandwidth-efficient payload: convert to byte array and return.
             // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
-            return outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+            byte[] payload = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB bandwidth-efficient encode: encodingMode={0} encoderOutputBytes={1} payloadBytes={2}",
+                    this.encodingMode,
+                    speechBytes,
+                    payload.length);
+
+            return payload;
         }
+    }
+
+    /**
+     * Factory method that creates a {@code AmrWbBandwidthEfficientRtpCodec} instance.
+     *
+     * <p>Overrides the parent's {@link AmrWbRtpCodec#createForCallInstance(MethodHandle, Arena, MemorySegment, int)}
+     * to ensure that a bandwidth-efficient codec instance is created,
+     * not the parent's octet-aligned type.
+     * This ensures the correct RTP payload format is encoded.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     * @return a fully initialised per-call {@link AmrWbBandwidthEfficientRtpCodec}
+     */
+    @Override
+    protected RtpCodec createForCallInstance(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        return new AmrWbBandwidthEfficientRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
     @Override
     public String fmtpParams() {
         // Bandwidth-efficient mode requires no fmtp parameters.
         return "";
+    }
+
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        // Bandwidth-efficient always echoes back the offered fmtp unchanged.
+        // Do NOT append octet-align=1 (which the parent class does).
+        if (offeredFmtp.isEmpty()) {
+            return fmtpParams();
+        }
+
+        return offeredFmtp;
     }
 }

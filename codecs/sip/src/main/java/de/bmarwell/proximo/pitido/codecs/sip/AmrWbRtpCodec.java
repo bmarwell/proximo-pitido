@@ -254,6 +254,9 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     public int preference() {
         // Preferred over G.722 (50) for mobile VoLTE callers: lower bitrate, same wideband quality.
         // PSTN trunks never offer AMR-WB, so this codec activates only for mobile callers.
+        // Preference is 40 (octet-aligned): tried first to diagnose bandwidth-efficient audio issues.
+        // RFC 4867 specifies bandwidth-efficient as the DEFAULT packetisation format, but we
+        // temporarily prioritise octet-aligned to test if the audio corruption is codec-format-specific.
         return 40;
     }
 
@@ -290,7 +293,26 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
         Arena arena = Arena.ofConfined();
         MemorySegment stateBoundToArena = rawStatePtr.reinterpret(STATE_SIZE, arena, this::invokeExit);
 
-        return new AmrWbRtpCodec(this.eIfEncodeHandle, arena, stateBoundToArena, mode);
+        return createForCallInstance(this.eIfEncodeHandle, arena, stateBoundToArena, mode);
+    }
+
+    /**
+     * Factory method for creating per-call codec instances.
+     *
+     * <p>Subclasses override this method to instantiate their own type.
+     * The default implementation creates an {@code AmrWbRtpCodec} instance.
+     * The {@link AmrWbBandwidthEfficientRtpCodec} overrides this to create its own type
+     * so that the correct RTP payload format is encoded.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     * @return a fully initialised per-call codec instance
+     */
+    protected RtpCodec createForCallInstance(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        return new AmrWbRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
     /**
@@ -305,25 +327,36 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * Echoes the caller's offered fmtp in the SDP answer, as required by RFC 4867 §8.3.2.
+     * Builds the SDP answer fmtp parameters for octet-aligned AMR-WB.
      *
      * <p>When the caller's offer included an {@code a=fmtp} line (e.g.
-     * {@code "octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0"}),
-     * the entire parameter string must be echoed unchanged in the answer so that the remote
-     * IMS media proxy accepts the session.
-     * Falls back to {@link #fmtpParams()} (just {@code "octet-align=1"}) when no fmtp was
-     * offered.
+     * {@code "mode-set=0,1,2;mode-change-capability=2;max-red=0"}),
+     * we must echo the parameters in the answer but ensure {@code octet-align=1} is present
+     * so the remote understands we are using octet-aligned format.
+     * Falls back to {@link #fmtpParams()} when no fmtp was offered.
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
-     * @return the fmtp string for the SDP answer
+     * @return the fmtp string for the SDP answer, with {@code octet-align=1} guaranteed
      */
     @Override
     public String fmtpAnswer(String offeredFmtp) {
         if (offeredFmtp.isEmpty()) {
             return fmtpParams();
-        } else {
+        }
+
+        boolean hasExplicitOctetAlign =
+                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+
+        if (hasExplicitOctetAlign) {
             return offeredFmtp;
         }
+
+        return offeredFmtp + ";octet-align=1";
+    }
+
+    private static boolean isOctetAlignParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());
     }
 
     /**
@@ -401,30 +434,70 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     }
 
     /**
-     * This implementation requires octet-aligned packetisation (RFC 4867 §4.4).
+     * This implementation uses octet-aligned packetisation (RFC 4867 §4.4).
      *
      * <p>Callers may advertise AMR-WB under multiple dynamic payload types or modes:
      * <ul>
-     *   <li>Octet-aligned: requires {@code a=fmtp} with {@code octet-align=1} parameter.
-     *       This is the preferred RFC 4867 §4.4 format; the codec will only accept this variant.
-     *   <li>Bandwidth-efficient (RFC 4867 §4.3): indicated by the {@code /1} suffix in
-     *       {@code a=rtpmap} (e.g. {@code a=rtpmap:104 AMR-WB/16000/1}) with no {@code a=fmtp}
-     *       or {@code a=fmtp} omitting the {@code octet-align} parameter.
-     *       This codec does not support bandwidth-efficient packetisation; callers offering only
-     *       this variant will fall back to G.722 or other available codecs.
+     *   <li>Octet-aligned: indicated by {@code a=fmtp} with {@code octet-align=1} parameter,
+     *       OR by empty fmtp when no packetisation format is specified (RFC 4867 default).
+     *       This is the preferred RFC 4867 §4.4 format.
+     *   <li>Bandwidth-efficient (RFC 4867 §4.3): explicitly specified with bandwidthEfficient codec.
      * </ul>
      *
-     * <p>Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2,
-     * so values such as {@code octet-align=10} are not falsely matched.
+     * <p>Accepts both explicit {@code octet-align=1} and empty fmtp (ambiguous default case).
+     * Also accepts fmtp with mode parameters (e.g. {@code mode-set=0,1,2}) that do not explicitly
+     * specify {@code octet-align=0}.
+     * Rejects only offers that explicitly specify {@code octet-align=0} (caller wants bandwidth-efficient).
+     * Parameters are parsed as semicolon-separated {@code key=value} pairs per RFC 4867 §8.2.
      */
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
-        return Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+        // Reject explicit octet-align=0 (caller explicitly wants bandwidth-efficient)
+        boolean hasExplicitOctetAlignZero =
+                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignZeroParam);
+
+        if (hasExplicitOctetAlignZero) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (explicit octet-align=0): {0}",
+                    offeredFmtp);
+            return false;
+        }
+
+        // Reject mode parameters without explicit octet-align (pragmatic: such offers usually expect BW-efficient)
+        String[] params = offeredFmtp.split(";");
+        boolean hasOctetAlignExplicit =
+                Arrays.stream(params).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+        boolean hasModeParams = Arrays.stream(params)
+                .map(String::strip)
+                .anyMatch(p -> p.startsWith("mode-") || p.startsWith("max-red"));
+
+        if (hasModeParams && !hasOctetAlignExplicit) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (mode params without explicit octet-align): {0}",
+                    offeredFmtp);
+            return false;
+        }
+
+        // Accept: empty fmtp or explicit octet-align=1
+        if (offeredFmtp.isEmpty()) {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp");
+        } else {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched: {0}", offeredFmtp);
+        }
+
+        return true;
     }
 
-    private static boolean isOctetAlignParam(String param) {
+    private static boolean isOctetAlignOneParam(String param) {
         String[] kv = param.split("=", 2);
         return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "1".equals(kv[1].strip());
+    }
+
+    private static boolean isOctetAlignZeroParam(String param) {
+        String[] kv = param.split("=", 2);
+        return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip()) && "0".equals(kv[1].strip());
     }
 
     /**
@@ -470,7 +543,18 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
                 actualSpeechBytes = speechBytes - 1;
             }
 
-            return buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
+            byte[] payload = buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB octet-aligned encode: encodingMode={0} encoderOutputBytes={1} offset={2} tocDetected={3} payloadBytes={4}",
+                    this.encodingMode,
+                    speechBytes,
+                    offset,
+                    firstEncoderByte == expectedToC,
+                    payload.length);
+
+            return payload;
         }
     }
 
