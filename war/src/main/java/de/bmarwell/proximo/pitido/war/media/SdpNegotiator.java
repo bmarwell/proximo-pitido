@@ -307,11 +307,29 @@ public class SdpNegotiator {
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
         Map<Integer, String> fmtp = parseFmtp(sdpOffer);
 
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "SDP codec negotiation: offered PTs {0}, rtpmap {1}, fmtp {2}",
+                offeredPts,
+                rtpmap,
+                fmtp);
+
         Optional<NegotiatedRtpCodec> selected = codecs.filter(RtpCodec::isAvailable)
                 .sorted(Comparator.comparingInt(RtpCodec::preference))
-                .flatMap(codec -> negotiatedPt(codec, offeredPts, rtpmap, fmtp)
-                        .map(pt -> new NegotiatedRtpCodec(codec, pt, fmtp.getOrDefault(pt, "")))
-                        .stream())
+                .flatMap(codec -> {
+                    Optional<Integer> pt = negotiatedPt(codec, offeredPts, rtpmap, fmtp);
+
+                    if (pt.isPresent()) {
+                        LOGGER.log(
+                                System.Logger.Level.TRACE,
+                                "Codec {0} (preference {1}) matched at PT {2}",
+                                codec.sdpName(),
+                                codec.preference(),
+                                pt.get());
+                    }
+
+                    return pt.map(p -> new NegotiatedRtpCodec(codec, p, fmtp.getOrDefault(p, ""))).stream();
+                })
                 .findFirst();
 
         if (selected.isEmpty()) {

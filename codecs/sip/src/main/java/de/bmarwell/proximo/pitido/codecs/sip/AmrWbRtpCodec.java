@@ -440,12 +440,26 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
     @Override
     public boolean matchesFmtp(String offeredFmtp) {
         // Accept explicit octet-align=1
-        if (Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignOneParam)) {
+        boolean hasExplicitOctetAlign =
+                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignOneParam);
+
+        if (hasExplicitOctetAlign) {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched octet-align=1");
             return true;
         }
 
         // Accept empty fmtp as fallback (ambiguous default; assume octet-aligned when not specified)
-        return offeredFmtp.isEmpty();
+        boolean isEmpty = offeredFmtp.isEmpty();
+        if (isEmpty) {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbRtpCodec.matchesFmtp: matched empty fmtp (fallback)");
+        } else {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbRtpCodec.matchesFmtp: rejected fmtp (not empty, no octet-align=1): {0}",
+                    offeredFmtp);
+        }
+
+        return isEmpty;
     }
 
     private static boolean isOctetAlignOneParam(String param) {

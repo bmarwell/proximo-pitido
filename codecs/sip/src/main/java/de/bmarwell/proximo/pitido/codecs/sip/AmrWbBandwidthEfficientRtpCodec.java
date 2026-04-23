@@ -146,15 +146,27 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     public boolean matchesFmtp(String offeredFmtp) {
         // Bandwidth-efficient is the default: accept empty fmtp.
         if (offeredFmtp.isEmpty()) {
+            LOGGER.log(System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched empty fmtp");
             return true;
         }
 
         // Reject only if octet-align=1 is explicitly present (parsed as key=value pairs).
         // This ensures we match the parent class's parameter parsing style and avoid
         // false substring matches (e.g., "octet-align=0" or "octet-align=10" should not be rejected).
-        return !Arrays.stream(offeredFmtp.split(";"))
+        boolean hasExplicitOctetAlign = Arrays.stream(offeredFmtp.split(";"))
                 .map(String::strip)
                 .anyMatch(AmrWbBandwidthEfficientRtpCodec::isOctetAlignOneParam);
+
+        if (hasExplicitOctetAlign) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: rejected (has octet-align=1): {0}",
+                    offeredFmtp);
+            return false;
+        }
+
+        LOGGER.log(System.Logger.Level.TRACE, "AmrWbBandwidthEfficientRtpCodec.matchesFmtp: matched: {0}", offeredFmtp);
+        return true;
     }
 
     private static boolean isOctetAlignOneParam(String param) {
