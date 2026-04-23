@@ -292,7 +292,26 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
         Arena arena = Arena.ofConfined();
         MemorySegment stateBoundToArena = rawStatePtr.reinterpret(STATE_SIZE, arena, this::invokeExit);
 
-        return new AmrWbRtpCodec(this.eIfEncodeHandle, arena, stateBoundToArena, mode);
+        return createForCallInstance(this.eIfEncodeHandle, arena, stateBoundToArena, mode);
+    }
+
+    /**
+     * Factory method for creating per-call codec instances.
+     *
+     * <p>Subclasses override this method to instantiate their own type.
+     * The default implementation creates an {@code AmrWbRtpCodec} instance.
+     * The {@link AmrWbBandwidthEfficientRtpCodec} overrides this to create its own type
+     * so that the correct RTP payload format is encoded.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     * @return a fully initialised per-call codec instance
+     */
+    protected RtpCodec createForCallInstance(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        return new AmrWbRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
     /**

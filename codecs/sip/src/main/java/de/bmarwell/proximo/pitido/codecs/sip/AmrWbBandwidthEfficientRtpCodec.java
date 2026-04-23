@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.Arrays;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -90,6 +91,22 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      * RTP clock rate for AMR-WB: 16 kHz (wideband).
      */
     private static final int RTP_CLOCK_RATE = 16_000;
+
+    /**
+     * Package-scoped constructor for per-call instances created by {@link #createForCallInstance}.
+     *
+     * <p>Not intended for direct use outside this package.
+     * The encoder state is already initialised and bound to the arena.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     */
+    AmrWbBandwidthEfficientRtpCodec(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        super(eIfEncodeHandle, arena, stateSegment, encodingMode);
+    }
 
     @Override
     public String sdpName() {
@@ -197,6 +214,26 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
 
             return payload;
         }
+    }
+
+    /**
+     * Factory method that creates a {@code AmrWbBandwidthEfficientRtpCodec} instance.
+     *
+     * <p>Overrides the parent's {@link AmrWbRtpCodec#createForCallInstance(MethodHandle, Arena, MemorySegment, int)}
+     * to ensure that a bandwidth-efficient codec instance is created,
+     * not the parent's octet-aligned type.
+     * This ensures the correct RTP payload format is encoded.
+     *
+     * @param eIfEncodeHandle downcall handle for {@code E_IF_encode}
+     * @param arena           confined arena that owns the encoder state lifetime
+     * @param stateSegment    arena-scoped encoder state
+     * @param encodingMode    AMR-WB encoding mode (0–8)
+     * @return a fully initialised per-call {@link AmrWbBandwidthEfficientRtpCodec}
+     */
+    @Override
+    protected RtpCodec createForCallInstance(
+            MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
+        return new AmrWbBandwidthEfficientRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
     @Override
