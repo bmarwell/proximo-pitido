@@ -13,11 +13,13 @@ cd "${SCRIPT_DIR}"
 
 FORCE="${1:-}"
 
-# Resolve the current HEAD SHA on main without cloning the full repository.
+# Resolve the current HEAD SHA on the configured branch without cloning the full repository.
 # Docker uses this as a cache-bust key: only the git clone layer (and those
-# after it) are rebuilt when main has new commits.  Layers before the clone
+# after it) are rebuilt when the branch has new commits.  Layers before the clone
 # (base image pull, native-library install) remain cached.
-HEAD_SHA=$(git ls-remote https://github.com/bmarwell/proximo-pitido.git main | cut -f1)
+GIT_REF="${GIT_REF:-debug/add-rtp-encoding-trace}"
+
+HEAD_SHA=$(git ls-remote https://github.com/bmarwell/proximo-pitido.git "${GIT_REF}" | cut -f1)
 
 if [[ -z "${HEAD_SHA}" ]]; then
     echo "Could not resolve HEAD SHA from GitHub — aborting." >&2
@@ -41,7 +43,7 @@ echo "Building HEAD ${HEAD_SHA}"
 
 docker compose build \
     --build-arg "CACHE_BUST=${HEAD_SHA}" \
-    --build-arg "GIT_REF=main"
+    --build-arg "GIT_REF=${GIT_REF}"
 
 docker compose up --no-color -d --force-recreate
 
