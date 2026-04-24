@@ -1,0 +1,478 @@
+= AMR-WB RTP Codec Implementation Guide
+:author: Próximo Pitido Project
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+This document describes the implementation of AMR-WB (Adaptive Multi-Rate Wideband) audio codec support over RTP in Próximo Pitido.
+The SIP application supports two complementary AMR-WB variants: octet-aligned and bandwidth-efficient.
+Each variant has different payload structures and is used by different SIP providers.
+
+=== Key Learning: Provider-Specific Variants
+
+Most SIP documentation treats AMR-WB as a single codec, but it has two fundamentally different transmission formats:
+
+* **Octet-aligned** (RFC 4867 §4.2): Each field is byte-aligned; simpler implementation but larger packets.
+  Used by Deutsche Telekom and other traditional carriers.
+
+* **Bandwidth-efficient** (RFC 4867 §4.3): Fields are bit-packed; complex payload construction but saves 1 byte per packet.
+  Used by 1&1 Mobilfunk and other mobile operators targeting bandwidth optimization.
+
+The SDP offer from the provider determines which variant is available.
+If the offer includes `octet-align=1`, the provider wants octet-aligned.
+If the offer omits this parameter, the provider wants bandwidth-efficient.
+
+== Octet-Aligned Variant (RFC 4867 §4.2)
+
+=== Payload Structure
+
+Each RTP packet contains exactly one AMR-WB frame plus one ToC (Table of Contents) byte:
+
+....
+Byte 0:     [0 | FT(4 bits) | Q(1 bit) | P(2 bits)]   (ToC, octet-aligned)
+Bytes 1-32: [speech data (256 bits = 32 bytes)]
+....
+
+[width="100%",cols="3,2,3,4",options="header"]
+|===
+|Field|Bits|Width|Purpose
+|Reserved|7|1|Always 0 (RFC 3551)
+|Frame Type (FT)|6-3|4|Indicates which mode was used (0=silent, 1-8=modes 1-8, 15=no data)
+|Quality (Q)|2|1|Quality flag: 1=good frame, 0=frame error
+|Padding (P)|1-0|2|Always 0 (padding bytes for octet alignment)
+|===
+
+=== Implementation: AmrWbRtpCodec
+
+The base class `AmrWbRtpCodec` handles encoder initialization and mode selection.
+
+**Key responsibilities:**
+
+* Wraps libvo-amrwbenc native library via Java Foreign Function & Memory API.
+* Initializes encoder state for each call via `forCall()` method.
+* Selects encoding mode based on target bitrate or defaults to mode 2 (12.65 kbps).
+* Closes per-call encoder state when the call ends (via try-with-resources).
+
+**CMR field management:**
+
+The Codec Mode Request (RFC 2976) indicates which mode the peer should use.
+In our implementation, CMR is set to the current encoding mode (e.g., 2 for mode 2).
+This tells the remote decoder "please use this mode to encode your replies to me."
+
+=== Payload Output
+
+```java
+byte[] octetAlignedPayload = codec.encode(pcmFrame);
+// Result: [ToC_byte][32 bytes of speech data]
+// Size: 33 bytes
+// Quality: High (structured, easy to parse)
+```
+
+== Bandwidth-Efficient Variant (RFC 4867 §4.3)
+
+=== The Challenge: Bit-Level Packing
+
+Bandwidth-efficient format compresses the ToC from a full byte to 6 bits by bit-packing:
+
+....
+Bit 7:      [CMR (4 bits) | F(1 bit) | FT_high(3 bits)]   (Byte 0)
+Bit 0:      [FT_low(1 bit) | Q(1 bit) | speech(6 bits)]  (Byte 1)
+Bytes 2-32: [speech data shifted left by 4 bits to account for CMR]
+....
+
+[width="100%",cols="2,2,2,4",options="header"]
+|===
+|Byte|Bits|Width|Content
+|0|7-4|4|CMR (Codec Mode Request) — same as octet-aligned but explicit in BW-efficient
+|0|3|1|F (Follow bit): 1=more frames follow, 0=last frame (for multi-frame packets)
+|0|2-0|3|FT high 3 bits (frame type upper bits)
+|1|7|1|FT low bit (frame type lower bit, completing the 4-bit FT field)
+|1|6|1|Q (Quality bit): 1=good, 0=error
+|1|5-0|6|First 6 bits of speech data
+|2-31|7-0|variable|Remaining speech data, shifted left 4 bits
+|===
+
+=== Key Learning: Bit Budget Requires Padding
+
+The total payload consists of:
+
+* CMR: 4 bits
+* F: 1 bit
+* FT: 4 bits
+* Q: 1 bit
+* Speech: 253 bits (12.65 kbps × 20 ms)
+* **Total: 263 bits = 32.875 bytes**
+
+Since we must use whole bytes, we round up to 33 bytes = 264 bits.
+The lowest 1 bit of the last byte is **padding and must be explicitly zeroed** per RFC 4867 §4.3.
+
+RFC compliance requires: `bwEfficientPayload[32] &= 0xFE;` to zero bit 0.
+
+=== Implementation: AmrWbBandwidthEfficientRtpCodec
+
+This subclass of `AmrWbRtpCodec` overrides the `encode()` method to perform format conversion.
+
+**Algorithm:**
+
+1. Invoke the native encoder (same as octet-aligned).
+   Result: octet-aligned ToC byte + 32 bytes of speech.
+
+2. Extract FT and Q from the octet-aligned ToC.
+
+3. Build bandwidth-efficient byte 0:
+   - CMR (4 bits, upper nibble): Set to encoding mode (e.g., 2).
+   - F (1 bit): Always 0 for single-frame packets.
+   - FT_high (3 bits): Upper 3 bits of 4-bit frame type.
+
+4. Build bandwidth-efficient byte 1:
+   - FT_low (1 bit): Lower bit of frame type.
+   - Q (1 bit): Quality flag from encoder.
+   - Speech (6 bits): First 6 bits of speech data.
+
+5. Shift remaining speech left by 4 bits using a carryover loop.
+   This accounts for the 4 bits of CMR prepended in byte 0.
+
+6. **RFC compliance**: Zero the padding bit (bit 0 of the last byte).
+
+**Code structure:**
+
+```java
+// Extract FT and Q from octet-aligned ToC
+int ftFromEncoder = (firstEncoderByte >> 3) & 0x0F;
+int qFromEncoder = (firstEncoderByte >> 2) & 0x01;
+
+// Split FT into high 3 and low 1 bit
+int ftHigh3 = (ftFromEncoder >> 1) & 0x07;
+int ftLow1 = ftFromEncoder & 0x01;
+
+// Build BW-efficient bytes 0-1
+bwEfficientPayload[0] = (byte) (((cmr & 0x0F) << 4) | ((f & 0x01) << 3) | (ftHigh3 & 0x07));
+bwEfficientPayload[1] = (byte) (((ftLow1 & 0x01) << 7) | ((qFromEncoder & 0x01) << 6) | (speechBits6from1 & 0x3F));
+
+// Shift remaining speech left by 4 bits (carryover loop)
+int carryover = (encoderOutput[1] >> 6) & 0x03;
+for (int i = 2; i < encoderOutput.length; i++) {
+    bwEfficientPayload[i] = (byte) (((encoderOutput[i] & 0xFF) >> 2) | ((carryover & 0x03) << 6));
+    carryover = (encoderOutput[i] & 0x03);
+}
+
+// RFC 4867 §4.3 padding: zero the lowest 1 bit of the last byte
+if (bwEfficientPayload.length > 0) {
+    bwEfficientPayload[bwEfficientPayload.length - 1] &= 0xFE; // Clear bit 0
+}
+```
+
+=== Payload Output
+
+```java
+byte[] bwEfficientPayload = codec.encode(pcmFrame);
+// Result: [CMR(4)|F(1)|FT_high(3)][FT_low(1)|Q(1)|speech(6)][speech_shifted...][padding(1)]
+// Size: 33 bytes
+// Quality: Bandwidth-optimized, matches RFC 4867 exactly
+```
+
+== Follow Bit (F) and Multi-Frame Packets
+
+=== Current Implementation: Single Frame Per Packet
+
+The follow bit (F) in byte 0, bit 3, indicates whether additional frames follow in the same RTP packet:
+
+* **F = 0** (current): This is the last (or only) frame in the packet.
+* **F = 1** (future): Another frame's ToC follows immediately after this frame's speech data.
+
+Our implementation always sets `F = 0` because each RTP packet contains exactly one encoded frame.
+
+**Code:**
+```java
+int f = 0; // Single frame, no continuation
+byte0 = (byte) (((cmr & 0x0F) << 4) | ((f & 0x01) << 3) | (ftHigh3 & 0x07));
+```
+
+=== Future Enhancement: Multi-Frame Bundling
+
+To reduce RTP packet overhead, we could combine multiple 20 ms frames into one packet:
+
+1. Buffer encoded frames in `RtpAudioPlayer` (e.g., 2-3 frames per packet).
+
+2. Set F = 1 for all frames except the last:
+   ```java
+   for (int i = 0; i < frames.length - 1; i++) {
+       frames[i].toC |= 0x08; // Set bit 3 (F = 1)
+   }
+   ```
+
+3. Combine all ToCs and speech into one RTP payload.
+
+4. Send as a single packet.
+
+**Benefit**: Fewer packets, lower bandwidth overhead.
+**Trade-off**: Higher latency per frame (wait to buffer), more complex buffering logic.
+
+== Test Coverage and Validation
+
+=== AmrWbBandwidthEfficientRtpCodecTest
+
+The test suite validates the correct transformation of encoder output to RFC 4867 format.
+
+**Key test methods:**
+
+[width="100%",cols="2,4",options="header"]
+|===
+|Test|Validates
+|`encodeProducesValidBandwidthEfficientPayload()`|CMR extraction, F/FT/Q bit positions in first byte
+|`encodePayloadStartsWithValidToC()`|First two bytes format (CMR+F+FT_high, FT_low+Q+speech)
+|`bandwidthEfficientPayloadIsShorterThanOctetAligned()`|Output is 32 bytes not 33 (after compression)
+|`encodeProducesCorrectFrameType()`, `encodeProducesCorrectQuality()`|FT and Q bits preserved correctly
+|===
+
+**Test data validation:**
+
+```java
+// Verify F = 0 (single frame)
+int f = (payload[0] >> 3) & 0x01;
+assertEquals(0, f, "Follow bit should be 0 (single frame)");
+
+// Verify CMR matches encoding mode
+int cmr = (payload[0] >> 4) & 0x0F;
+assertEquals(2, cmr, "CMR should be 2 (encoding mode)");
+
+// Verify byte alignment and bit shifts
+byte byte0 = payload[0];
+int expectedByte0 = (2 << 4) | (0 << 3) | 1; // CMR=2, F=0, FT_high=001
+assertEquals(expectedByte0, byte0 & 0xFF, "Byte 0 format");
+```
+
+=== Test Discovery: The Missing `.probe()` Method
+
+All 13 BW-efficient codec tests were **never running** because the factory bean lacked a `.probe()` method.
+
+This discovered an architectural issue:
+
+* `PcmDecoderFactory` and `RtpCodecFactory` use a service provider interface pattern.
+* Factories must implement `probe()` to announce availability during CDI initialization.
+* Without `.probe()`, the codec factory is never probed, and tests remain unexecuted.
+
+**Resolution**: Implement `.probe()` by attempting to link the native library:
+
+```java
+@Override
+public boolean probe() {
+    try {
+        SymbolLookup.libraryLookup(LIB_NAME);
+        LOGGER.log(System.Logger.Level.INFO, "libvo-amrwbenc detected — AMR-WB RTP codec available");
+        return true;
+    } catch (RuntimeException exception) {
+        return false;
+    }
+}
+```
+
+== SDP Negotiation
+
+=== How the Codec Variant is Selected
+
+The SDP offer from the peer determines which variant is negotiated:
+
+1. **Peer offers `a=fmtp:104 octet-align=1`:**
+   → Select `AmrWbRtpCodec` (octet-aligned).
+
+2. **Peer offers `a=rtpmap:104 AMR-WB/16000/1` (no `octet-align` parameter):**
+   → Select `AmrWbBandwidthEfficientRtpCodec` (bandwidth-efficient).
+
+**SDP answer format:**
+
+For bandwidth-efficient, the answer omits the `octet-align` parameter:
+```
+a=rtpmap:104 AMR-WB/16000/1
+```
+
+For octet-aligned, the answer includes it:
+```
+a=rtpmap:104 AMR-WB/16000/1
+a=fmtp:104 octet-align=1
+```
+
+=== Implementation: SdpNegotiator and NegotiatedRtpCodec
+
+The `SdpNegotiator` examines the peer's FMTP parameters and selects the appropriate codec factory.
+
+`NegotiatedRtpCodec` wraps the selected codec and assigns the negotiated payload type.
+This ensures the SDP answer and RTP packet payload type are consistent.
+
+== Practical Provider Compatibility
+
+=== Deutsche Telekom (Octet-Aligned)
+
+* **SDP offer**: Includes `octet-align=1` and `mode-set` parameter.
+* **Format**: Octet-aligned (byte-aligned, easier to debug).
+* **Audio quality**: Excellent (our test calls work reliably).
+* **Known issues**: None in current implementation.
+
+=== 1&1 Mobilfunk (Bandwidth-Efficient)
+
+* **SDP offer**: No `octet-align` parameter; implies bandwidth-efficient only.
+* **Format**: Bandwidth-efficient (bit-packed, requires careful implementation).
+* **Audio quality**: Previously "half-intelligible"; now (hopefully) clearer with bit-packing fixes.
+* **Known workarounds**: CMR set to encoding mode (not 15 = "no request").
+
+=== Future Compatibility Considerations
+
+Different SIP providers may offer different combinations of modes:
+
+* Some may offer both variants and let us choose.
+* Some may offer only one variant.
+* Some may declare mode constraints via `mode-set` parameter.
+
+**Our approach**: Prefer the variant offered by the peer.
+If both are available, choose based on network conditions (octet-aligned for reliability, BW-efficient for bandwidth).
+
+== Common Pitfalls and Design Decisions
+
+=== Pitfall 1: Byte vs. Bit Indexing
+
+Bandwidth-efficient format requires thinking in **bits**, not just bytes.
+
+* **Octet-aligned**: Every field starts at a byte boundary (byte 0, byte 1, etc.).
+* **Bandwidth-efficient**: Fields are bit-packed (bit 7, bit 6, bit 3, bit 0, etc.).
+
+**Solution**: Write explicit bit extraction and bit-construction code with comments:
+
+```java
+int cmr = (byte0 >> 4) & 0x0F;        // Bits 7-4
+int f = (byte0 >> 3) & 0x01;          // Bit 3
+int ftHigh3 = byte0 & 0x07;           // Bits 2-0
+```
+
+=== Pitfall 2: The Carryover Loop
+
+When shifting speech data left by 4 bits across multiple bytes, bits from each byte must be carried forward.
+
+**Naive approach (wrong):** Shift each byte independently → loses bits at byte boundaries.
+
+**Correct approach (carryover loop):**
+```java
+int carryover = (previous_byte >> 6) & 0x03;  // Top 2 bits (will be carried into next byte)
+for (int i = 0; i < num_bytes; i++) {
+    result[i] = (current_byte >> 2) | (carryover << 6);
+    carryover = current_byte & 0x03;           // Bottom 2 bits (carry to next iteration)
+}
+```
+
+=== Pitfall 3: RFC Padding Requirements
+
+The bit budget does not evenly divide into bytes.
+263 bits = 32.875 bytes.
+
+**Naive approach (wrong):** Leave padding bits undefined (malloc may not zero them).
+
+**Correct approach (RFC 4867 §4.3):** Explicitly zero padding bits:
+```java
+bwEfficientPayload[32] &= 0xFE;  // Zero bit 0 of the last byte
+```
+
+=== Pitfall 4: CMR vs. Encoding Mode
+
+RFC 2976 defines CMR as "the Codec Mode Request sent by the receiver."
+
+**Two schools of thought:**
+
+* **Conservative (RFC-strict)**: CMR = 15 (no mode request; let peer choose).
+* **Pragmatic**: CMR = current encoding mode (we expect peer to match our mode).
+
+We chose pragmatic because:
+1. Most SIP calls use fixed encoding modes for the entire call.
+2. Telling the peer "use mode 2" (CMR = 2) is more explicit than "I don't care" (CMR = 15).
+3. It may help providers that have strict mode negotiation.
+
+If audio quality issues arise, CMR = 15 can be tested as an alternative.
+
+== Debugging and Diagnostics
+
+=== Trace Logging
+
+Both codec implementations include extensive trace logging:
+
+```java
+LOGGER.log(System.Logger.Level.TRACE,
+    "BW-efficient ToC conversion: encoder format 0x{0} → BW-efficient 0x{1}0x{2} " +
+    "(mode={3}, F={4}, FT={5}, Q={6})",
+    String.format("%02x", firstEncoderByte & 0xFF),
+    String.format("%02x", bwEfficientPayload[0] & 0xFF),
+    String.format("%02x", bwEfficientPayload[1] & 0xFF),
+    this.encodingMode, f, ftFromEncoder, qFromEncoder);
+```
+
+**Check trace.log for:**
+
+* `Encoder returned speechBytes=33`: Confirms encoder produced the expected 33-byte output.
+* `BW-efficient ToC conversion: ... →`: Confirms byte 0 and byte 1 are correctly constructed.
+* `Clear bit 0` (future log): Confirms RFC padding is applied.
+
+=== Common Issues to Look For in Logs
+
+[width="100%",cols="2,3,3",options="header"]
+|===
+|Symptom|Likely Cause|Fix
+|Audio is silent|Encoder output is all zeros|Check PCM input; verify mode is not "no data" (FT=0)
+|Audio is garbled|Byte shifting error or incorrect bit extraction|Check CMR/F/FT positioning; verify carryover loop
+|Audio is choppy|Missing RTP packets or marker bit issues|Check trace for `marker={0}` or packet loss
+|Provider rejects offer|SDP fmtp mismatch|Verify `octet-align` parameter matches peer expectations
+|===
+
+== Future Enhancements
+
+=== Multi-Frame Bundling
+
+Combine 2-3 frames per RTP packet using F=1 continuation bit.
+Reduces packet overhead by ~25% at the cost of slightly higher latency.
+
+=== Adaptive Bitrate Selection
+
+Change encoding mode based on network conditions:
+* Good network: Mode 2 (12.65 kbps, best quality).
+* Degraded network: Mode 5 (8.85 kbps, more resilient).
+
+=== Additional Codec Modes
+
+Test and support all 8 AMR-WB modes (6.60 to 23.85 kbps) based on provider capabilities.
+
+=== Interoperability Profiles
+
+Create documented profiles for each major provider (Deutsche Telekom, 1&1, Vodafone, etc.) with:
+* Accepted codec variants (octet-aligned, BW-efficient, or both).
+* Preferred mode and bitrate.
+* Known workarounds or quirks.
+
+== References
+
+[width="100%",cols="1,3",options="header"]
+|===
+|RFC|Title
+|RFC 3551|RTP Profile for Audio and Video Conferences with Minimal Control
+|RFC 3952|Real-time Transport Protocol (RTP) Payload Format for Adaptive Multi-Rate (AMR) and Adaptive Multi-Rate Wideband (AMR-WB) Audio
+|RFC 2976|The SIP INFO Method
+|RFC 4867|RTP Payload Format for the Adaptive Multi-Rate Wideband (AMR-WB) Audio Codec
+|===
+
+=== Implementation References
+
+* **libvo-amrwbenc**: Open-source AMR-WB encoder (https://github.com/opencore-amr/opencore-amr)
+* **Java Foreign Function & Memory API**: Safer native access than JNI
+* **RFC 4867 §4.3**: Bandwidth-efficient RTP payload specification
+
+== Glossary
+
+[width="100%",cols="1,3",options="header"]
+|===
+|Term|Definition
+|**CMR**|Codec Mode Request; indicates which encoding mode the sender expects the receiver to use
+|**BW-efficient**|Bandwidth-efficient format; bit-packed payload structure per RFC 4867 §4.3
+|**F-bit**|Follow bit; indicates whether additional frames follow in the same RTP packet (1=yes, 0=no)
+|**FT**|Frame Type; 4-bit index indicating which AMR-WB mode was used to encode a frame
+|**Octet-aligned**|Byte-aligned format; each field starts at a byte boundary
+|**ToC**|Table of Contents; metadata byte(s) preceding speech data in RTP payload
+|**Q-bit**|Quality bit; indicates frame quality (1=good frame, 0=frame error)
+|===
