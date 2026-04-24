@@ -84,6 +84,13 @@ public class G722RtpCodec extends NativeRtpCodec implements RtpCodec {
         }
     }
 
+    private static final RtpCodecMetadata METADATA = new G722Metadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     @Override
     public int payloadType() {
         return 9;

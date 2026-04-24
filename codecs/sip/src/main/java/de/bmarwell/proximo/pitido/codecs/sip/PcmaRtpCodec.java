@@ -16,29 +16,11 @@ import java.io.IOException;
 
 public class PcmaRtpCodec implements RtpCodec {
 
-    @Override
-    public int payloadType() {
-        return 8;
-    }
+    private static final RtpCodecMetadata METADATA = new PcmaMetadata();
 
     @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 8000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 160;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 
     @Override

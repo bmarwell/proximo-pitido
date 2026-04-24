@@ -103,6 +103,13 @@ public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
         return 50;
     }
 
+    private static final RtpCodecMetadata METADATA = new G722Metadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     /**
      * Returns a new per-call encoder instance with freshly initialised G.722 ADPCM state.
      *

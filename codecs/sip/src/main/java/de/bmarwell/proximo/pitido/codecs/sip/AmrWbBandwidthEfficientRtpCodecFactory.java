@@ -113,6 +113,13 @@ public final class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecF
         return PREFERENCE;
     }
 
+    private static final RtpCodecMetadata METADATA = new AmrWbBandwidthEfficientMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     /**
      * Accepts AMR-WB ONLY when the caller explicitly specifies {@code octet-align=0}.
      *

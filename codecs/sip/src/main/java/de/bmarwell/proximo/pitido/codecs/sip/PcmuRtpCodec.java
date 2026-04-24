@@ -16,6 +16,13 @@ import java.io.IOException;
 
 public class PcmuRtpCodec implements RtpCodec {
 
+    private static final RtpCodecMetadata METADATA = new PcmuMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     @Override
     public int payloadType() {
         return 0;

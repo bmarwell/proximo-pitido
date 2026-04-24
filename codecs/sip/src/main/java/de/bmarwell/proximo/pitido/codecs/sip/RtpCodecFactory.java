@@ -65,12 +65,27 @@ public interface RtpCodecFactory {
     int preference();
 
     /**
+     * Returns static metadata for this codec: payload type, sample rates, SDP parameters, etc.
+     *
+     * <p>Metadata is codec-wide and independent of per-call state.
+     * Both the factory and per-call codec instances expose the same metadata.
+     *
+     * @return immutable metadata object
+     */
+    RtpCodecMetadata metadata();
+
+    /**
      * RTP payload type (0–127).
      *
      * <p>Static assignments (0–95) are defined in RFC 3551.
      * Dynamic assignments (96–127) are for codecs requiring a negotiated {@code a=rtpmap} line.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#payloadType() payloadType()} instead
      */
-    int payloadType();
+    @Deprecated(since = "1.0.1")
+    default int payloadType() {
+        return metadata().payloadType();
+    }
 
     /**
      * RTP clock rate in Hz, as declared in the SDP {@code a=rtpmap} attribute.
@@ -78,22 +93,37 @@ public interface RtpCodecFactory {
      * <p>This governs RTP timestamp arithmetic and may differ from {@link #inputSampleRate()}.
      * G.722 declares an RTP clock of 8 000 Hz per RFC 3551 §4.5.2 despite processing 16 kHz
      * input — a historical anomaly preserved for interoperability.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpClockRate() rtpClockRate()} instead
      */
-    int rtpClockRate();
+    @Deprecated(since = "1.0.1")
+    default int rtpClockRate() {
+        return metadata().rtpClockRate();
+    }
 
     /**
      * PCM sample rate in Hz expected by {@link #encode(short[])}.
      *
      * <p>Differs from {@link #rtpClockRate()} for G.722 (16 000 vs 8 000).
      * The PCM decode pipeline should target this rate when multi-rate support is added.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#inputSampleRate() inputSampleRate()} instead
      */
-    int inputSampleRate();
+    @Deprecated(since = "1.0.1")
+    default int inputSampleRate() {
+        return metadata().inputSampleRate();
+    }
 
     /**
      * Number of PCM samples (at {@link #inputSampleRate()}) consumed per 20 ms RTP packet.
      * Equals {@code inputSampleRate() / 50}.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#samplesPerFrame() samplesPerFrame()} instead
      */
-    int samplesPerFrame();
+    @Deprecated(since = "1.0.1")
+    default int samplesPerFrame() {
+        return metadata().samplesPerFrame();
+    }
 
     /**
      * RTP timestamp increment per 20 ms packet.
@@ -101,8 +131,13 @@ public interface RtpCodecFactory {
      *
      * <p>Note: for G.722 this is 160 (8 000 × 0.02) despite 16 kHz processing, due to the
      * RFC 3551 clock rate quirk.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpTimestampIncrement() rtpTimestampIncrement()} instead
      */
-    int rtpTimestampIncrement();
+    @Deprecated(since = "1.0.1")
+    default int rtpTimestampIncrement() {
+        return metadata().rtpTimestampIncrement();
+    }
 
     /**
      * Number of channels declared in the SDP {@code a=rtpmap} encoding-parameters field.
@@ -115,16 +150,23 @@ public interface RtpCodecFactory {
      * {@link OpusRtpCodecFactory}) override this method.
      *
      * @return the SDP channel count, usually {@code 1}
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#sdpChannelCount() sdpChannelCount()} instead
      */
+    @Deprecated(since = "1.0.1")
     default int sdpChannelCount() {
-        return 1;
+        return metadata().sdpChannelCount();
     }
 
     /**
      * Codec name used in the SDP {@code a=rtpmap} attribute, e.g. {@code "PCMA"} or
      * {@code "G722"}.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#sdpName() sdpName()} instead
      */
-    String sdpName();
+    @Deprecated(since = "1.0.1")
+    default String sdpName() {
+        return metadata().sdpName();
+    }
 
     /**
      * Returns {@code true} if the given {@code a=fmtp} parameter string from the SDP offer is

@@ -141,7 +141,7 @@ class SdpNegotiatorTest {
      */
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
         try {
-            var codec = PcmaRtpCodecFactory.INSTANCE;
+            var codec = new PcmaRtpCodecFactory();
             var method = SdpNegotiator.class.getDeclaredMethod(
                     "buildSdpAnswer", String.class, int.class, RtpCodecFactory.class, int.class);
             method.setAccessible(true);
@@ -188,7 +188,8 @@ class SdpNegotiatorTest {
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
 
         // when
-        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp);
+        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
+        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, pcmaFallback);
 
         // then — AMR-WB must be selected at the octet-aligned PT 110, not the BW-efficient PT 104
         assertEquals("AMR-WB", selected.sdpName(), "Selected codec must be AMR-WB");
@@ -207,7 +208,9 @@ class SdpNegotiatorTest {
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
 
         // when
-        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
+        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
+        RtpCodecFactory selected =
+                SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, pcmaFallback);
 
         // then — forCall() must NOT have been called during codec selection;
         // the announcement thread must call it, not the SDP-negotiation thread.

@@ -33,6 +33,8 @@ import javax.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public final class PcmuRtpCodecFactory implements RtpCodecFactory {
 
+    private static final RtpCodecMetadata METADATA = new PcmuMetadata();
+
     PcmuRtpCodecFactory() {}
 
     @Override
@@ -50,6 +52,11 @@ public final class PcmuRtpCodecFactory implements RtpCodecFactory {
         // Lower priority than PCMA (100); both are always available but PCMA is preferred at
         // European SIP providers.
         return 110;
+    }
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 
     @Override

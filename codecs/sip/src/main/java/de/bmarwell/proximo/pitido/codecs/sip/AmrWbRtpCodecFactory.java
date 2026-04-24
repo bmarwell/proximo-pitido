@@ -132,6 +132,13 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
         return 40;
     }
 
+    private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     /**
      * Returns a new per-call encoder instance initialised at the best mode allowed by the
      * caller's offered {@code mode-set}.

@@ -29,8 +29,15 @@ public class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec implements Rt
 
     private static final System.Logger LOGGER = System.getLogger(AmrWbBandwidthEfficientRtpCodec.class.getName());
 
+    private static final RtpCodecMetadata METADATA = new AmrWbBandwidthEfficientMetadata();
+
     AmrWbBandwidthEfficientRtpCodec(String offeredFmtp) {
         super(offeredFmtp);
+    }
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 
     @Override

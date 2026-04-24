@@ -121,6 +121,13 @@ public class OpusRtpCodec extends NativeRtpCodec implements RtpCodec {
         invokeCtlInt(this.stateSegment, OPUS_SET_INBAND_FEC_REQUEST, 1);
     }
 
+    private static final RtpCodecMetadata METADATA = new OpusMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     @Override
     public int payloadType() {
         return 120;

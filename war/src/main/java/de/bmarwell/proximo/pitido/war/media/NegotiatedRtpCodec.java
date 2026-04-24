@@ -68,6 +68,11 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
+    public de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata metadata() {
+        return this.delegate.metadata();
+    }
+
+    @Override
     public <T extends RtpCodec> T forCall(String offeredFmtp) {
         return this.delegate.forCall(this.offeredFmtp);
     }

@@ -24,24 +24,17 @@ import javax.enterprise.context.ApplicationScoped;
  * <p>G.711 A-law is memoryless: each sample encodes independently, so the encoder carries no state
  * across packets.
  * This bean is {@code @ApplicationScoped} (a CDI singleton) and safe to share across call legs;
- * {@link #forCall()} returns {@code this}.
- *
- * <p>{@link #INSTANCE} is kept as a static fallback for code paths that cannot use CDI injection
- * (e.g. default return values in {@link SdpNegotiator}).
- * Prefer CDI injection wherever possible.
+ * {@link #forCall(String)} returns a new {@link PcmaRtpCodec} instance (the codec is stateless
+ * so sharing would be fine, but factory pattern is consistent with stateful codecs).
  *
  * @see G722RtpCodecFactory
  */
 @ApplicationScoped
 public final class PcmaRtpCodecFactory implements RtpCodecFactory {
 
-    /**
-     * Static fallback instance for non-CDI contexts.
-     * Prefer injecting via CDI; use this only where injection is unavailable.
-     */
-    public static final PcmaRtpCodecFactory INSTANCE = new PcmaRtpCodecFactory();
+    private static final RtpCodecMetadata METADATA = new PcmaMetadata();
 
-    PcmaRtpCodecFactory() {}
+    public PcmaRtpCodecFactory() {}
 
     @Override
     public RtpCodec forCall(String offeredFmtp) {
@@ -60,32 +53,7 @@ public final class PcmaRtpCodecFactory implements RtpCodecFactory {
     }
 
     @Override
-    public int payloadType() {
-        return 8;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 8000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 160;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
-    }
-
-    @Override
-    public String sdpName() {
-        return "PCMA";
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 }

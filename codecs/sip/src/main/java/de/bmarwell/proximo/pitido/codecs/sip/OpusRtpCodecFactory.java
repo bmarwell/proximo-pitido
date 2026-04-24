@@ -121,6 +121,13 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
         return 30;
     }
 
+    private static final RtpCodecMetadata METADATA = new OpusMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     /**
      * Returns a new per-call encoder instance with freshly initialised Opus encoder state.
      *

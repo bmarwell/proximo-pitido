@@ -27,29 +27,64 @@ public interface RtpCodec extends AutoCloseable {
     byte[] encode(short[] pcmFrame) throws IOException;
 
     /**
-     * RTP payload type (0–127) for this codec.
+     * Returns static metadata for this codec: payload type, sample rates, SDP parameters, etc.
+     *
+     * <p>Metadata is codec-wide and independent of per-call state.
+     * Both the factory and per-call codec instances expose the same metadata.
+     *
+     * @return immutable metadata object
      */
-    int payloadType();
+    RtpCodecMetadata metadata();
+
+    /**
+     * RTP payload type (0–127) for this codec.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#payloadType() payloadType()} instead
+     */
+    @Deprecated(since = "1.0.1")
+    default int payloadType() {
+        return metadata().payloadType();
+    }
 
     /**
      * RTP clock rate in Hz, as declared in the SDP {@code a=rtpmap} attribute.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpClockRate() rtpClockRate()} instead
      */
-    int rtpClockRate();
+    @Deprecated(since = "1.0.1")
+    default int rtpClockRate() {
+        return metadata().rtpClockRate();
+    }
 
     /**
      * PCM sample rate in Hz expected by {@link #encode(short[])}.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#inputSampleRate() inputSampleRate()} instead
      */
-    int inputSampleRate();
+    @Deprecated(since = "1.0.1")
+    default int inputSampleRate() {
+        return metadata().inputSampleRate();
+    }
 
     /**
      * Number of PCM samples (at {@link #inputSampleRate()}) consumed per 20 ms RTP packet.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#samplesPerFrame() samplesPerFrame()} instead
      */
-    int samplesPerFrame();
+    @Deprecated(since = "1.0.1")
+    default int samplesPerFrame() {
+        return metadata().samplesPerFrame();
+    }
 
     /**
      * RTP timestamp increment per 20 ms packet.
+     *
+     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpTimestampIncrement() rtpTimestampIncrement()} instead
      */
-    int rtpTimestampIncrement();
+    @Deprecated(since = "1.0.1")
+    default int rtpTimestampIncrement() {
+        return metadata().rtpTimestampIncrement();
+    }
 
     /**
      * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,

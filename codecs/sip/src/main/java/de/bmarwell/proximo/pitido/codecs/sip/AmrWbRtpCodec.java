@@ -160,6 +160,13 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
         return answer;
     }
 
+    private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
+
+    @Override
+    public RtpCodecMetadata metadata() {
+        return METADATA;
+    }
+
     @Override
     public int payloadType() {
         return 96;

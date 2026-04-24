@@ -44,7 +44,7 @@ import javax.servlet.sip.SipServletRequest;
  * <p>Codec preference is driven by CDI-injected {@link RtpCodecFactory} beans, filtered by
  * {@link RtpCodecFactory#isAvailable()} and sorted by {@link RtpCodecFactory#preference()} (lower = preferred).
  * The first available codec whose payload type appears in the SDP offer is selected.
- * If no injected codec matches, {@link PcmaRtpCodecFactory#INSTANCE} is used as the unconditional
+ * If no injected codec matches, the injected {@link PcmaRtpCodecFactory} is used as the unconditional
  * fallback (PCMA is always available).
  *
  * <p>The SDP answer advertises {@code sendonly} direction since this application is a
@@ -65,6 +65,9 @@ public class SdpNegotiator {
 
     @Inject
     Instance<RtpCodecFactory> availableCodecFactories;
+
+    @Inject
+    PcmaRtpCodecFactory pcmaFallback;
 
     /**
      * Negotiates media for the given INVITE.
@@ -178,7 +181,7 @@ public class SdpNegotiator {
      * Extracts the offered RTP payload type integers from the {@code m=audio} line of the SDP offer.
      * Returns {@code {8}} (PCMA) as default if the line cannot be parsed.
      */
-    static Set<Integer> parseOfferedPayloadTypes(String sdp) {
+    static Set<Integer> parseOfferedPayloadTypes(String sdp, RtpCodecFactory pcmaFallback) {
         return sdp.lines()
                 .filter(line -> line.startsWith("m=audio "))
                 .findFirst()
@@ -189,7 +192,7 @@ public class SdpNegotiator {
                             .map(Integer::parseInt)
                             .collect(Collectors.toSet());
                 })
-                .orElse(Set.of(PcmaRtpCodecFactory.INSTANCE.payloadType()));
+                .orElse(Set.of(pcmaFallback.payloadType()));
     }
 
     /**
@@ -292,7 +295,7 @@ public class SdpNegotiator {
      *         on the announcement thread before encoding
      */
     private RtpCodecFactory selectCodec(String sdpOffer) {
-        return selectCodec(this.availableCodecFactories.stream(), sdpOffer);
+        return selectCodec(this.availableCodecFactories.stream(), sdpOffer, this.pcmaFallback);
     }
 
     /**
@@ -300,13 +303,14 @@ public class SdpNegotiator {
      *
      * <p>This static overload exists to allow unit testing without CDI injection.
      *
-     * @param codecs   available codec descriptors, each an {@code @ApplicationScoped} CDI bean
-     * @param sdpOffer the full SDP offer string from the INVITE body
+     * @param codecs      available codec descriptors, each an {@code @ApplicationScoped} CDI bean
+     * @param sdpOffer    the full SDP offer string from the INVITE body
+     * @param pcmaFallback PCMA codec factory to use as fallback
      * @return a {@link NegotiatedRtpCodec} wrapping the selected codec descriptor with the
      *         negotiated payload type; call {@link RtpCodecFactory#forCall(String)} on the announcement thread
      */
-    static RtpCodecFactory selectCodec(Stream<RtpCodecFactory> codecs, String sdpOffer) {
-        Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer);
+    static RtpCodecFactory selectCodec(Stream<RtpCodecFactory> codecs, String sdpOffer, RtpCodecFactory pcmaFallback) {
+        Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer, pcmaFallback);
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
         Map<Integer, String> fmtp = parseFmtp(sdpOffer);
 
@@ -321,8 +325,8 @@ public class SdpNegotiator {
             LOGGER.log(System.Logger.Level.DEBUG, "No matching codec found in SDP offer; falling back to PCMA (PT 8)");
         }
 
-        NegotiatedRtpCodec result = selected.orElseGet(() ->
-                new NegotiatedRtpCodec(PcmaRtpCodecFactory.INSTANCE, PcmaRtpCodecFactory.INSTANCE.payloadType(), ""));
+        NegotiatedRtpCodec result =
+                selected.orElseGet(() -> new NegotiatedRtpCodec(pcmaFallback, pcmaFallback.payloadType(), ""));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
