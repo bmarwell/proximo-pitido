@@ -106,7 +106,9 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * allowed mode from that set instead.
      * Passed as the {@code mode} argument to {@code E_IF_encode}.
      */
-    private static final int DEFAULT_ENCODING_MODE = 2;
+    private static final int DEFAULT_ENCODING_MODE = Integer.parseInt(System.getenv()
+            .getOrDefault(
+                    "AMR_WB_DEFAULT_MODE", "2")); // Can override with AMR_WB_DEFAULT_MODE=1 for lower bitrate testing
 
     /** Dynamic payload type for AMR-WB; conventional value used by all major VoLTE stacks. */
     private static final int PAYLOAD_TYPE = 98;
@@ -340,18 +342,28 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      */
     @Override
     public String fmtpAnswer(String offeredFmtp) {
+        String answer;
+
         if (offeredFmtp.isEmpty()) {
-            return fmtpParams();
+            answer = fmtpParams();
+        } else {
+            boolean hasExplicitOctetAlign =
+                    Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+
+            if (hasExplicitOctetAlign) {
+                answer = offeredFmtp;
+            } else {
+                answer = offeredFmtp + ";octet-align=1";
+            }
         }
 
-        boolean hasExplicitOctetAlign =
-                Arrays.stream(offeredFmtp.split(";")).map(String::strip).anyMatch(AmrWbRtpCodec::isOctetAlignParam);
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbRtpCodec.fmtpAnswer (octet-aligned): offeredFmtp=''{0}'' → answer=''{1}''",
+                offeredFmtp,
+                answer);
 
-        if (hasExplicitOctetAlign) {
-            return offeredFmtp;
-        }
-
-        return offeredFmtp + ";octet-align=1";
+        return answer;
     }
 
     private static boolean isOctetAlignParam(String param) {
@@ -371,10 +383,15 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      */
     private static int extractBestMode(String offeredFmtp) {
         if (offeredFmtp.isBlank()) {
+            System.getLogger("AmrWbRtpCodec")
+                    .log(
+                            System.Logger.Level.TRACE,
+                            "extractBestMode: blank fmtp, using DEFAULT_ENCODING_MODE={0}",
+                            DEFAULT_ENCODING_MODE);
             return DEFAULT_ENCODING_MODE;
         }
 
-        return Arrays.stream(offeredFmtp.split(";"))
+        int selectedMode = Arrays.stream(offeredFmtp.split(";"))
                 .map(String::strip)
                 .filter(part -> part.toLowerCase(Locale.ROOT).startsWith("mode-set="))
                 .findFirst()
@@ -390,9 +407,18 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
                         return -1;
                     }
                 })
-                .filter(mode -> mode >= 0)
+                .filter(m -> m >= 0)
                 .max()
                 .orElse(DEFAULT_ENCODING_MODE);
+
+        System.getLogger("AmrWbRtpCodec")
+                .log(
+                        System.Logger.Level.TRACE,
+                        "extractBestMode: offeredFmtp=\"{0}\" selected mode={1}",
+                        offeredFmtp,
+                        selectedMode);
+
+        return selectedMode;
     }
 
     @Override
@@ -524,6 +550,36 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
             MemorySegment inputSeg = frameArena.allocateFrom(ValueLayout.JAVA_SHORT, pcmFrame);
             MemorySegment outputSeg = frameArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
 
+            // Log PCM input sample range for diagnostics
+            short minSample = Short.MAX_VALUE;
+            short maxSample = Short.MIN_VALUE;
+            for (short sample : pcmFrame) {
+                if (sample < minSample) minSample = sample;
+                if (sample > maxSample) maxSample = sample;
+            }
+            short firstSample;
+            if (pcmFrame.length > 0) {
+                firstSample = pcmFrame[0];
+            } else {
+                firstSample = 0;
+            }
+            short lastSample;
+            if (pcmFrame.length > 0) {
+                lastSample = pcmFrame[pcmFrame.length - 1];
+            } else {
+                lastSample = 0;
+            }
+
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "AMR-WB octet-aligned encode: encodingMode={0}, pcmSamples={1}, pcmRange=[{2},{3}], first={4}, last={5}",
+                    this.encodingMode,
+                    pcmFrame.length,
+                    minSample,
+                    maxSample,
+                    firstSample,
+                    lastSample);
+
             int speechBytes = invokeEncode(inputSeg, outputSeg);
 
             if (speechBytes < 0) {
@@ -600,6 +656,10 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
 
     protected int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
         try {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "invokeEncode: about to call E_IF_encode with encodingMode={0}",
+                    this.encodingMode);
             return (int) this.eIfEncodeHandle.invoke(this.stateSegment, this.encodingMode, inputSeg, outputSeg, 0);
         } catch (RuntimeException runtimeException) {
             throw runtimeException;
