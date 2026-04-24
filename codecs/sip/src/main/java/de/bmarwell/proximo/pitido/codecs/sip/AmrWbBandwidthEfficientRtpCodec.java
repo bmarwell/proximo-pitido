@@ -194,11 +194,16 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
     /**
      * Encodes one PCM frame to bandwidth-efficient AMR-WB RTP payload.
      *
-     * <p>Reuses the parent class's native encoder invocation but builds a different payload
-     * format: [ToC][speech bytes] without the CMR header.
+     * <p>The native encoder outputs 33 bytes in octet-aligned format: [ToC(octet-aligned)][speech(32 bytes)].
+     * We convert this to bandwidth-efficient format by prepending 4 bits of CMR and packing the ToC+speech data.
+     *
+     * <p>RFC 4867 §4.3 bandwidth-efficient payload structure for single frame (F=0):
+     * Byte 0: [CMR(4)][F(1)][FT_high(3)]
+     * Byte 1: [FT_low(1)][Q(1)][speech(6)]
+     * Bytes 2-32: [speech shifted left by 4 bits]
      *
      * @param pcmFrame 320 mono PCM samples at 16 kHz
-     * @return RTP payload in bandwidth-efficient format
+     * @return RTP payload in bandwidth-efficient format (33 bytes)
      * @throws IOException if the native encoder fails
      */
     @Override
@@ -272,147 +277,121 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                     String.format("%02x", secondByte & 0xFF),
                     String.format("%02x", thirdByte & 0xFF));
 
-            // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) natively.
-            // For bandwidth-efficient RTP payloads, we can use the encoder output as-is,
-            // since the first byte from the encoder is already the correct ToC for this mode.
-            byte expectedToC = (byte) ((this.encodingMode << 3) | 0x04);
+            // Sanity check: encoder should output octet-aligned ToC as first byte
+            byte expectedOctetAlignedToC = (byte) ((this.encodingMode << 3) | 0x04);
             byte firstEncoderByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
 
-            // Sanity check: if the encoder's first byte matches our expected ToC,
-            // it confirms the encoder is outputting bandwidth-efficient format.
-            if (firstEncoderByte != expectedToC) {
+            if (firstEncoderByte != expectedOctetAlignedToC) {
                 LOGGER.log(
                         System.Logger.Level.WARNING,
-                        "Encoder output first byte (0x{0}) does not match expected ToC (0x{1}) for mode {2}; audio may be corrupt",
+                        "Encoder output first byte (0x{0}) does not match expected octet-aligned ToC (0x{1}) for mode {2}; audio may be corrupt",
                         String.format(java.util.Locale.ROOT, "%02x", firstEncoderByte & 0xFF),
-                        String.format(java.util.Locale.ROOT, "%02x", expectedToC & 0xFF),
+                        String.format(java.util.Locale.ROOT, "%02x", expectedOctetAlignedToC & 0xFF),
                         this.encodingMode);
             } else {
                 LOGGER.log(
                         System.Logger.Level.TRACE,
-                        "Encoder output first byte matches expected ToC (0x{0})",
+                        "Encoder output first byte matches expected octet-aligned ToC (0x{0})",
                         String.format(java.util.Locale.ROOT, "%02x", firstEncoderByte & 0xFF));
             }
 
-            // Extract the bandwidth-efficient payload: convert to byte array and return.
-            // The encoder outputs exactly speechBytes, so we get the correctly-sized array directly.
-            byte[] payload = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
+            // Get encoder output as byte array
+            byte[] encoderOutput = outputSeg.asSlice(0L, speechBytes).toArray(ValueLayout.JAVA_BYTE);
 
-            // RFC 4867 §4.3: Bandwidth-efficient ToC packing is different from octet-aligned!
-            // The encoder outputs octet-aligned ToC format: F(1)|FT(4)|Q(1)|P(2)
-            // We must convert to BW-efficient format: CMR(4)|F(1)|FT(3)|FT(1)|Q(1)|...
+            // Convert from octet-aligned to bandwidth-efficient format by prepending CMR
+            // and packing the ToC+speech data to the right.
             //
-            // For a single frame, the packing is:
-            // - Byte 1 bits 7-4: CMR (4 bits)
-            // - Byte 1 bits 3: F (1 bit)
-            // - Byte 1 bits 2-0: FT high 3 bits
-            // - Byte 2 bits 7-6: FT low 1 bit, Q
-            // - Byte 2 bits 5-0: Speech data starts here (or padding if more frames)
+            // Encoder output format (octet-aligned):
+            //   Byte 0: [0][FT(4)][Q][P(2)]
+            //   Bytes 1-32: [speech data (256 bits)]
+            //
+            // BW-efficient output format:
+            //   Byte 0: [CMR(4)][F(1)][FT_high(3)]
+            //   Byte 1: [FT_low(1)][Q(1)][speech(6)]
+            //   Bytes 2-32: [speech shifted left by 4 bits]
+            //
+            // We need to:
+            // 1. Extract FT and Q from encoder byte 0
+            // 2. Build new byte 0 with CMR | F | FT_high
+            // 3. Build new byte 1 with FT_low | Q | first 6 bits of speech
+            // 4. Shift all remaining speech left by 4 bits (since we used 4 bits of CMR)
 
-            if (payload.length > 1) {
-                // Extract octet-aligned ToC from encoder output
-                byte encoderOctetAlignedToc = payload[0];
+            byte[] bwEfficientPayload = new byte[encoderOutput.length];
 
-                // Octet-aligned format: 0|FT(4)|Q|00
-                int ftFromEncoder = (encoderOctetAlignedToc >> 3) & 0x0F;
-                int qFromEncoder = (encoderOctetAlignedToc >> 2) & 0x01;
+            // Extract FT (4 bits) and Q (1 bit) from octet-aligned ToC
+            int ftFromEncoder = (firstEncoderByte >> 3) & 0x0F;
+            int qFromEncoder = (firstEncoderByte >> 2) & 0x01;
 
-                // Build BW-efficient format
-                // Byte 0: [CMR(4)][F(1)][FT high 3 bits]
-                int f = 0; // Single frame, no continuation
-                int ftHigh3 = (ftFromEncoder >> 1) & 0x07;
-                int cmr = this.encodingMode; // Send the encoding mode we're actually using
-                byte bwEfficientByte0 = (byte)
-                        (((cmr & 0x0F) << 4)
-                                | // CMR
-                                ((f & 0x01) << 3)
-                                | // F
-                                (ftHigh3 & 0x07) // FT high 3 bits
-                        );
+            // Split FT into high 3 bits and low 1 bit
+            int ftHigh3 = (ftFromEncoder >> 1) & 0x07;
+            int ftLow1 = ftFromEncoder & 0x01;
 
-                // Byte 1: [FT low 1 bit][Q][first 6 bits of speech data]
-                // Extract first 6 bits from encoder's byte 1 (which contains ToC[1:2] + padding + speech start)
-                // In encoder output: byte[1] =
-                // [ToC_bit_1][ToC_bit_0][0][0][speech_bit_3][speech_bit_2][speech_bit_1][speech_bit_0]
-                // We want the speech bits (bottom 6 bits when ToC is stripped): payload[1] has 8 bits, we take bits 5-0
-                int ftLow1 = ftFromEncoder & 0x01;
-                int speechBits6from1 = payload[1] & 0x3F; // Bottom 6 bits of payload[1] contain first 6 bits of speech
-                byte bwEfficientByte1 = (byte)
-                        (((ftLow1 & 0x01) << 7)
-                                | // FT low bit (bit 7)
-                                ((qFromEncoder & 0x01) << 6)
-                                | // Q (bit 6)
-                                (speechBits6from1 & 0x3F) // Speech bits 5-0
-                        );
+            // Byte 0: [CMR(4)][F(1)][FT_high(3)]
+            int cmr = this.encodingMode; // Send the encoding mode we're actually using
+            int f = 0; // Single frame, no continuation
+            bwEfficientPayload[0] = (byte) (((cmr & 0x0F) << 4) | ((f & 0x01) << 3) | (ftHigh3 & 0x07));
 
-                // For remaining speech bytes, they need bit-shifting because we only consumed 6 bits from byte 1
-                // Encoder byte 1 contains: [ToC(2)][P(2)][speech_bits(4)]
-                // We took bottom 6 bits, leaving top 2 bits of speech from byte 1 + all of bytes 2+ to shift
-                // Shift the speech stream right by 2 bits to account for the 2 bits we moved to byte 1
+            // Byte 1: [FT_low(1)][Q(1)][speech(6)]
+            // The first 6 bits of speech come from encoder's byte 1 (which has [ToC][P][speech(4)])
+            // We want bits 5-0 of encoder byte 1 (the bottom 6 bits are the 4 speech bits + padding)
+            int speechBits6from1 = encoderOutput[1] & 0x3F;
+            bwEfficientPayload[1] =
+                    (byte) (((ftLow1 & 0x01) << 7) | ((qFromEncoder & 0x01) << 6) | (speechBits6from1 & 0x3F));
 
-                byte[] newPayload = new byte[payload.length];
-                newPayload[0] = bwEfficientByte0;
-                newPayload[1] = bwEfficientByte1;
-
-                // Shift remaining speech right by 2 bits
-                // payload[1] bits 7-6 (2 bits) go to newPayload[2] bits 7-6
-                // payload[2] bits 7-0 go to newPayload[2] bits 5-0 + newPayload[3] bits 7-6
-                // ... and so on for all remaining bytes
-                int carryover = (payload[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
-                for (int i = 2; i < payload.length; i++) {
-                    newPayload[i] = (byte)
-                            (((payload[i] & 0xFF) >> 2) // Current byte shifted right by 2
-                                    | ((carryover & 0x03) << 6) // Carryover from previous byte to top 2 bits
-                            );
-                    carryover = (payload[i] & 0x03); // Save bottom 2 bits for next iteration
-                }
-                payload = newPayload;
-
-                LOGGER.log(
-                        System.Logger.Level.TRACE,
-                        "BW-efficient ToC conversion: encoder format 0x{0} → BW-efficient 0x{1}0x{2} (mode={3}, F={4}, FT={5}, Q={6})",
-                        String.format(java.util.Locale.ROOT, "%02x", encoderOctetAlignedToc & 0xFF),
-                        String.format(java.util.Locale.ROOT, "%02x", bwEfficientByte0 & 0xFF),
-                        String.format(java.util.Locale.ROOT, "%02x", bwEfficientByte1 & 0xFF),
-                        this.encodingMode,
-                        f,
-                        ftFromEncoder,
-                        qFromEncoder);
+            // Remaining bytes: shift speech left by 4 bits
+            // The encoder byte 1 has 2 bits of ToC+padding in the top, which we don't use.
+            // Those 2 bits represent "used bits", so the remaining speech starts 2 bits into byte 1.
+            // We've already extracted 6 bits from byte 1 for bwEfficientPayload[1].
+            // Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32
+            // These 2 bits become the top 2 bits of bwEfficientPayload[2].
+            int carryover = (encoderOutput[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
+            for (int i = 2; i < encoderOutput.length; i++) {
+                bwEfficientPayload[i] = (byte) (((encoderOutput[i] & 0xFF) >> 2) | ((carryover & 0x03) << 6));
+                carryover = (encoderOutput[i] & 0x03); // Save bottom 2 bits for next iteration
             }
 
-            // Analyze ToC byte for diagnostics
-            if (payload.length > 1) {
-                byte bwEfficientByte0 = payload[0];
-                byte bwEfficientByte1 = payload[1];
+            // Diagnostic logging
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "BW-efficient ToC conversion: encoder format 0x{0} → BW-efficient 0x{1}0x{2} (mode={3}, F={4}, FT={5}, Q={6})",
+                    String.format(java.util.Locale.ROOT, "%02x", firstEncoderByte & 0xFF),
+                    String.format(java.util.Locale.ROOT, "%02x", bwEfficientPayload[0] & 0xFF),
+                    String.format(java.util.Locale.ROOT, "%02x", bwEfficientPayload[1] & 0xFF),
+                    this.encodingMode,
+                    f,
+                    ftFromEncoder,
+                    qFromEncoder);
 
-                // RFC 4867 §4.3 BW-efficient format:
-                // Byte 0: [CMR(4)][F(1)][FT_high(3)]
-                // Byte 1: [FT_low(1)][Q(1)][speech(6)]
-                int cmrBits = (bwEfficientByte0 >> 4) & 0x0F;
-                int f = (bwEfficientByte0 >> 3) & 0x01;
-                int ftHigh3 = (bwEfficientByte0 & 0x07);
-                int ftLow1 = (bwEfficientByte1 >> 7) & 0x01;
-                int qualityBit = (bwEfficientByte1 >> 6) & 0x01;
-                int frameType = (ftHigh3 << 1) | ftLow1; // Reconstruct 4-bit FT
+            // Analyze ToC byte for diagnostics
+            if (bwEfficientPayload.length > 1) {
+                byte bwByte0 = bwEfficientPayload[0];
+                byte bwByte1 = bwEfficientPayload[1];
+
+                int cmrBits = (bwByte0 >> 4) & 0x0F;
+                int fBit = (bwByte0 >> 3) & 0x01;
+                int ftHigh = (bwByte0 & 0x07);
+                int ftLow = (bwByte1 >> 7) & 0x01;
+                int qualityBit = (bwByte1 >> 6) & 0x01;
+                int frameType = (ftHigh << 1) | ftLow; // Reconstruct 4-bit FT
 
                 // Build hex dump of first few bytes for diagnostic
                 StringBuilder hexDump = new StringBuilder();
-                int bytesToShow = Math.min(10, payload.length);
+                int bytesToShow = Math.min(10, bwEfficientPayload.length);
                 for (int i = 0; i < bytesToShow; i++) {
                     if (i > 0) hexDump.append(' ');
-                    hexDump.append(String.format("%02x", payload[i] & 0xFF));
+                    hexDump.append(String.format("%02x", bwEfficientPayload[i] & 0xFF));
                 }
-                if (payload.length > bytesToShow) {
-                    hexDump.append(String.format(" ... (%d more)", payload.length - bytesToShow));
+                if (bwEfficientPayload.length > bytesToShow) {
+                    hexDump.append(String.format(" ... (%d more)", bwEfficientPayload.length - bytesToShow));
                 }
 
                 LOGGER.log(
                         System.Logger.Level.TRACE,
                         "AMR-WB BW-efficient payload: encodingMode={0} payloadBytes={1} CMR={2} F={3} FT={4} Q={5} hex=[{6}]",
                         this.encodingMode,
-                        payload.length,
+                        bwEfficientPayload.length,
                         cmrBits,
-                        f,
+                        fBit,
                         frameType,
                         qualityBit,
                         hexDump.toString());
@@ -422,9 +401,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                     System.Logger.Level.TRACE,
                     "AMR-WB bandwidth-efficient encode complete: speechBytes={0} payloadBytes={1}",
                     speechBytes,
-                    payload.length);
+                    bwEfficientPayload.length);
 
-            return payload;
+            return bwEfficientPayload;
         }
     }
 
