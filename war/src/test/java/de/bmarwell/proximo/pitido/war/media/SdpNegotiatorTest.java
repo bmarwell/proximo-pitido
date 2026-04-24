@@ -177,7 +177,6 @@ class SdpNegotiatorTest {
         when(g722Stub.rtpClockRate()).thenReturn(8000);
         when(g722Stub.payloadType()).thenReturn(9);
         when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
-        when(g722Stub.forCall()).thenReturn(g722Stub);
 
         RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
         when(amrWbStub.isAvailable()).thenReturn(true);
@@ -187,7 +186,6 @@ class SdpNegotiatorTest {
         when(amrWbStub.payloadType()).thenReturn(98);
         when(amrWbStub.matchesFmtp(anyString()))
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
-        when(amrWbStub.forCall()).thenReturn(amrWbStub);
 
         // when
         RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp);
@@ -200,10 +198,6 @@ class SdpNegotiatorTest {
     @Test
     void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
         // given — a stateful codec stub whose forCall() returns a distinct per-call instance
-        RtpCodecFactory perCallInstance = mock(RtpCodecFactory.class);
-        when(perCallInstance.sdpName()).thenReturn("PCMA");
-        when(perCallInstance.payloadType()).thenReturn(8);
-
         RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
@@ -211,14 +205,13 @@ class SdpNegotiatorTest {
         when(descriptorStub.rtpClockRate()).thenReturn(8000);
         when(descriptorStub.payloadType()).thenReturn(8);
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
-        when(descriptorStub.forCall()).thenReturn(perCallInstance);
 
         // when
         RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
 
         // then — forCall() must NOT have been called during codec selection;
         // the announcement thread must call it, not the SDP-negotiation thread.
-        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall();
+        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall(anyString());
         assertEquals(8, selected.payloadType());
         // The returned wrapper must hold the original descriptor, not a per-call instance.
         assertEquals(descriptorStub, ((NegotiatedRtpCodec) selected).delegate());

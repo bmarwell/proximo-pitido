@@ -143,4 +143,22 @@ public interface RtpCodecFactory {
     default boolean matchesFmtp(String offeredFmtp) {
         return true;
     }
+
+    /**
+     * Generates the fmtp parameters for the SDP answer.
+     *
+     * <p>Most codecs do not require fmtp parameters in the SDP answer and return an empty string.
+     * Codecs with mandatory packetisation modes (e.g. AMR-WB in octet-aligned mode) override this
+     * method to return the appropriate answer parameters.
+     *
+     * <p>The default returns an empty string; codecs with specific fmtp requirements override this method.
+     * This method does not require per-call state and may be called during SDP negotiation before
+     * {@link #forCall(String)} is invoked.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or an empty string if absent
+     * @return the fmtp parameters for the SDP answer, or an empty string if none are required
+     */
+    default String fmtpAnswer(String offeredFmtp) {
+        return "";
+    }
 }

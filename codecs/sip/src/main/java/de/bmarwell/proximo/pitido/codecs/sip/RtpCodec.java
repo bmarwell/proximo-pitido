@@ -27,6 +27,31 @@ public interface RtpCodec extends AutoCloseable {
     byte[] encode(short[] pcmFrame) throws IOException;
 
     /**
+     * RTP payload type (0–127) for this codec.
+     */
+    int payloadType();
+
+    /**
+     * RTP clock rate in Hz, as declared in the SDP {@code a=rtpmap} attribute.
+     */
+    int rtpClockRate();
+
+    /**
+     * PCM sample rate in Hz expected by {@link #encode(short[])}.
+     */
+    int inputSampleRate();
+
+    /**
+     * Number of PCM samples (at {@link #inputSampleRate()}) consumed per 20 ms RTP packet.
+     */
+    int samplesPerFrame();
+
+    /**
+     * RTP timestamp increment per 20 ms packet.
+     */
+    int rtpTimestampIncrement();
+
+    /**
      * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,
      * given the parameter string from the caller's SDP offer.
      *

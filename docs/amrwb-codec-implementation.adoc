@@ -47,7 +47,7 @@ Bytes 1-32: [speech data (256 bits = 32 bytes)]
 
 === Implementation: AmrWbRtpCodec
 
-The base class `AmrWbRtpCodec` handles encoder initialization and mode selection.
+The base class `AmrWbRtpCodecFactory` handles encoder initialization and mode selection.
 
 **Key responsibilities:**
 
@@ -113,7 +113,7 @@ RFC compliance requires: `bwEfficientPayload[32] &= 0xFE;` to zero bit 0.
 
 === Implementation: AmrWbBandwidthEfficientRtpCodec
 
-This subclass of `AmrWbRtpCodec` overrides the `encode()` method to perform format conversion.
+This subclass of `AmrWbRtpCodecFactory` overrides the `encode()` method to perform format conversion.
 
 **Algorithm:**
 
@@ -277,10 +277,10 @@ public boolean probe() {
 The SDP offer from the peer determines which variant is negotiated:
 
 1. **Peer offers `a=fmtp:104 octet-align=1`:**
-   → Select `AmrWbRtpCodec` (octet-aligned).
+   → Select `AmrWbRtpCodecFactory` (octet-aligned).
 
 2. **Peer offers `a=rtpmap:104 AMR-WB/16000/1` (no `octet-align` parameter):**
-   → Select `AmrWbBandwidthEfficientRtpCodec` (bandwidth-efficient).
+   → Select `AmrWbBandwidthEfficientRtpCodecFactory` (bandwidth-efficient).
 
 **SDP answer format:**
 

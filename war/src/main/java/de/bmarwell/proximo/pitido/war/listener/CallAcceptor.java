@@ -229,7 +229,7 @@ public class CallAcceptor {
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             // forCall() must run on the announcement thread so that the confined Arena is owned
             // by the thread that will also call encode() and close() — preventing WrongThreadException.
-            var callCodec = media.codec().forCall();
+            var callCodec = media.codecFactory().forCall(media.offeredFmtp());
             AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
 
             try {
@@ -275,7 +275,7 @@ public class CallAcceptor {
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             // forCall() must run on the menu thread so that the confined Arena is owned
             // by the thread that will also call encode() and close() — preventing WrongThreadException.
-            var callCodec = media.codec().forCall();
+            var callCodec = media.codecFactory().forCall(media.offeredFmtp());
             AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
 
             try {
@@ -306,7 +306,7 @@ public class CallAcceptor {
                 "{0}200 OK — {1}, codec [{2}], remote RTP [{3}]",
                 SipCallHeaders.callPrefix(sessionId),
                 description,
-                media.codec().sdpName(),
+                media.codecFactory().sdpName(),
                 media.remoteRtp());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");

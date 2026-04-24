@@ -48,7 +48,8 @@ public record CallMedia(
         DatagramSocket localSocket,
         InetSocketAddress remoteRtp,
         String sdpAnswer,
-        RtpCodecFactory codec,
+        RtpCodecFactory codecFactory,
+        String offeredFmtp,
         int telephoneEventPayloadType,
         AtomicBoolean held) {
 

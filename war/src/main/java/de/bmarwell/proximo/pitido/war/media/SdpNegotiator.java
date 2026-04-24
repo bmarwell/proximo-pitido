@@ -108,7 +108,10 @@ public class SdpNegotiator {
         String sdpAnswer = buildSdpAnswer(localIp, localPort, codec, telephoneEventPt);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
-        return new CallMedia(localSocket, remoteAddr, sdpAnswer, codec, telephoneEventPt, new AtomicBoolean(false));
+        String offeredFmtp = (codec instanceof NegotiatedRtpCodec negotiated) ? negotiated.offeredFmtp() : "";
+
+        return new CallMedia(
+                localSocket, remoteAddr, sdpAnswer, codec, offeredFmtp, telephoneEventPt, new AtomicBoolean(false));
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {
@@ -429,7 +432,8 @@ public class SdpNegotiator {
 
         sdp.append("\r\n");
 
-        String fmtpParams = codec.fmtpParams();
+        String fmtpParams =
+                codec.fmtpAnswer((codec instanceof NegotiatedRtpCodec negotiated) ? negotiated.offeredFmtp() : "");
         LOGGER.log(
                 System.Logger.Level.TRACE,
                 "SDP answer fmtp: codec={0} PT={1} fmtpParams=''{2}''",
