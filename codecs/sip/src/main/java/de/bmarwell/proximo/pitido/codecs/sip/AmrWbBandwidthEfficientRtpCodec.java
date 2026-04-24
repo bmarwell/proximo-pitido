@@ -338,16 +338,25 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             bwEfficientPayload[1] =
                     (byte) (((ftLow1 & 0x01) << 7) | ((qFromEncoder & 0x01) << 6) | (speechBits6from1 & 0x3F));
 
-            // Remaining bytes: shift speech left by 4 bits
+            // Remaining bytes: shift speech left by 4 bits.
             // The encoder byte 1 has 2 bits of ToC+padding in the top, which we don't use.
             // Those 2 bits represent "used bits", so the remaining speech starts 2 bits into byte 1.
             // We've already extracted 6 bits from byte 1 for bwEfficientPayload[1].
-            // Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32
+            // Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32.
             // These 2 bits become the top 2 bits of bwEfficientPayload[2].
+            //
+            // RFC 4867 §4.3: BW-efficient payload is 263 bits (CMR(4) + ToC(6) + speech(253)),
+            // which rounds up to 33 bytes = 264 bits.
+            // The lower 1 bit of byte 32 is padding and MUST be zeroed per RFC.
             int carryover = (encoderOutput[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
             for (int i = 2; i < encoderOutput.length; i++) {
                 bwEfficientPayload[i] = (byte) (((encoderOutput[i] & 0xFF) >> 2) | ((carryover & 0x03) << 6));
                 carryover = (encoderOutput[i] & 0x03); // Save bottom 2 bits for next iteration
+            }
+
+            // RFC 4867 §4.3 padding: zero out the lowest 1 bit of the last byte (padding).
+            if (bwEfficientPayload.length > 0) {
+                bwEfficientPayload[bwEfficientPayload.length - 1] &= 0xFE; // Clear bit 0 only
             }
 
             // Diagnostic logging
