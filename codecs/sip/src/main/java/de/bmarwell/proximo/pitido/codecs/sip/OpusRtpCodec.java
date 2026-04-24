@@ -257,7 +257,7 @@ public final class OpusRtpCodec extends NativeRtpCodec {
      * @throws IllegalStateException if encoder initialisation fails
      */
     @Override
-    public RtpCodec forCall() {
+    public RtpCodecFactory forCall() {
         int stateSize = invokeGetSize();
         Arena arena = Arena.ofConfined();
         MemorySegment state = arena.allocate(stateSize, STATE_ALIGN);

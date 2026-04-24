@@ -37,7 +37,7 @@ import java.lang.foreign.Arena;
  *       Its {@link #callArena} is {@code null} and {@link #available} starts {@code false}.</li>
  *   <li>After the CDI {@code @PostConstruct} probe method successfully loads the native library,
  *       {@link #available} is set to {@code true}.</li>
- *   <li>{@link RtpCodec#forCall()} allocates a {@link Arena#ofConfined() confined arena}, creates
+ *   <li>{@link RtpCodecFactory#forCall()} allocates a {@link Arena#ofConfined() confined arena}, creates
  *       and initialises native encoder state inside it, then constructs a per-call instance via
  *       {@link #NativeRtpCodec(Arena)}.
  *       Per-call instances have {@link #available} {@code true} from construction.</li>
@@ -46,16 +46,16 @@ import java.lang.foreign.Arena;
  * </ol>
  *
  * <p>Stateless pure-Java codecs ({@link PcmaRtpCodec}, {@link PcmuRtpCodec}) do not extend this
- * class; they implement {@link RtpCodec} directly and inherit the default no-op {@code close()}.
+ * class; they implement {@link RtpCodecFactory} directly and inherit the default no-op {@code close()}.
  */
-public abstract class NativeRtpCodec implements RtpCodec {
+public abstract class NativeRtpCodec implements RtpCodecFactory {
 
     /**
      * Whether the native library was successfully loaded.
      *
      * <p>{@code false} in freshly constructed CDI factory beans;
      * set to {@code true} by the subclass {@code @PostConstruct} probe method.
-     * Always {@code true} in per-call instances created by {@link RtpCodec#forCall()}.
+     * Always {@code true} in per-call instances created by {@link RtpCodecFactory#forCall()}.
      */
     protected boolean available = false;
 

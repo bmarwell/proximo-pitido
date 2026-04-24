@@ -34,7 +34,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see G722RtpCodec
  */
 @ApplicationScoped
-public final class PcmaRtpCodec implements RtpCodec {
+public final class PcmaRtpCodec implements RtpCodecFactory {
 
     /**
      * Static fallback instance for non-CDI contexts.

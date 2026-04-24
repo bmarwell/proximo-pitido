@@ -107,7 +107,7 @@ class G722RtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         // when
         callInstance.close();
@@ -123,7 +123,7 @@ class G722RtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         assertNotSame(factory, callInstance);
     }
@@ -151,7 +151,7 @@ class G722RtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall();
+        RtpCodecFactory encoder = factory.forCall();
         byte[] encoded = encoder.encode(new short[320]);
 
         assertEquals(160, encoded.length);
@@ -168,8 +168,8 @@ class G722RtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
-        RtpCodec first = factory.forCall();
-        RtpCodec second = factory.forCall();
+        RtpCodecFactory first = factory.forCall();
+        RtpCodecFactory second = factory.forCall();
 
         assertNotSame(first, second);
     }

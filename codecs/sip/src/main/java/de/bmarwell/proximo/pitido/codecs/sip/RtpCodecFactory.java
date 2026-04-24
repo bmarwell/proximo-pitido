@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import java.io.IOException;
+import java.lang.foreign.Arena;
 
 /**
  * Abstracts a single RTP audio codec: sample-rate requirements, payload type, SDP description,
@@ -33,7 +34,7 @@ import java.io.IOException;
  * {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all beans via CDI
  * {@code Instance<RtpCodec>} and filters by availability and preference.
  */
-public interface RtpCodec extends AutoCloseable {
+public interface RtpCodecFactory extends AutoCloseable {
 
     /**
      * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,
@@ -63,7 +64,7 @@ public interface RtpCodec extends AutoCloseable {
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
      */
-    default RtpCodec forCall(String offeredFmtp) {
+    default RtpCodecFactory forCall(String offeredFmtp) {
         return forCall();
     }
 
@@ -97,7 +98,7 @@ public interface RtpCodec extends AutoCloseable {
      * <p>Called by {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} once per negotiated
      * call, immediately before storing the instance in {@link CallMedia}.
      */
-    default RtpCodec forCall() {
+    default RtpCodecFactory forCall() {
         return this;
     }
 

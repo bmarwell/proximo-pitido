@@ -15,7 +15,7 @@ package de.bmarwell.proximo.pitido.war.media;
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.codecs.input.PcmDecoderFactory;
 import de.bmarwell.proximo.pitido.codecs.input.PcmStream;
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.DatagramPacket;
@@ -40,8 +40,8 @@ import java.util.Random;
  * <p>RTP packet format:
  * <ul>
  *   <li>Version 2, no padding, no extension, CC = 0</li>
- *   <li>Payload type from the negotiated {@link RtpCodec}</li>
- *   <li>20 ms packets at {@link RtpCodec#samplesPerFrame()} samples per packet</li>
+ *   <li>Payload type from the negotiated {@link RtpCodecFactory}</li>
+ *   <li>20 ms packets at {@link RtpCodecFactory#samplesPerFrame()} samples per packet</li>
  *   <li>Sequence number and timestamp increment per packet</li>
  *   <li>SSRC is chosen randomly at construction time</li>
  * </ul>
@@ -57,7 +57,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
     private final PcmDecoderFactory pcmDecoderFactory;
-    private final RtpCodec codec;
+    private final RtpCodecFactory codec;
     private final CallMedia callMedia;
     private final int ssrc;
     private int seqNumber;
@@ -73,7 +73,7 @@ public class RtpAudioPlayer implements AudioPlayer {
      *                          must be closed by the caller after the call ends
      * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
      */
-    public RtpAudioPlayer(CallMedia callMedia, RtpCodec callCodec, PcmDecoderFactory pcmDecoderFactory) {
+    public RtpAudioPlayer(CallMedia callMedia, RtpCodecFactory callCodec, PcmDecoderFactory pcmDecoderFactory) {
         this.callMedia = callMedia;
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();
@@ -133,11 +133,11 @@ public class RtpAudioPlayer implements AudioPlayer {
 
     /**
      * Opens the classpath resource at {@code resourcePath}, decodes it to mono PCM at
-     * {@link RtpCodec#inputSampleRate()} Hz, encodes each 20 ms frame via the negotiated codec,
+     * {@link RtpCodecFactory#inputSampleRate()} Hz, encodes each 20 ms frame via the negotiated codec,
      * and sends it as an RTP packet.
      *
      * <p>Decoders that support multi-rate output (e.g. {@link de.bmarwell.proximo.pitido.codecs.input.OggOpusPcmDecoder})
-     * will produce samples at exactly {@link RtpCodec#inputSampleRate()}, avoiding any upsampling.
+     * will produce samples at exactly {@link RtpCodecFactory#inputSampleRate()}, avoiding any upsampling.
      * Decoders that do not (e.g. deprecated WAV) fall back to 8 kHz output; the pipeline then
      * upsamples to match the codec's expectation.
      *

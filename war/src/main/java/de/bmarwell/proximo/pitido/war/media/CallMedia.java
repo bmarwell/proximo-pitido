@@ -12,7 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,7 +48,7 @@ public record CallMedia(
         DatagramSocket localSocket,
         InetSocketAddress remoteRtp,
         String sdpAnswer,
-        RtpCodec codec,
+        RtpCodecFactory codec,
         int telephoneEventPayloadType,
         AtomicBoolean held) {
 

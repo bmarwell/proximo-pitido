@@ -114,7 +114,7 @@ class AmrWbRtpCodecTest {
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
         // when
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         // then
         assertNotSame(factory, callInstance);
@@ -128,7 +128,7 @@ class AmrWbRtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         // when
         callInstance.close();
@@ -145,7 +145,7 @@ class AmrWbRtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall();
+        RtpCodecFactory encoder = factory.forCall();
 
         // when
         byte[] payload = encoder.encode(new short[320]);
@@ -164,7 +164,7 @@ class AmrWbRtpCodecTest {
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
         // Mode 2 (12.65 kbps) with telekom's offered fmtp
-        RtpCodec encoder = factory.forCall("octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0");
+        RtpCodecFactory encoder = factory.forCall("octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0");
 
         // when
         byte[] payload = encoder.encode(new short[320]);
@@ -185,7 +185,7 @@ class AmrWbRtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall("octet-align=1;mode-set=0,1,2");
+        RtpCodecFactory encoder = factory.forCall("octet-align=1;mode-set=0,1,2");
 
         // when
         byte[] payload = encoder.encode(new short[320]);

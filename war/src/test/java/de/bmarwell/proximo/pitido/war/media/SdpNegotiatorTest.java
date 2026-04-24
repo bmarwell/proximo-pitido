@@ -18,7 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -145,7 +145,7 @@ class SdpNegotiatorTest {
                     "buildSdpAnswer",
                     String.class,
                     int.class,
-                    de.bmarwell.proximo.pitido.codecs.sip.RtpCodec.class,
+                    RtpCodecFactory.class,
                     int.class);
             method.setAccessible(true);
             return (String) method.invoke(null, localIp, localPort, codec, telephoneEventPt);
@@ -173,7 +173,7 @@ class SdpNegotiatorTest {
         // given
         String sdp = SDP_OFFER_TELEKOM_VOLTE;
 
-        RtpCodec g722Stub = mock(RtpCodec.class);
+        RtpCodecFactory g722Stub = mock(RtpCodecFactory.class);
         when(g722Stub.isAvailable()).thenReturn(true);
         when(g722Stub.preference()).thenReturn(50);
         when(g722Stub.sdpName()).thenReturn("G722");
@@ -182,7 +182,7 @@ class SdpNegotiatorTest {
         when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
         when(g722Stub.forCall()).thenReturn(g722Stub);
 
-        RtpCodec amrWbStub = mock(RtpCodec.class);
+        RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
         when(amrWbStub.isAvailable()).thenReturn(true);
         when(amrWbStub.preference()).thenReturn(40);
         when(amrWbStub.sdpName()).thenReturn("AMR-WB");
@@ -193,7 +193,7 @@ class SdpNegotiatorTest {
         when(amrWbStub.forCall()).thenReturn(amrWbStub);
 
         // when
-        RtpCodec selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp);
+        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp);
 
         // then — AMR-WB must be selected at the octet-aligned PT 110, not the BW-efficient PT 104
         assertEquals("AMR-WB", selected.sdpName(), "Selected codec must be AMR-WB");
@@ -203,11 +203,11 @@ class SdpNegotiatorTest {
     @Test
     void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
         // given — a stateful codec stub whose forCall() returns a distinct per-call instance
-        RtpCodec perCallInstance = mock(RtpCodec.class);
+        RtpCodecFactory perCallInstance = mock(RtpCodecFactory.class);
         when(perCallInstance.sdpName()).thenReturn("PCMA");
         when(perCallInstance.payloadType()).thenReturn(8);
 
-        RtpCodec descriptorStub = mock(RtpCodec.class);
+        RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
         when(descriptorStub.sdpName()).thenReturn("PCMA");
@@ -217,7 +217,7 @@ class SdpNegotiatorTest {
         when(descriptorStub.forCall()).thenReturn(perCallInstance);
 
         // when
-        RtpCodec selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
+        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
 
         // then — forCall() must NOT have been called during codec selection;
         // the announcement thread must call it, not the SDP-negotiation thread.

@@ -278,7 +278,7 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * @throws IllegalStateException if the codec is not available or {@code E_IF_init} fails
      */
     @Override
-    public RtpCodec forCall(String offeredFmtp) {
+    public RtpCodecFactory forCall(String offeredFmtp) {
         if (!this.available) {
             throw new IllegalStateException(
                     "AMR-WB codec is not available — libvo-amrwbenc was not loaded; check probe() logs");
@@ -312,7 +312,7 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * @param encodingMode    AMR-WB encoding mode (0–8)
      * @return a fully initialised per-call codec instance
      */
-    protected RtpCodec createForCallInstance(
+    protected RtpCodecFactory createForCallInstance(
             MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
         return new AmrWbRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
@@ -324,7 +324,7 @@ public class AmrWbRtpCodec extends NativeRtpCodec {
      * the encoder uses the best mode allowed by the caller's {@code mode-set}.
      */
     @Override
-    public RtpCodec forCall() {
+    public RtpCodecFactory forCall() {
         return forCall("");
     }
 

@@ -115,7 +115,7 @@ class OpusRtpCodecTest {
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
         // when
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         // then
         assertNotSame(factory, callInstance);
@@ -130,8 +130,8 @@ class OpusRtpCodecTest {
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
         // when
-        RtpCodec first = factory.forCall();
-        RtpCodec second = factory.forCall();
+        RtpCodecFactory first = factory.forCall();
+        RtpCodecFactory second = factory.forCall();
 
         // then: each call leg must have independent encoder state
         assertNotSame(first, second);
@@ -145,7 +145,7 @@ class OpusRtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodecFactory callInstance = factory.forCall();
 
         // when
         callInstance.close();
@@ -162,7 +162,7 @@ class OpusRtpCodecTest {
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall();
+        RtpCodecFactory encoder = factory.forCall();
         short[] silence = new short[960];
 
         // when

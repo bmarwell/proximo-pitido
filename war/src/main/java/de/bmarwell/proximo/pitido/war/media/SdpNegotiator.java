@@ -13,7 +13,7 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodec;
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import java.io.IOException;
 import java.net.DatagramSocket;
@@ -41,8 +41,8 @@ import javax.servlet.sip.SipServletRequest;
  * allocates a local UDP socket for sending RTP, selects the best mutually supported codec,
  * and builds the SDP answer string to include in the 200 OK response.
  *
- * <p>Codec preference is driven by CDI-injected {@link RtpCodec} beans, filtered by
- * {@link RtpCodec#isAvailable()} and sorted by {@link RtpCodec#preference()} (lower = preferred).
+ * <p>Codec preference is driven by CDI-injected {@link RtpCodecFactory} beans, filtered by
+ * {@link RtpCodecFactory#isAvailable()} and sorted by {@link RtpCodecFactory#preference()} (lower = preferred).
  * The first available codec whose payload type appears in the SDP offer is selected.
  * If no injected codec matches, {@link PcmaRtpCodec#INSTANCE} is used as the unconditional
  * fallback (PCMA is always available).
@@ -64,7 +64,7 @@ public class SdpNegotiator {
     LocalSipHostProvider localSipHostProvider;
 
     @Inject
-    Instance<RtpCodec> availableCodecs;
+    Instance<RtpCodecFactory> availableCodecFactories;
 
     /**
      * Negotiates media for the given INVITE.
@@ -88,7 +88,7 @@ public class SdpNegotiator {
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
         int telephoneEventPt = parseTelephoneEventPayloadType(sdpOffer);
-        RtpCodec codec = selectCodec(sdpOffer);
+        RtpCodecFactory codec = selectCodec(sdpOffer);
 
         DatagramSocket localSocket = new DatagramSocket(0);
         int localPort = localSocket.getLocalPort();
@@ -266,9 +266,9 @@ public class SdpNegotiator {
     }
 
     /**
-     * Selects the best available codec from the CDI-injected {@link RtpCodec} beans.
+     * Selects the best available codec from the CDI-injected {@link RtpCodecFactory} beans.
      *
-     * <p>Filters by {@link RtpCodec#isAvailable()}, sorts by {@link RtpCodec#preference()}
+     * <p>Filters by {@link RtpCodecFactory#isAvailable()}, sorts by {@link RtpCodecFactory#preference()}
      * (lower = preferred), then matches each codec by name and clock rate against the
      * {@code a=rtpmap} lines in the SDP offer.
      * For codecs with dynamic payload types (96–127), the matching is done by codec key
@@ -284,12 +284,12 @@ public class SdpNegotiator {
      * <p>Falls back to {@link PcmaRtpCodec#INSTANCE} if no injected codec matches.
      *
      * @param sdpOffer the full SDP offer string from the INVITE body
-     * @return a codec descriptor (CDI bean) whose {@link RtpCodec#payloadType()} returns the PT
-     *         actually negotiated with the caller; callers must call {@link RtpCodec#forCall()}
+     * @return a codec descriptor (CDI bean) whose {@link RtpCodecFactory#payloadType()} returns the PT
+     *         actually negotiated with the caller; callers must call {@link RtpCodecFactory#forCall()}
      *         on the announcement thread before encoding
      */
-    private RtpCodec selectCodec(String sdpOffer) {
-        return selectCodec(this.availableCodecs.stream(), sdpOffer);
+    private RtpCodecFactory selectCodec(String sdpOffer) {
+        return selectCodec(this.availableCodecFactories.stream(), sdpOffer);
     }
 
     /**
@@ -300,15 +300,15 @@ public class SdpNegotiator {
      * @param codecs   available codec descriptors, each an {@code @ApplicationScoped} CDI bean
      * @param sdpOffer the full SDP offer string from the INVITE body
      * @return a {@link NegotiatedRtpCodec} wrapping the selected codec descriptor with the
-     *         negotiated payload type; call {@link RtpCodec#forCall()} on the announcement thread
+     *         negotiated payload type; call {@link RtpCodecFactory#forCall()} on the announcement thread
      */
-    static RtpCodec selectCodec(Stream<RtpCodec> codecs, String sdpOffer) {
+    static RtpCodecFactory selectCodec(Stream<RtpCodecFactory> codecs, String sdpOffer) {
         Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer);
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
         Map<Integer, String> fmtp = parseFmtp(sdpOffer);
 
-        Optional<NegotiatedRtpCodec> selected = codecs.filter(RtpCodec::isAvailable)
-                .sorted(Comparator.comparingInt(RtpCodec::preference))
+        Optional<NegotiatedRtpCodec> selected = codecs.filter(RtpCodecFactory::isAvailable)
+                .sorted(Comparator.comparingInt(RtpCodecFactory::preference))
                 .flatMap(codec -> negotiatedPt(codec, offeredPts, rtpmap, fmtp)
                         .map(pt -> new NegotiatedRtpCodec(codec, pt, fmtp.getOrDefault(pt, "")))
                         .stream())
@@ -336,7 +336,7 @@ public class SdpNegotiator {
      *
      * <p>Iterates the rtpmap entries (in offer order) looking for entries whose codec key matches
      * {@code "<sdpName>/<rtpClockRate>"} (case-insensitive) and whose fmtp parameters are
-     * accepted by {@link RtpCodec#matchesFmtp(String)}.
+     * accepted by {@link RtpCodecFactory#matchesFmtp(String)}.
      * Falls back to the codec's own static payload type if no rtpmap entry is present (e.g.
      * PCMA at PT 8 offered without an explicit {@code a=rtpmap:8 PCMA/8000} line).
      *
@@ -347,7 +347,7 @@ public class SdpNegotiator {
      * @return the payload type to use, or empty if the codec is not compatible with this offer
      */
     private static Optional<Integer> negotiatedPt(
-            RtpCodec codec, Set<Integer> offeredPts, Map<Integer, String> rtpmap, Map<Integer, String> fmtp) {
+            RtpCodecFactory codec, Set<Integer> offeredPts, Map<Integer, String> rtpmap, Map<Integer, String> fmtp) {
         String codecKey = (codec.sdpName() + "/" + codec.rtpClockRate()).toUpperCase(Locale.ROOT);
 
         // Find the first offered PT whose rtpmap matches this codec and whose fmtp is compatible.
@@ -395,7 +395,7 @@ public class SdpNegotiator {
         return Optional.empty();
     }
 
-    private static String buildSdpAnswer(String localIp, int localPort, RtpCodec codec, int telephoneEventPt) {
+    private static String buildSdpAnswer(String localIp, int localPort, RtpCodecFactory codec, int telephoneEventPt) {
         StringBuilder sdp = new StringBuilder();
         sdp.append("v=0\r\n")
                 .append("o=proximo-pitido 0 0 IN IP4 ")

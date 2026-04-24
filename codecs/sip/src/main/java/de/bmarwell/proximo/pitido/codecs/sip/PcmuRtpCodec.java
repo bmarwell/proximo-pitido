@@ -34,7 +34,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see PcmaRtpCodec
  */
 @ApplicationScoped
-public final class PcmuRtpCodec implements RtpCodec {
+public final class PcmuRtpCodec implements RtpCodecFactory {
 
     PcmuRtpCodec() {}
 

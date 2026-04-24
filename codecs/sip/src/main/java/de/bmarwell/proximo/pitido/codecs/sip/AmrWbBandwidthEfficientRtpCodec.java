@@ -413,7 +413,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
      * @return a fully initialised per-call {@link AmrWbBandwidthEfficientRtpCodec}
      */
     @Override
-    protected RtpCodec createForCallInstance(
+    protected RtpCodecFactory createForCallInstance(
             MethodHandle eIfEncodeHandle, Arena arena, MemorySegment stateSegment, int encodingMode) {
         if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
             LOGGER.log(

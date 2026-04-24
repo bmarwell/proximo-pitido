@@ -12,11 +12,11 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.io.IOException;
 
 /**
- * Wraps a {@link RtpCodec} and overrides {@link #payloadType()} to return the payload type
+ * Wraps a {@link RtpCodecFactory} and overrides {@link #payloadType()} to return the payload type
  * actually negotiated with the caller rather than the codec's static default.
  *
  * <p>VoLTE callers (e.g. Deutsche Telekom) assign dynamic payload types (96–127) per-call via
@@ -47,7 +47,7 @@ import java.io.IOException;
  *                               for this payload type; empty string if no {@code a=fmtp} line was
  *                               present in the offer
  */
-record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String offeredFmtp) implements RtpCodec {
+record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp) implements RtpCodecFactory {
 
     /**
      * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.
@@ -69,7 +69,7 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
     }
 
     @Override
-    public RtpCodec forCall() {
+    public RtpCodecFactory forCall() {
         return new NegotiatedRtpCodec(
                 this.delegate.forCall(this.offeredFmtp), this.negotiatedPayloadType, this.offeredFmtp);
     }

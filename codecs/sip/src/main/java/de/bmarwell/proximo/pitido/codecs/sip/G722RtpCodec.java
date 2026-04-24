@@ -188,7 +188,7 @@ public final class G722RtpCodec extends NativeRtpCodec {
      * @throws IllegalStateException if {@code g722_encode_init} returns a null pointer
      */
     @Override
-    public RtpCodec forCall() {
+    public RtpCodecFactory forCall() {
         Arena arena = Arena.ofConfined();
         MemorySegment state = arena.allocate(STATE_SIZE, STATE_ALIGN);
         MemorySegment initialised = invokeEncodeInit(state);
