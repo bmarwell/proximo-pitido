@@ -31,16 +31,15 @@ import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
  *
  * <p>{@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator#negotiate} returns an instance
  * whose {@code delegate} is the CDI bean descriptor — no confined arena is allocated yet.
- * The announcement or menu-runner lambda calls {@link #forCall()} at its start, on the executor
- * thread that will also call {@link #encode} and {@link #close}.
+ * The announcement or menu-runner lambda calls {@link #forCall(String)} with the {@code offeredFmtp},
+ * on the executor thread that will also call {@link #encode} and {@link #close}.
  * This guarantees that the {@link java.lang.foreign.Arena#ofConfined() confined arena} created by
  * native codecs is owned by the thread that uses and closes it, preventing
  * {@link java.lang.WrongThreadException}.
  *
- * <p>All methods other than {@link #payloadType()} and {@link #forCall()} delegate transparently
- * to the wrapped codec instance.
+ * <p>All methods delegate transparently to the wrapped codec factory instance.
  *
- * @param delegate               the codecFactory instance
+ * @param delegate               the RtpCodecFactory CDI bean
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
  * @param offeredFmtp            the raw {@code a=fmtp} parameter string from the caller's SDP offer
  *                               for this payload type; empty string if no {@code a=fmtp} line was
