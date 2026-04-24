@@ -135,13 +135,27 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         byte[] payload = codecForCall.encode(pcmFrame);
 
         // Then
+        // Given, When
         assertNotNull(payload, "Payload must not be null");
-        assertEquals(33, payload.length, "BW-efficient payload for mode 2 should be 33 bytes ([ToC=1] + [speech=32])");
+        assertEquals(33, payload.length, "BW-efficient payload for mode 2 should be 33 bytes");
 
-        byte tocByte = payload[0];
-        int frameType = (tocByte >> 3) & 0x0F;
-        int qualityBit = (tocByte >> 2) & 0x01;
+        // RFC 4867 §4.3: Byte 0 = [CMR(4)][F(1)][FT_high(3)]
+        byte byte0 = payload[0];
+        int cmr = (byte0 >> 4) & 0x0F;
+        int f = (byte0 >> 3) & 0x01;
+        int ftHigh3 = byte0 & 0x07;
 
+        // Byte 1 = [FT_low(1)][Q(1)][speech(6)]
+        byte byte1 = payload[1];
+        int ftLow1 = (byte1 >> 7) & 0x01;
+        int qualityBit = (byte1 >> 6) & 0x01;
+
+        // Reconstruct full FT from high 3 + low 1
+        int frameType = (ftHigh3 << 1) | ftLow1;
+
+        // Then
+        assertEquals(2, cmr, "CMR should be 2 (encoding mode)");
+        assertEquals(0, f, "Follow bit should be 0 (single frame)");
         assertEquals(2, frameType, "Frame type should be 2 (mode 2)");
         assertEquals(1, qualityBit, "Quality bit should be 1 (good)");
     }
@@ -158,14 +172,31 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         byte[] payload = codecForCall.encode(pcmFrame);
 
         // Then
-        byte tocByte = payload[0];
-        // ToC for mode 2: (2 << 3) | 0x04 = 0x14
-        byte expectedToC = (byte) ((2 << 3) | 0x04);
+        // RFC 4867 §4.3 bandwidth-efficient format:
+        // Byte 0: [CMR(4)][F(1)][FT_high(3)]
+        byte byte0 = payload[0];
+        int cmr = (byte0 >> 4) & 0x0F;
+        int f = (byte0 >> 3) & 0x01;
+        int ftHigh3 = byte0 & 0x07;
 
+        // For mode 2 with CMR set to encoding mode (2):
+        // Byte 0 should be: [0010][0][001] = 0010 0001 = 0x21
+        int expectedByte0 = (2 << 4) | (0 << 3) | 1; // CMR=2, F=0, FT_high=001
         assertEquals(
-                expectedToC & 0xFF,
-                tocByte & 0xFF,
-                String.format("ToC byte must be 0x14 for mode 2; got 0x%02x", tocByte & 0xFF));
+                expectedByte0,
+                byte0 & 0xFF,
+                String.format(
+                        "BW-efficient byte 0 should be CMR+F+FT_high; expected 0x%02x but got 0x%02x",
+                        expectedByte0, byte0 & 0xFF));
+
+        // Byte 1 should have FT_low + Q (and 6 bits of speech):
+        // [FT_low(1)][Q(1)][speech(6)]
+        byte byte1 = payload[1];
+        int ftLow1 = (byte1 >> 7) & 0x01;
+        int qualityBit = (byte1 >> 6) & 0x01;
+
+        assertEquals(0, ftLow1, "FT_low bit (bit 7 of byte 1) should be 0 for mode 2");
+        assertEquals(1, qualityBit, "Quality bit (bit 6 of byte 1) should be 1 (good frame)");
     }
 
     @Test
@@ -195,14 +226,20 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
 
         var bwEfficientCodec = codec.forCall();
-        var octetAlignedCodec = new AmrWbRtpCodec().forCall();
+
+        var octetAlignedCodec = new AmrWbRtpCodec();
+        // Ensure probe() has run to load libvo-amrwbenc
+        octetAlignedCodec.probe();
+        var octetCodecForCall = octetAlignedCodec.forCall();
+
         short[] pcmFrame = generateTestFrame();
 
         // When
         byte[] bwPayload = bwEfficientCodec.encode(pcmFrame);
-        byte[] octetPayload = octetAlignedCodec.encode(pcmFrame);
+        byte[] octetPayload = octetCodecForCall.encode(pcmFrame);
 
         // Then
+        // Given: When: Then:
         assertEquals(
                 octetPayload.length - 1, bwPayload.length, "BW-efficient should be 1 byte shorter (no CMR header)");
     }
@@ -213,6 +250,7 @@ class AmrWbBandwidthEfficientRtpCodecTest {
 
     private boolean isLibVoAmrwbencAvailable() {
         try {
+            codec.probe();
             var testCodec = codec.forCall();
             testCodec.encode(generateTestFrame());
             return true;
