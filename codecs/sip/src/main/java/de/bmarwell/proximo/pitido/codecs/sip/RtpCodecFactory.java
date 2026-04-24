@@ -12,9 +12,6 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import java.io.IOException;
-import java.lang.foreign.Arena;
-
 /**
  * Abstracts a single RTP audio codec: sample-rate requirements, payload type, SDP description,
  * and the PCM → wire-format encoding step.
@@ -25,7 +22,7 @@ import java.lang.foreign.Arena;
  *
  * <p>Most codecs are stateful (the encoder carries ADPCM predictor state across packets) and must
  * <em>not</em> be shared across call legs.
- * {@link PcmaRtpCodec} is the exception: G.711 A-law is memoryless, so its CDI singleton instance
+ * {@link PcmaRtpCodecFactory} is the exception: G.711 A-law is memoryless, so its CDI singleton instance
  * is safe to share — {@link #forCall()} returns {@code this}.
  *
  * <p>Each implementation is an {@code @ApplicationScoped} CDI bean.
@@ -34,45 +31,24 @@ import java.lang.foreign.Arena;
  * {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all beans via CDI
  * {@code Instance<RtpCodec>} and filters by availability and preference.
  */
-public interface RtpCodecFactory extends AutoCloseable {
-
-    /**
-     * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,
-     * given the parameter string from the caller's SDP offer.
-     *
-     * <p>The default implementation ignores the offered fmtp and returns {@link #fmtpParams()},
-     * which is correct for most codecs.
-     * Codecs that must echo specific offered parameters in the answer (e.g. AMR-WB mode-set
-     * per RFC 4867 §8.3.2) must override this method.
-     *
-     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
-     * @return the fmtp parameter string for the SDP answer; empty string if no {@code a=fmtp}
-     *         line should be emitted
-     */
-    default String fmtpAnswer(String offeredFmtp) {
-        return fmtpParams();
-    }
+public interface RtpCodecFactory {
 
     /**
      * Returns a codec instance suitable for exactly one call leg, with awareness of the
      * offered fmtp parameters.
      *
-     * <p>The default implementation ignores {@code offeredFmtp} and delegates to
-     * {@link #forCall()}.
      * Codecs that adapt their encoding behaviour based on offered parameters (e.g. AMR-WB
      * selecting the best allowed mode from {@code mode-set}) must override this method.
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
      */
-    default RtpCodecFactory forCall(String offeredFmtp) {
-        return forCall();
-    }
+    <T extends RtpCodec> T forCall(String offeredFmtp);
 
     /**
      * Returns {@code true} if this codec can be used on the current host.
      *
      * <p>Pure-Java codecs (e.g. PCMA) always return {@code true}.
-     * Native-library codecs (e.g. {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec} via libspandsp) return {@code false} when the
+     * Native-library codecs (e.g. {@link G722RtpCodecFactory} via libspandsp) return {@code false} when the
      * required library is not installed.
      */
     boolean isAvailable();
@@ -87,20 +63,6 @@ public interface RtpCodecFactory extends AutoCloseable {
      * </ul>
      */
     int preference();
-
-    /**
-     * Returns a codec instance suitable for exactly one call leg.
-     *
-     * <p>Stateless codecs (e.g. PCMA) return {@code this} — the CDI singleton is safe to share.
-     * Stateful codecs (e.g. G.722 ADPCM) must override this to return a new instance with fresh
-     * encoder state; sharing predictor state across calls would corrupt the audio stream.
-     *
-     * <p>Called by {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} once per negotiated
-     * call, immediately before storing the instance in {@link CallMedia}.
-     */
-    default RtpCodecFactory forCall() {
-        return this;
-    }
 
     /**
      * RTP payload type (0–127).
@@ -143,16 +105,6 @@ public interface RtpCodecFactory extends AutoCloseable {
     int rtpTimestampIncrement();
 
     /**
-     * Encodes one frame of {@link #samplesPerFrame()} mono PCM samples to the codec's wire format.
-     *
-     * @param pcmFrame mono PCM samples at {@link #inputSampleRate()}; length must equal
-     *                 {@link #samplesPerFrame()}
-     * @return encoded payload bytes for one RTP packet
-     * @throws IOException if encoding fails
-     */
-    byte[] encode(short[] pcmFrame) throws IOException;
-
-    /**
      * Number of channels declared in the SDP {@code a=rtpmap} encoding-parameters field.
      *
      * <p>Most voice codecs are mono and omit this field (the default is 1).
@@ -160,7 +112,7 @@ public interface RtpCodecFactory extends AutoCloseable {
      * for historical interoperability reasons.
      *
      * <p>The default returns {@code 1}; codecs that require a different value (e.g.
-     * {@link OpusRtpCodec}) override this method.
+     * {@link OpusRtpCodecFactory}) override this method.
      *
      * @return the SDP channel count, usually {@code 1}
      */
@@ -173,12 +125,6 @@ public interface RtpCodecFactory extends AutoCloseable {
      * {@code "G722"}.
      */
     String sdpName();
-
-    /**
-     * SDP {@code a=fmtp} parameters for this codec, or an empty string if none are needed.
-     * Does not include the leading {@code "a=fmtp:<pt> "} prefix.
-     */
-    String fmtpParams();
 
     /**
      * Returns {@code true} if the given {@code a=fmtp} parameter string from the SDP offer is
@@ -196,18 +142,5 @@ public interface RtpCodecFactory extends AutoCloseable {
      */
     default boolean matchesFmtp(String offeredFmtp) {
         return true;
-    }
-
-    /**
-     * Releases any native resources held by this per-call codec instance.
-     *
-     * <p>Stateless codecs (e.g. PCMA) return {@code this} from {@link #forCall()} and must not
-     * be closed; the default implementation is a no-op.
-     * Stateful per-call codecs (e.g. G.722) override this to release their native {@link Arena}.
-     * {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager} calls this when the call ends.
-     */
-    @Override
-    default void close() {
-        // no-op for stateless codecs (e.g. PCMA) whose forCall() returns the shared CDI singleton
     }
 }

@@ -1,3 +1,7 @@
+import de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.OpusRtpCodecFactory;
+
 /**
  * RTP codec descriptors and encoders for SIP media negotiation.
  *
@@ -5,9 +9,9 @@
  * any specific SIP servlet container lifecycle.
  *
  * <h2>Native access</h2>
- * {@link de.bmarwell.proximo.pitido.codecs.sip.G722RtpCodec},
- * {@link de.bmarwell.proximo.pitido.codecs.sip.OpusRtpCodec}, and
- * {@link de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodec} use the Foreign Function and
+ * {@link G722RtpCodecFactory},
+ * {@link OpusRtpCodecFactory}, and
+ * {@link AmrWbRtpCodecFactory} use the Foreign Function and
  * Memory (FFM) API ({@code java.lang.foreign}) to call native libraries directly.
  * At runtime the JVM must be started with
  * {@code --enable-native-access=de.bmarwell.proximo.pitido.codecs.sip}.

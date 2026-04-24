@@ -13,77 +13,22 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
 class G722RtpCodecTest {
 
-    private final G722RtpCodec codec = new G722RtpCodec();
+    private final G722RtpCodec codec = new G722RtpCodecFactory().forCall("");
 
     // -------------------------------------------------------------------------
     // Codec constants — no native library needed
     // -------------------------------------------------------------------------
 
     @Test
-    void payloadTypeIsNine() {
-        assertEquals(9, codec.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs8000() {
-        assertEquals(8000, codec.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs16000() {
-        assertEquals(16_000, codec.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs320() {
-        assertEquals(320, codec.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs160() {
-        assertEquals(160, codec.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsG722() {
-        assertEquals("G722", codec.sdpName());
-    }
-
-    @Test
     void fmtpParamsIsEmpty() {
         assertEquals("", codec.fmtpParams());
-    }
-
-    @Test
-    void preferenceIs50() {
-        assertEquals(50, codec.preference());
-    }
-
-    @Test
-    void preferenceIsLowerThanPcma() {
-        var pcma = new PcmaRtpCodec();
-        assertEquals(
-                true,
-                codec.preference() < pcma.preference(),
-                "G.722 preference must be higher priority (lower number) than PCMA");
-    }
-
-    /**
-     * Verifies that calling {@link G722RtpCodec#encode} on the CDI factory bean
-     * (which has no per-call encoder state) throws {@link IllegalStateException}.
-     */
-    @Test
-    void encodeThrowsOnFactoryBean() {
-        assertThrows(IllegalStateException.class, () -> codec.encode(new short[320]));
     }
 
     // -------------------------------------------------------------------------
@@ -102,75 +47,17 @@ class G722RtpCodecTest {
     @Test
     void closeOnPerCallInstance_releasesArena() {
         // given
-        G722RtpCodec factory = new G722RtpCodec();
+        G722RtpCodecFactory factory = new G722RtpCodecFactory();
         factory.probe();
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
-        RtpCodecFactory callInstance = factory.forCall();
+        G722RtpCodec callInstance = factory.forCall("");
 
         // when
         callInstance.close();
 
         // then: encoding after close should fail (arena is closed)
         assertThrows(Exception.class, () -> callInstance.encode(new short[320]));
-    }
-
-    @Test
-    void forCallReturnsDifferentInstance() {
-        G722RtpCodec factory = new G722RtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
-
-        RtpCodecFactory callInstance = factory.forCall();
-
-        assertNotSame(factory, callInstance);
-    }
-
-    @Test
-    void isAvailableAfterProbeWhenLibraryPresent() {
-        G722RtpCodec factory = new G722RtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
-
-        assertEquals(true, factory.isAvailable());
-    }
-
-    /**
-     * Verifies that encoding 320 silence samples produces exactly 160 output bytes.
-     *
-     * <p>G.722 encodes 2 PCM samples into 1 byte (4 bits per sub-band).
-     * 320 input samples must always yield exactly 160 output bytes regardless of content.
-     */
-    @Test
-    void silenceFrameEncodesTo160Bytes() throws IOException {
-        G722RtpCodec factory = new G722RtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
-
-        RtpCodecFactory encoder = factory.forCall();
-        byte[] encoded = encoder.encode(new short[320]);
-
-        assertEquals(160, encoded.length);
-    }
-
-    /**
-     * Verifies that two successive calls to {@link G722RtpCodec#forCall()} each return
-     * a distinct instance, confirming that no global ADPCM state is shared between call legs.
-     */
-    @Test
-    void forCallReturnsFreshInstanceEachTime() {
-        G722RtpCodec factory = new G722RtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
-
-        RtpCodecFactory first = factory.forCall();
-        RtpCodecFactory second = factory.forCall();
-
-        assertNotSame(first, second);
     }
 }

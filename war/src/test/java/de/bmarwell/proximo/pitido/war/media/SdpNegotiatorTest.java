@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -140,13 +141,9 @@ class SdpNegotiatorTest {
      */
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
         try {
-            var codec = de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodec.INSTANCE;
+            var codec = PcmaRtpCodecFactory.INSTANCE;
             var method = SdpNegotiator.class.getDeclaredMethod(
-                    "buildSdpAnswer",
-                    String.class,
-                    int.class,
-                    RtpCodecFactory.class,
-                    int.class);
+                    "buildSdpAnswer", String.class, int.class, RtpCodecFactory.class, int.class);
             method.setAccessible(true);
             return (String) method.invoke(null, localIp, localPort, codec, telephoneEventPt);
         } catch (ReflectiveOperationException reflectiveOperationException) {

@@ -12,29 +12,12 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import java.lang.foreign.Arena;
+public abstract class NativeRtpCodecFactory<T extends RtpCodec> implements RtpCodecFactory {
 
-public abstract class NativeRtpCodec implements RtpCodec {
+    protected boolean available = false;
 
-    /**
-     * Confined arena owning the per-call native encoder state.
-     * {@code null} in the CDI factory bean; non-null in per-call instances.
-     *
-     * <p>Closed by {@link #close()} when the call ends.
-     */
-    protected final Arena callArena;
-
-    protected NativeRtpCodec() {
-        this.callArena = Arena.ofConfined();
-    }
-
-    /**
-     * Closes the confined arena, releasing the native encoder state immediately.
-     */
     @Override
-    public void close() {
-        if (this.callArena != null) {
-            this.callArena.close();
-        }
+    public boolean isAvailable() {
+        return this.available;
     }
 }

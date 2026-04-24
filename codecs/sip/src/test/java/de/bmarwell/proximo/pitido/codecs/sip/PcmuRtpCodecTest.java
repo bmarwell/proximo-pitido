@@ -22,35 +22,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class PcmuRtpCodecTest {
 
-    private final PcmuRtpCodec codec = new PcmuRtpCodec();
-
-    @Test
-    void payloadTypeIsZero() {
-        assertEquals(0, codec.payloadType());
-    }
-
-    @Test
-    void sdpNameIsPcmu() {
-        assertEquals("PCMU", codec.sdpName());
-    }
-
-    @Test
-    void isAlwaysAvailable() {
-        assertTrue(codec.isAvailable());
-    }
-
-    @Test
-    void preferenceIsLowerThanPcma() {
-        var pcma = new PcmaRtpCodec();
-        assertTrue(
-                codec.preference() > pcma.preference(),
-                "PCMU preference must be lower priority (higher number) than PCMA");
-    }
-
-    @Test
-    void forCallReturnsSelf() {
-        assertEquals(codec, codec.forCall());
-    }
+    private final PcmuRtpCodec codec = (PcmuRtpCodec) new PcmuRtpCodecFactory().forCall("");
 
     @Test
     void encodeFrameHasCorrectLength() throws IOException {

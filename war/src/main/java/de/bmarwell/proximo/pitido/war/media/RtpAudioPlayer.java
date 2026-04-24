@@ -15,6 +15,7 @@ package de.bmarwell.proximo.pitido.war.media;
 import de.bmarwell.proximo.pitido.api.AudioPlayer;
 import de.bmarwell.proximo.pitido.codecs.input.PcmDecoderFactory;
 import de.bmarwell.proximo.pitido.codecs.input.PcmStream;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,7 +58,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
     private final PcmDecoderFactory pcmDecoderFactory;
-    private final RtpCodecFactory codec;
+    private final RtpCodec codec;
     private final CallMedia callMedia;
     private final int ssrc;
     private int seqNumber;
@@ -73,7 +74,7 @@ public class RtpAudioPlayer implements AudioPlayer {
      *                          must be closed by the caller after the call ends
      * @param pcmDecoderFactory the factory used to select the decoder for each audio resource
      */
-    public RtpAudioPlayer(CallMedia callMedia, RtpCodecFactory callCodec, PcmDecoderFactory pcmDecoderFactory) {
+    public RtpAudioPlayer(CallMedia callMedia, RtpCodec callCodec, PcmDecoderFactory pcmDecoderFactory) {
         this.callMedia = callMedia;
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();

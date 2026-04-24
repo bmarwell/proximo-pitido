@@ -12,8 +12,9 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
+import de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
-import java.io.IOException;
 
 /**
  * Wraps a {@link RtpCodecFactory} and overrides {@link #payloadType()} to return the payload type
@@ -21,7 +22,7 @@ import java.io.IOException;
  *
  * <p>VoLTE callers (e.g. Deutsche Telekom) assign dynamic payload types (96–127) per-call via
  * {@code a=rtpmap} lines.
- * The underlying codec (e.g. {@link de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodec}) carries a
+ * The underlying codec (e.g. {@link AmrWbRtpCodecFactory}) carries a
  * conventional default PT for identification purposes only.
  * This wrapper carries the actual PT assigned by the caller so that outgoing RTP packet headers
  * and the SDP answer use the same PT value the caller expects.
@@ -39,15 +40,14 @@ import java.io.IOException;
  * <p>All methods other than {@link #payloadType()} and {@link #forCall()} delegate transparently
  * to the wrapped codec instance.
  *
- * @param delegate               the codec instance; either a CDI bean descriptor (before
- *                               {@link #forCall()}) or a per-call instance (after
- *                               {@link #forCall()})
+ * @param delegate               the codecFactory instance
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
  * @param offeredFmtp            the raw {@code a=fmtp} parameter string from the caller's SDP offer
  *                               for this payload type; empty string if no {@code a=fmtp} line was
  *                               present in the offer
  */
-record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp) implements RtpCodecFactory {
+record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp)
+        implements RtpCodecFactory {
 
     /**
      * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.
@@ -69,9 +69,8 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public RtpCodecFactory forCall() {
-        return new NegotiatedRtpCodec(
-                this.delegate.forCall(this.offeredFmtp), this.negotiatedPayloadType, this.offeredFmtp);
+    public <T extends RtpCodec> T forCall(String offeredFmtp) {
+        return this.delegate.forCall(this.offeredFmtp);
     }
 
     @Override
@@ -95,11 +94,6 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public byte[] encode(short[] pcmFrame) throws IOException {
-        return this.delegate.encode(pcmFrame);
-    }
-
-    @Override
     public int sdpChannelCount() {
         return this.delegate.sdpChannelCount();
     }
@@ -110,29 +104,7 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public String fmtpParams() {
-        // Delegate to the codec's own answer logic (e.g. AMR-WB echoes mode-set per RFC 4867 §8.3.2).
-        String answer = this.delegate.fmtpAnswer(this.offeredFmtp);
-
-        System.getLogger(NegotiatedRtpCodec.class.getName())
-                .log(
-                        System.Logger.Level.TRACE,
-                        "NegotiatedRtpCodec.fmtpParams: codec={0} PT={1} offeredFmtp=''{2}'' answerFmtp=''{3}''",
-                        this.delegate.sdpName(),
-                        this.negotiatedPayloadType,
-                        this.offeredFmtp,
-                        answer);
-
-        return answer;
-    }
-
-    @Override
     public boolean matchesFmtp(String offeredFmtp) {
         return this.delegate.matchesFmtp(offeredFmtp);
-    }
-
-    @Override
-    public void close() {
-        this.delegate.close();
     }
 }

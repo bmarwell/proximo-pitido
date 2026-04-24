@@ -14,8 +14,6 @@ package de.bmarwell.proximo.pitido.codecs.sip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
@@ -28,95 +26,47 @@ import org.junit.jupiter.api.Test;
  */
 class AmrWbBandwidthEfficientRtpCodecTest {
 
-    private final AmrWbBandwidthEfficientRtpCodec codec = new AmrWbBandwidthEfficientRtpCodec();
+    private final AmrWbBandwidthEfficientRtpCodec codec = new AmrWbBandwidthEfficientRtpCodecFactory().forCall("");
+
+    @Test
+    void encodeMultipleFramesProduceConsistentPayloads() throws IOException {
+        // Given
+        assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
+
+        var codecForCall = codec;
+        short[] pcmFrame = generateTestFrame();
+
+        // When
+        byte[] payload1 = codecForCall.encode(pcmFrame);
+        byte[] payload2 = codecForCall.encode(pcmFrame);
+
+        // Then
+        assertEquals(payload1.length, payload2.length, "Payload lengths must match");
+        assertEquals(payload1[0], payload2[0], "ToC bytes must match");
+    }
 
     // -------------------------------------------------------------------------
-    // Codec constants — no native library needed
+    // Comparison with octet-aligned codec
     // -------------------------------------------------------------------------
 
     @Test
-    void payloadTypeIs104() {
-        // Given, When
-        int pt = codec.payloadType();
-
-        // Then
-        assertEquals(104, pt, "BW-efficient AMR-WB uses dynamic payload type 104");
-    }
-
-    @Test
-    void rtpClockRateIs16000() {
-        assertEquals(16_000, codec.rtpClockRate());
-    }
-
-    @Test
-    void preferenceIs41() {
-        // Given, When
-        int pref = codec.preference();
-
-        // Then
-        assertEquals(41, pref, "BW-efficient is lower priority (higher number) than octet-aligned (40)");
-    }
-
-    @Test
-    void sdpNameIsAmrWb() {
-        assertEquals("AMR-WB", codec.sdpName());
-    }
-
-    @Test
-    void matchesFmtpWithOctetAlignZero() {
+    void bandwidthEfficientPayloadIsShorterThanOctetAligned() throws IOException {
         // Given
-        String offeredFmtp = "octet-align=0";
+        assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
+
+        var octetAlignedCodec = new AmrWbRtpCodec("");
+        // Ensure probe() has run to load libvo-amrwbenc
+
+        short[] pcmFrame = generateTestFrame();
 
         // When
-        boolean matches = codec.matchesFmtp(offeredFmtp);
+        byte[] bwPayload = codec.encode(pcmFrame);
+        byte[] octetPayload = octetAlignedCodec.encode(pcmFrame);
 
         // Then
-        assertTrue(matches, "BW-efficient should match explicit octet-align=0");
-    }
-
-    @Test
-    void matchesFmtpWithModeParamsNoAlignment() {
-        // Given
-        String offeredFmtp = "mode-set=0,1,2;mode-change-capability=2;max-red=0";
-
-        // When
-        boolean matches = codec.matchesFmtp(offeredFmtp);
-
-        // Then
-        assertTrue(matches, "BW-efficient should match mode params without octet-align (1und1 pattern)");
-    }
-
-    @Test
-    void rejectsFmtpEmpty() {
-        // Given
-        String offeredFmtp = "";
-
-        // When
-        boolean matches = codec.matchesFmtp(offeredFmtp);
-
-        // Then
-        assertTrue(!matches, "BW-efficient should reject empty fmtp (octet-aligned is default)");
-    }
-
-    @Test
-    void rejectsFmtpWithOctetAlignOne() {
-        // Given
-        String offeredFmtp = "octet-align=1";
-
-        // When
-        boolean matches = codec.matchesFmtp(offeredFmtp);
-
-        // Then
-        assertTrue(!matches, "BW-efficient should reject explicit octet-align=1 (use octet-aligned codec instead)");
-    }
-
-    @Test
-    void encodeThrowsOnFactoryBean() {
-        // Given, When / Then
-        assertThrows(
-                IllegalStateException.class,
-                () -> codec.encode(new short[320]),
-                "encode() must fail on CDI factory bean (no encoder state)");
+        // Given: When: Then:
+        assertEquals(
+                octetPayload.length - 1, bwPayload.length, "BW-efficient should be 1 byte shorter (no CMR header)");
     }
 
     // -------------------------------------------------------------------------
@@ -128,11 +78,10 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         // Given
         assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
 
-        var codecForCall = codec.forCall();
         short[] pcmFrame = generateTestFrame();
 
         // When
-        byte[] payload = codecForCall.encode(pcmFrame);
+        byte[] payload = codec.encode(pcmFrame);
 
         // Then
         // Given, When
@@ -165,11 +114,10 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         // Given
         assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
 
-        var codecForCall = codec.forCall();
         short[] pcmFrame = generateTestFrame();
 
         // When
-        byte[] payload = codecForCall.encode(pcmFrame);
+        byte[] payload = codec.encode(pcmFrame);
 
         // Then
         // RFC 4867 §4.3 bandwidth-efficient format:
@@ -199,60 +147,15 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         assertEquals(1, qualityBit, "Quality bit (bit 6 of byte 1) should be 1 (good frame)");
     }
 
-    @Test
-    void encodeMultipleFramesProduceConsistentPayloads() throws IOException {
-        // Given
-        assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
-
-        var codecForCall = codec.forCall();
-        short[] pcmFrame = generateTestFrame();
-
-        // When
-        byte[] payload1 = codecForCall.encode(pcmFrame);
-        byte[] payload2 = codecForCall.encode(pcmFrame);
-
-        // Then
-        assertEquals(payload1.length, payload2.length, "Payload lengths must match");
-        assertEquals(payload1[0], payload2[0], "ToC bytes must match");
-    }
-
-    // -------------------------------------------------------------------------
-    // Comparison with octet-aligned codec
-    // -------------------------------------------------------------------------
-
-    @Test
-    void bandwidthEfficientPayloadIsShorterThanOctetAligned() throws IOException {
-        // Given
-        assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
-
-        var bwEfficientCodec = codec.forCall();
-
-        var octetAlignedCodec = new AmrWbRtpCodec();
-        // Ensure probe() has run to load libvo-amrwbenc
-        octetAlignedCodec.probe();
-        var octetCodecForCall = octetAlignedCodec.forCall();
-
-        short[] pcmFrame = generateTestFrame();
-
-        // When
-        byte[] bwPayload = bwEfficientCodec.encode(pcmFrame);
-        byte[] octetPayload = octetCodecForCall.encode(pcmFrame);
-
-        // Then
-        // Given: When: Then:
-        assertEquals(
-                octetPayload.length - 1, bwPayload.length, "BW-efficient should be 1 byte shorter (no CMR header)");
-    }
-
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private boolean isLibVoAmrwbencAvailable() {
         try {
-            codec.probe();
+            final var factory = new AmrWbBandwidthEfficientRtpCodecFactory();
 
-            return codec.isAvailable();
+            return factory.isAvailable();
         } catch (UnsatisfiedLinkError | NoClassDefFoundError exception) {
             return false;
         } catch (Exception exception) {

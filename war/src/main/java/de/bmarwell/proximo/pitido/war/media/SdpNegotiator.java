@@ -12,7 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import java.io.IOException;
@@ -44,7 +44,7 @@ import javax.servlet.sip.SipServletRequest;
  * <p>Codec preference is driven by CDI-injected {@link RtpCodecFactory} beans, filtered by
  * {@link RtpCodecFactory#isAvailable()} and sorted by {@link RtpCodecFactory#preference()} (lower = preferred).
  * The first available codec whose payload type appears in the SDP offer is selected.
- * If no injected codec matches, {@link PcmaRtpCodec#INSTANCE} is used as the unconditional
+ * If no injected codec matches, {@link PcmaRtpCodecFactory#INSTANCE} is used as the unconditional
  * fallback (PCMA is always available).
  *
  * <p>The SDP answer advertises {@code sendonly} direction since this application is a
@@ -186,7 +186,7 @@ public class SdpNegotiator {
                             .map(Integer::parseInt)
                             .collect(Collectors.toSet());
                 })
-                .orElse(Set.of(PcmaRtpCodec.INSTANCE.payloadType()));
+                .orElse(Set.of(PcmaRtpCodecFactory.INSTANCE.payloadType()));
     }
 
     /**
@@ -281,7 +281,7 @@ public class SdpNegotiator {
      * static range (0–95) and which are offered without an explicit {@code a=rtpmap} line (e.g.
      * PCMA at PT 8, which is sometimes omitted by legacy endpoints).
      *
-     * <p>Falls back to {@link PcmaRtpCodec#INSTANCE} if no injected codec matches.
+     * <p>Falls back to {@link PcmaRtpCodecFactory#INSTANCE} if no injected codec matches.
      *
      * @param sdpOffer the full SDP offer string from the INVITE body
      * @return a codec descriptor (CDI bean) whose {@link RtpCodecFactory#payloadType()} returns the PT
@@ -300,7 +300,7 @@ public class SdpNegotiator {
      * @param codecs   available codec descriptors, each an {@code @ApplicationScoped} CDI bean
      * @param sdpOffer the full SDP offer string from the INVITE body
      * @return a {@link NegotiatedRtpCodec} wrapping the selected codec descriptor with the
-     *         negotiated payload type; call {@link RtpCodecFactory#forCall()} on the announcement thread
+     *         negotiated payload type; call {@link RtpCodecFactory#forCall(String)} on the announcement thread
      */
     static RtpCodecFactory selectCodec(Stream<RtpCodecFactory> codecs, String sdpOffer) {
         Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer);
@@ -318,8 +318,8 @@ public class SdpNegotiator {
             LOGGER.log(System.Logger.Level.DEBUG, "No matching codec found in SDP offer; falling back to PCMA (PT 8)");
         }
 
-        NegotiatedRtpCodec result = selected.orElseGet(
-                () -> new NegotiatedRtpCodec(PcmaRtpCodec.INSTANCE, PcmaRtpCodec.INSTANCE.payloadType(), ""));
+        NegotiatedRtpCodec result = selected.orElseGet(() ->
+                new NegotiatedRtpCodec(PcmaRtpCodecFactory.INSTANCE, PcmaRtpCodecFactory.INSTANCE.payloadType(), ""));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
