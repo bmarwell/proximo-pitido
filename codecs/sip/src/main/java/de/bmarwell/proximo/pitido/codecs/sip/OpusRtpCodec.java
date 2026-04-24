@@ -129,31 +129,6 @@ public class OpusRtpCodec extends NativeRtpCodec implements RtpCodec {
     }
 
     @Override
-    public int payloadType() {
-        return 120;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 48_000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 48_000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 960;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 960;
-    }
-
-    @Override
     public String fmtpParams() {
         // useinbandfec=1: instruct the remote to use in-band FEC recovery when available.
         return "useinbandfec=1";

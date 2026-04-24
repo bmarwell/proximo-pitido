@@ -129,7 +129,7 @@ public class CallSessionManager {
 
         callState.callFuture().cancel(true);
         callState.receiverFuture().cancel(true);
-        String codecName = callState.media().codecFactory().sdpName();
+        String codecName = callState.media().codecFactory().metadata().sdpName();
         closeSocket(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(

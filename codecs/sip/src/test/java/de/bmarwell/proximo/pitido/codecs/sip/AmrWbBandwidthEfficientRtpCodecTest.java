@@ -45,6 +45,25 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         assertEquals(payload1[0], payload2[0], "ToC bytes must match");
     }
 
+    @Test
+    void payloadTypeIs104() {
+        // Given, When
+        int pt = codec.metadata().payloadType();
+
+        // Then
+        assertEquals(104, pt, "BW-efficient AMR-WB uses dynamic payload type 104");
+    }
+
+    @Test
+    void rtpClockRateIs16000() {
+        assertEquals(16_000, codec.metadata().rtpClockRate());
+    }
+
+    @Test
+    void sdpNameIsAmrWb() {
+        assertEquals("AMR-WB", codec.metadata().sdpName());
+    }
+
     // -------------------------------------------------------------------------
     // Comparison with octet-aligned codec
     // -------------------------------------------------------------------------

@@ -12,7 +12,6 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -20,16 +19,6 @@ import org.junit.jupiter.api.Test;
 public class PcmuRtpCodecFactoryTest {
 
     private final PcmuRtpCodecFactory codecFactory = new PcmuRtpCodecFactory();
-
-    @Test
-    void payloadTypeIsZero() {
-        assertEquals(0, codecFactory.payloadType());
-    }
-
-    @Test
-    void sdpNameIsPcmu() {
-        assertEquals("PCMU", codecFactory.sdpName());
-    }
 
     @Test
     void isAlwaysAvailable() {

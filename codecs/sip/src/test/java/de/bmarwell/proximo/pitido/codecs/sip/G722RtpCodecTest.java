@@ -31,6 +31,36 @@ class G722RtpCodecTest {
         assertEquals("", codec.fmtpParams());
     }
 
+    @Test
+    void payloadTypeIsNine() {
+        assertEquals(9, codec.metadata().payloadType());
+    }
+
+    @Test
+    void rtpClockRateIs8000() {
+        assertEquals(8000, codec.metadata().rtpClockRate());
+    }
+
+    @Test
+    void inputSampleRateIs16000() {
+        assertEquals(16_000, codec.metadata().inputSampleRate());
+    }
+
+    @Test
+    void samplesPerFrameIs320() {
+        assertEquals(320, codec.metadata().samplesPerFrame());
+    }
+
+    @Test
+    void rtpTimestampIncrementIs160() {
+        assertEquals(160, codec.metadata().rtpTimestampIncrement());
+    }
+
+    @Test
+    void sdpNameIsG722() {
+        assertEquals("G722", codec.metadata().sdpName());
+    }
+
     // -------------------------------------------------------------------------
     // Tests that require libspandsp — skipped automatically when not installed
     // -------------------------------------------------------------------------

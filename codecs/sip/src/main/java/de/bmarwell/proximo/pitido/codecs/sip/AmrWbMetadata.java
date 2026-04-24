@@ -22,7 +22,7 @@ public final class AmrWbMetadata implements RtpCodecMetadata {
 
     @Override
     public int payloadType() {
-        return 96;
+        return 98;
     }
 
     @Override

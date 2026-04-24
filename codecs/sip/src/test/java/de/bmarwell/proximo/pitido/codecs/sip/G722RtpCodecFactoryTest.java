@@ -24,36 +24,6 @@ public class G722RtpCodecFactoryTest {
     private final G722RtpCodecFactory codec = new G722RtpCodecFactory();
 
     @Test
-    void payloadTypeIsNine() {
-        assertEquals(9, codec.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs8000() {
-        assertEquals(8000, codec.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs16000() {
-        assertEquals(16_000, codec.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs320() {
-        assertEquals(320, codec.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs160() {
-        assertEquals(160, codec.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsG722() {
-        assertEquals("G722", codec.sdpName());
-    }
-
-    @Test
     void preferenceIs50() {
         assertEquals(50, codec.preference());
     }

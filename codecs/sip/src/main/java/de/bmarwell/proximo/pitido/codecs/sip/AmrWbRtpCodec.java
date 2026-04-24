@@ -168,31 +168,6 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
     }
 
     @Override
-    public int payloadType() {
-        return 96;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 16_000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 16_000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 320;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 320;
-    }
-
-    @Override
     public String fmtpParams() {
         // octet-align=1: use the simpler octet-aligned packetisation (RFC 4867 §4.4).
         return "octet-align=1";

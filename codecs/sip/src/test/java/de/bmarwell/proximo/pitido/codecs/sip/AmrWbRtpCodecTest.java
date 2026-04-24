@@ -34,6 +34,36 @@ class AmrWbRtpCodecTest {
     }
 
     @Test
+    void payloadTypeIs98() {
+        assertEquals(98, codec.metadata().payloadType());
+    }
+
+    @Test
+    void rtpClockRateIs16000() {
+        assertEquals(16_000, codec.metadata().rtpClockRate());
+    }
+
+    @Test
+    void inputSampleRateIs16000() {
+        assertEquals(16_000, codec.metadata().inputSampleRate());
+    }
+
+    @Test
+    void samplesPerFrameIs320() {
+        assertEquals(320, codec.metadata().samplesPerFrame());
+    }
+
+    @Test
+    void rtpTimestampIncrementIs320() {
+        assertEquals(320, codec.metadata().rtpTimestampIncrement());
+    }
+
+    @Test
+    void sdpNameIsAmrWb() {
+        assertEquals("AMR-WB", codec.metadata().sdpName());
+    }
+
+    @Test
     void closeOnFactoryBean_isNoOp() {
         // given: a fresh factory bean (no callArena, no stateSegment)
         var factory = new AmrWbRtpCodec("");

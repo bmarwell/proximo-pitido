@@ -27,31 +27,12 @@ public class AmrWbBandwidthEfficientRtpCodecFactoryTest {
     // -------------------------------------------------------------------------
 
     @Test
-    void payloadTypeIs104() {
-        // Given, When
-        int pt = codec.payloadType();
-
-        // Then
-        assertEquals(104, pt, "BW-efficient AMR-WB uses dynamic payload type 104");
-    }
-
-    @Test
-    void rtpClockRateIs16000() {
-        assertEquals(16_000, codec.rtpClockRate());
-    }
-
-    @Test
     void preferenceIs41() {
         // Given, When
         int pref = codec.preference();
 
         // Then
         assertEquals(41, pref, "BW-efficient is lower priority (higher number) than octet-aligned (40)");
-    }
-
-    @Test
-    void sdpNameIsAmrWb() {
-        assertEquals("AMR-WB", codec.sdpName());
     }
 
     @Test

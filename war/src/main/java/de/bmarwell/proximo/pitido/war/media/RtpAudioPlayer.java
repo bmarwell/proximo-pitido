@@ -106,7 +106,7 @@ public class RtpAudioPlayer implements AudioPlayer {
             return;
         }
 
-        short[] silenceFrame = new short[this.codec.samplesPerFrame()];
+        short[] silenceFrame = new short[this.codec.metadata().samplesPerFrame()];
 
         for (long i = 0; i < packets; i++) {
             if (Thread.currentThread().isInterrupted()) {
@@ -114,7 +114,7 @@ public class RtpAudioPlayer implements AudioPlayer {
             }
 
             if (this.callMedia.isHeld()) {
-                this.timestamp += this.codec.rtpTimestampIncrement();
+                this.timestamp += this.codec.metadata().rtpTimestampIncrement();
                 Thread.sleep(20);
                 continue;
             }
@@ -154,11 +154,12 @@ public class RtpAudioPlayer implements AudioPlayer {
         advanceTimestampForSilence();
 
         try (InputStream rawStream = openResource(resourcePath);
-                PcmStream pcm =
-                        this.pcmDecoderFactory.forPath(resourcePath).open(rawStream, this.codec.inputSampleRate())) {
+                PcmStream pcm = this.pcmDecoderFactory
+                        .forPath(resourcePath)
+                        .open(rawStream, this.codec.metadata().inputSampleRate())) {
             int decoderSamplesPerPacket = pcm.sampleRate() / RTP_PACKETS_PER_SECOND;
             short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
-            short[] codecFrameBuf = new short[this.codec.samplesPerFrame()];
+            short[] codecFrameBuf = new short[this.codec.metadata().samplesPerFrame()];
             validateFrameSizing(decoderSamplesPerPacket, codecFrameBuf.length);
 
             while (true) {
@@ -169,7 +170,7 @@ public class RtpAudioPlayer implements AudioPlayer {
                 if (this.callMedia.isHeld()) {
                     // Call is on hold: pause PCM consumption and RTP sending.
                     // Advance the RTP timestamp so the timeline stays consistent on resume.
-                    this.timestamp += this.codec.rtpTimestampIncrement();
+                    this.timestamp += this.codec.metadata().rtpTimestampIncrement();
                     Thread.sleep(20);
                     continue;
                 }
@@ -215,7 +216,7 @@ public class RtpAudioPlayer implements AudioPlayer {
 
         if (extraSilenceMs >= 10L) {
             long silencePackets = extraSilenceMs / 20L;
-            this.timestamp += silencePackets * this.codec.rtpTimestampIncrement();
+            this.timestamp += silencePackets * this.codec.metadata().rtpTimestampIncrement();
         }
     }
 
@@ -301,7 +302,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         byte[] packet = new byte[12 + payload.length];
 
         packet[0] = (byte) 0x80; // V=2, P=0, X=0, CC=0
-        packet[1] = (byte) this.codec.payloadType(); // M=0, PT from negotiated codec
+        packet[1] = (byte) this.codec.metadata().payloadType(); // M=0, PT from negotiated codec
         packet[2] = (byte) (seqNumber >> 8);
         packet[3] = (byte) (seqNumber & 0xFF);
         packet[4] = (byte) (timestamp >> 24);
@@ -327,6 +328,6 @@ public class RtpAudioPlayer implements AudioPlayer {
         this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
-        timestamp += this.codec.rtpTimestampIncrement();
+        timestamp += this.codec.metadata().rtpTimestampIncrement();
     }
 }

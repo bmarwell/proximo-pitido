@@ -58,34 +58,4 @@ public final class PcmuRtpCodecFactory implements RtpCodecFactory {
     public RtpCodecMetadata metadata() {
         return METADATA;
     }
-
-    @Override
-    public int payloadType() {
-        return 0;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 8000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 160;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
-    }
-
-    @Override
-    public String sdpName() {
-        return "PCMU";
-    }
 }

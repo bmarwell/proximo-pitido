@@ -306,7 +306,7 @@ public class CallAcceptor {
                 "{0}200 OK — {1}, codec [{2}], remote RTP [{3}]",
                 SipCallHeaders.callPrefix(sessionId),
                 description,
-                media.codecFactory().sdpName(),
+                media.codecFactory().metadata().sdpName(),
                 media.remoteRtp());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");

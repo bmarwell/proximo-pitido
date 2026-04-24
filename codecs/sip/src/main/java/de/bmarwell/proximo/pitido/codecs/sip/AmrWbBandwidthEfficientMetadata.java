@@ -23,7 +23,7 @@ public final class AmrWbBandwidthEfficientMetadata implements RtpCodecMetadata {
 
     @Override
     public int payloadType() {
-        return 96;
+        return 104;
     }
 
     @Override

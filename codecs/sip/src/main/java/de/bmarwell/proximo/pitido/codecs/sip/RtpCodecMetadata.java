@@ -18,8 +18,7 @@ package de.bmarwell.proximo.pitido.codecs.sip;
  * <p>Metadata represents codec characteristics that do not depend on per-call state:
  * sample rates, clock rates, payload types, SDP parameters, etc.
  * Implementations are immutable and thread-safe.
- * Both {@link RtpCodecFactory} and {@link RtpCodec} instances expose metadata via
- * {@link RtpCodecFactory#metadata()} and {@link RtpCodec#metadata()}.
+ * Both {@link RtpCodecFactory} and {@link RtpCodec} instances expose metadata via {@link RtpCodec#metadata()}.
  */
 public interface RtpCodecMetadata {
 

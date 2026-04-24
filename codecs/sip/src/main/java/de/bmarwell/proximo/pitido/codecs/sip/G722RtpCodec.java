@@ -92,31 +92,6 @@ public class G722RtpCodec extends NativeRtpCodec implements RtpCodec {
     }
 
     @Override
-    public int payloadType() {
-        return 9;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 16_000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 320;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
-    }
-
-    @Override
     public String fmtpParams() {
         return "";
     }

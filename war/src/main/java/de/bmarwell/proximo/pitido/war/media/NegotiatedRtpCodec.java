@@ -15,6 +15,7 @@ package de.bmarwell.proximo.pitido.war.media;
 import de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata;
 
 /**
  * Wraps a {@link RtpCodecFactory} and overrides {@link #payloadType()} to return the payload type
@@ -48,15 +49,6 @@ import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp)
         implements RtpCodecFactory {
 
-    /**
-     * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.
-     * This value is used in outgoing RTP packet headers and in the SDP answer.
-     */
-    @Override
-    public int payloadType() {
-        return this.negotiatedPayloadType;
-    }
-
     @Override
     public boolean isAvailable() {
         return this.delegate.isAvailable();
@@ -68,7 +60,7 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata metadata() {
+    public RtpCodecMetadata metadata() {
         return this.delegate.metadata();
     }
 
@@ -78,37 +70,12 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public int rtpClockRate() {
-        return this.delegate.rtpClockRate();
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return this.delegate.inputSampleRate();
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return this.delegate.samplesPerFrame();
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return this.delegate.rtpTimestampIncrement();
-    }
-
-    @Override
-    public int sdpChannelCount() {
-        return this.delegate.sdpChannelCount();
-    }
-
-    @Override
-    public String sdpName() {
-        return this.delegate.sdpName();
-    }
-
-    @Override
     public boolean matchesFmtp(String offeredFmtp) {
         return this.delegate.matchesFmtp(offeredFmtp);
+    }
+
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        return this.delegate.fmtpAnswer(offeredFmtp);
     }
 }

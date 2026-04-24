@@ -17,10 +17,10 @@ import java.io.IOException;
 public interface RtpCodec extends AutoCloseable {
 
     /**
-     * Encodes one frame of {@link #samplesPerFrame()} mono PCM samples to the codec's wire format.
+     * Encodes one frame of {@link #metadata()#samplesPerFrame()} mono PCM samples to the codec's wire format.
      *
-     * @param pcmFrame mono PCM samples at {@link #inputSampleRate()}; length must equal
-     *                 {@link #samplesPerFrame()}
+     * @param pcmFrame mono PCM samples at {@link #metadata()#inputSampleRate()}; length must equal
+     *                 {@link #metadata()#samplesPerFrame()}
      * @return encoded payload bytes for one RTP packet
      * @throws IOException if encoding fails
      */
@@ -35,56 +35,6 @@ public interface RtpCodec extends AutoCloseable {
      * @return immutable metadata object
      */
     RtpCodecMetadata metadata();
-
-    /**
-     * RTP payload type (0–127) for this codec.
-     *
-     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#payloadType() payloadType()} instead
-     */
-    @Deprecated(since = "1.0.1")
-    default int payloadType() {
-        return metadata().payloadType();
-    }
-
-    /**
-     * RTP clock rate in Hz, as declared in the SDP {@code a=rtpmap} attribute.
-     *
-     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpClockRate() rtpClockRate()} instead
-     */
-    @Deprecated(since = "1.0.1")
-    default int rtpClockRate() {
-        return metadata().rtpClockRate();
-    }
-
-    /**
-     * PCM sample rate in Hz expected by {@link #encode(short[])}.
-     *
-     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#inputSampleRate() inputSampleRate()} instead
-     */
-    @Deprecated(since = "1.0.1")
-    default int inputSampleRate() {
-        return metadata().inputSampleRate();
-    }
-
-    /**
-     * Number of PCM samples (at {@link #inputSampleRate()}) consumed per 20 ms RTP packet.
-     *
-     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#samplesPerFrame() samplesPerFrame()} instead
-     */
-    @Deprecated(since = "1.0.1")
-    default int samplesPerFrame() {
-        return metadata().samplesPerFrame();
-    }
-
-    /**
-     * RTP timestamp increment per 20 ms packet.
-     *
-     * @deprecated use {@link #metadata()}.{@link RtpCodecMetadata#rtpTimestampIncrement() rtpTimestampIncrement()} instead
-     */
-    @Deprecated(since = "1.0.1")
-    default int rtpTimestampIncrement() {
-        return metadata().rtpTimestampIncrement();
-    }
 
     /**
      * Returns the {@code a=fmtp} parameter string to place in the SDP answer for this codec,

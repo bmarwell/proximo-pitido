@@ -73,6 +73,8 @@ public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
 
     private static final System.Logger LOGGER = System.getLogger(G722RtpCodecFactory.class.getName());
 
+    private static final RtpCodecMetadata METADATA = new G722Metadata();
+
     /**
      * Probes for {@code libspandsp.so.2} and binds the required FFM method handles.
      *
@@ -103,8 +105,6 @@ public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
         return 50;
     }
 
-    private static final RtpCodecMetadata METADATA = new G722Metadata();
-
     @Override
     public RtpCodecMetadata metadata() {
         return METADATA;
@@ -125,38 +125,5 @@ public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
     @Override
     public G722RtpCodec forCall(String fmt) {
         return new G722RtpCodec();
-    }
-
-    @Override
-    public int payloadType() {
-        return 9;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        // RFC 3551 §4.5.2: G.722 uses an 8 000 Hz RTP clock despite 16 kHz processing.
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 16_000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        // 20 ms × 16 000 Hz = 320 samples
-        return 320;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        // rtpClockRate() / 50 packets per second = 160
-        return 160;
-    }
-
-    @Override
-    public String sdpName() {
-        return "G722";
     }
 }

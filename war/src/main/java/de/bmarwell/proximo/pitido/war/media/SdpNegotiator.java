@@ -105,7 +105,7 @@ public class SdpNegotiator {
                 localPort,
                 remoteIp,
                 remotePort,
-                codec.sdpName(),
+                codec.getClass().getSimpleName(),
                 telephoneEventPt);
 
         String sdpAnswer = buildSdpAnswer(localIp, localPort, codec, telephoneEventPt);
@@ -192,7 +192,7 @@ public class SdpNegotiator {
                             .map(Integer::parseInt)
                             .collect(Collectors.toSet());
                 })
-                .orElse(Set.of(pcmaFallback.payloadType()));
+                .orElse(Set.of(pcmaFallback.metadata().payloadType()));
     }
 
     /**
@@ -287,10 +287,8 @@ public class SdpNegotiator {
      * static range (0–95) and which are offered without an explicit {@code a=rtpmap} line (e.g.
      * PCMA at PT 8, which is sometimes omitted by legacy endpoints).
      *
-     * <p>Falls back to {@link PcmaRtpCodecFactory#INSTANCE} if no injected codec matches.
-     *
      * @param sdpOffer the full SDP offer string from the INVITE body
-     * @return a codec descriptor (CDI bean) whose {@link RtpCodecFactory#payloadType()} returns the PT
+     * @return a codec descriptor (CDI bean) whose {@link RtpCodecFactory#metadata()#payloadType} ()} returns the PT
      *         actually negotiated with the caller; callers must call {@link RtpCodecFactory#forCall()}
      *         on the announcement thread before encoding
      */
@@ -325,50 +323,55 @@ public class SdpNegotiator {
             LOGGER.log(System.Logger.Level.DEBUG, "No matching codec found in SDP offer; falling back to PCMA (PT 8)");
         }
 
-        NegotiatedRtpCodec result =
-                selected.orElseGet(() -> new NegotiatedRtpCodec(pcmaFallback, pcmaFallback.payloadType(), ""));
+        NegotiatedRtpCodec result = selected.orElseGet(() ->
+                new NegotiatedRtpCodec(pcmaFallback, pcmaFallback.metadata().payloadType(), ""));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,
                 "Codec selected: {0} (negotiated PT {1}) from offered payload types {2}",
-                result.sdpName(),
-                result.payloadType(),
+                result.metadata().sdpName(),
+                result.metadata().payloadType(),
                 offeredPts);
 
         return result;
     }
 
     /**
-     * Finds the negotiated payload type for a codec against the offered payload types and rtpmap.
+     * Finds the negotiated payload type for a codecFactory against the offered payload types and rtpmap.
      *
-     * <p>Iterates the rtpmap entries (in offer order) looking for entries whose codec key matches
+     * <p>Iterates the rtpmap entries (in offer order) looking for entries whose codecFactory key matches
      * {@code "<sdpName>/<rtpClockRate>"} (case-insensitive) and whose fmtp parameters are
      * accepted by {@link RtpCodecFactory#matchesFmtp(String)}.
-     * Falls back to the codec's own static payload type if no rtpmap entry is present (e.g.
+     * Falls back to the codecFactory's own static payload type if no rtpmap entry is present (e.g.
      * PCMA at PT 8 offered without an explicit {@code a=rtpmap:8 PCMA/8000} line).
      *
-     * @param codec      the codec descriptor to match
+     * @param codecFactory      the codecFactory descriptor to match
      * @param offeredPts the set of payload types from the {@code m=audio} line
-     * @param rtpmap     map of payload type → codec key from {@code a=rtpmap} lines
+     * @param rtpmap     map of payload type → codecFactory key from {@code a=rtpmap} lines
      * @param fmtp       map of payload type → fmtp params from {@code a=fmtp} lines
-     * @return the payload type to use, or empty if the codec is not compatible with this offer
+     * @return the payload type to use, or empty if the codecFactory is not compatible with this offer
      */
     private static Optional<Integer> negotiatedPt(
-            RtpCodecFactory codec, Set<Integer> offeredPts, Map<Integer, String> rtpmap, Map<Integer, String> fmtp) {
-        String codecKey = (codec.sdpName() + "/" + codec.rtpClockRate()).toUpperCase(Locale.ROOT);
+            RtpCodecFactory codecFactory,
+            Set<Integer> offeredPts,
+            Map<Integer, String> rtpmap,
+            Map<Integer, String> fmtp) {
+        String codecKey = (codecFactory.metadata().sdpName() + "/"
+                        + codecFactory.metadata().rtpClockRate())
+                .toUpperCase(Locale.ROOT);
 
-        // Find the first offered PT whose rtpmap matches this codec and whose fmtp is compatible.
+        // Find the first offered PT whose rtpmap matches this codecFactory and whose fmtp is compatible.
         Optional<Integer> fromRtpmap = rtpmap.entrySet().stream()
                 .filter(entry -> offeredPts.contains(entry.getKey()))
                 .filter(entry -> entry.getValue().equals(codecKey))
                 .filter(entry -> {
                     String offeredFmtp = fmtp.getOrDefault(entry.getKey(), "");
-                    boolean matches = codec.matchesFmtp(offeredFmtp);
+                    boolean matches = codecFactory.matchesFmtp(offeredFmtp);
 
                     LOGGER.log(
                             System.Logger.Level.TRACE,
-                            "negotiatedPt: codec={0} PT={1} offeredFmtp=''{2}'' matches={3}",
-                            codec.sdpName(),
+                            "negotiatedPt: codecFactory={0} PT={1} offeredFmtp=''{2}'' matches={3}",
+                            codecFactory.metadata().sdpName(),
                             entry.getKey(),
                             offeredFmtp,
                             matches);
@@ -382,11 +385,11 @@ public class SdpNegotiator {
             return fromRtpmap;
         }
 
-        int payloadType = codec.payloadType();
+        int payloadType = codecFactory.metadata().payloadType();
 
         // Fallback: static payload type (0–95) offered without an explicit rtpmap line.
         // Dynamic PTs (96–127) must always be declared via a=rtpmap; skip them here.
-        // Also skip if the rtpmap already maps this PT to a different codec.
+        // Also skip if the rtpmap already maps this PT to a different codecFactory.
         if (payloadType > 95) {
             return Optional.empty();
         }
@@ -395,7 +398,7 @@ public class SdpNegotiator {
             return Optional.empty();
         }
 
-        if (offeredPts.contains(payloadType) && codec.matchesFmtp("")) {
+        if (offeredPts.contains(payloadType) && codecFactory.matchesFmtp("")) {
             return Optional.of(payloadType);
         }
 
@@ -416,7 +419,7 @@ public class SdpNegotiator {
                 .append("m=audio ")
                 .append(localPort)
                 .append(" RTP/AVP ")
-                .append(codec.payloadType());
+                .append(codec.metadata().payloadType());
 
         if (telephoneEventPt >= 0) {
             sdp.append(" ").append(telephoneEventPt);
@@ -424,14 +427,14 @@ public class SdpNegotiator {
 
         sdp.append("\r\n")
                 .append("a=rtpmap:")
-                .append(codec.payloadType())
+                .append(codec.metadata().payloadType())
                 .append(" ")
-                .append(codec.sdpName())
+                .append(codec.metadata().sdpName())
                 .append("/")
-                .append(codec.rtpClockRate());
+                .append(codec.metadata().rtpClockRate());
 
-        if (codec.sdpChannelCount() > 1) {
-            sdp.append("/").append(codec.sdpChannelCount());
+        if (codec.metadata().sdpChannelCount() > 1) {
+            sdp.append("/").append(codec.metadata().sdpChannelCount());
         }
 
         sdp.append("\r\n");
@@ -441,13 +444,13 @@ public class SdpNegotiator {
         LOGGER.log(
                 System.Logger.Level.TRACE,
                 "SDP answer fmtp: codec={0} PT={1} fmtpParams=''{2}''",
-                codec.sdpName(),
-                codec.payloadType(),
+                codec.metadata().sdpName(),
+                codec.metadata().payloadType(),
                 fmtpParams);
 
         if (!fmtpParams.isEmpty()) {
             sdp.append("a=fmtp:")
-                    .append(codec.payloadType())
+                    .append(codec.metadata().payloadType())
                     .append(" ")
                     .append(fmtpParams)
                     .append("\r\n");

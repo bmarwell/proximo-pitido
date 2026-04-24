@@ -23,36 +23,6 @@ public class AmrWbRtpCodecFactoryTest {
     private final AmrWbRtpCodecFactory codec = new AmrWbRtpCodecFactory();
 
     @Test
-    void payloadTypeIs98() {
-        assertEquals(98, codec.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs16000() {
-        assertEquals(16_000, codec.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs16000() {
-        assertEquals(16_000, codec.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs320() {
-        assertEquals(320, codec.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs320() {
-        assertEquals(320, codec.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsAmrWb() {
-        assertEquals("AMR-WB", codec.sdpName());
-    }
-
-    @Test
     void preferenceIsHigherThanG722() {
         // given
         var g722 = new G722RtpCodecFactory();

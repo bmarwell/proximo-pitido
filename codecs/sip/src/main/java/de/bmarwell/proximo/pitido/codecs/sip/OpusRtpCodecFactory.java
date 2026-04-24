@@ -66,13 +66,11 @@ import javax.enterprise.context.ApplicationScoped;
  *
  * <h2>Factory / per-call pattern</h2>
  *
- * <p>Opus ADPCM carries predictor state across packets.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall()} determines the
+ * <p>Opus carries predictor state across packets.
+ * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} determines the
  * required encoder state size via {@code opus_encoder_get_size}, allocates a confined
  * {@link Arena}, initialises it with {@code opus_encoder_init}, and returns a plain (non-CDI)
  * {@code OpusRtpCodec} instance.
- * When the call ends, {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager} calls
- * {@link #close()}, which releases the confined arena and all native state immediately.
  *
  * @see G722RtpCodecFactory
  * @see NativeRtpCodecFactory
@@ -82,6 +80,8 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
 
     private static final System.Logger LOGGER = System.getLogger(OpusRtpCodecFactory.class.getName());
 
+    private static final RtpCodecMetadata METADATA = new OpusMetadata();
+
     /** Opus native sample rate: 48 000 Hz. */
     private static final int OPUS_SAMPLE_RATE = 48_000;
 
@@ -89,11 +89,10 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
     private static final int FRAME_SAMPLES = 960;
 
     /**
-     * Probes for {@code libopus.so.0} and binds all required FFM method handles.
+     * Probes for {@code libopus.so.0}.
      *
      * <p>Called once by the CDI container after construction.
      * Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
-     * Uses {@link Arena#global()} so the library remains loaded for the lifetime of the JVM.
      */
     @PostConstruct
     @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
@@ -121,8 +120,6 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
         return 30;
     }
 
-    private static final RtpCodecMetadata METADATA = new OpusMetadata();
-
     @Override
     public RtpCodecMetadata metadata() {
         return METADATA;
@@ -138,50 +135,7 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
      * @throws IllegalStateException if encoder initialisation fails
      */
     @Override
-    public RtpCodec forCall(String fmt) {
+    public OpusRtpCodec forCall(String fmt) {
         return new OpusRtpCodec(OPUS_SAMPLE_RATE, FRAME_SAMPLES);
-    }
-
-    @Override
-    public int payloadType() {
-        // De-facto standard dynamic payload type for Opus, used by virtually all softphones.
-        return 111;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        // RFC 7587 §4: Opus RTP clock rate is 48 000 Hz (no historical anomaly here).
-        return OPUS_SAMPLE_RATE;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return OPUS_SAMPLE_RATE;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        // 20 ms × 48 000 Hz = 960 samples
-        return FRAME_SAMPLES;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        // 48 000 Hz / 50 packets per second = 960
-        return FRAME_SAMPLES;
-    }
-
-    @Override
-    public String sdpName() {
-        return "opus";
-    }
-
-    /**
-     * Returns {@code 2} as required by RFC 7587 §5, regardless of actual channel count.
-     * The stream is mono; the SDP channel field is fixed at 2 for interoperability.
-     */
-    @Override
-    public int sdpChannelCount() {
-        return 2;
     }
 }

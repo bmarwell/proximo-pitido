@@ -21,43 +21,6 @@ public class OpusRtpCodecFactoryTest {
     private final OpusRtpCodecFactory codecFactory = new OpusRtpCodecFactory();
 
     @Test
-    void payloadTypeIs111() {
-        assertEquals(111, codecFactory.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs48000() {
-        assertEquals(48_000, codecFactory.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs48000() {
-        assertEquals(48_000, codecFactory.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs960() {
-        assertEquals(960, codecFactory.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs960() {
-        assertEquals(960, codecFactory.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsOpus() {
-        assertEquals("opus", codecFactory.sdpName());
-    }
-
-    @Test
-    void sdpChannelCountIsTwo() {
-        // given: RFC 7587 §5 mandates 2 in SDP regardless of actual channel count
-        // when / then
-        assertEquals(2, codecFactory.sdpChannelCount());
-    }
-
-    @Test
     void preferenceIs30() {
         assertEquals(30, codecFactory.preference());
     }

@@ -20,11 +20,48 @@ import org.junit.jupiter.api.Test;
 
 class OpusRtpCodecTest {
 
-    private final OpusRtpCodec codec = (OpusRtpCodec) new OpusRtpCodecFactory().forCall("");
+    private final OpusRtpCodec codec = new OpusRtpCodecFactory().forCall("");
 
     @Test
     void fmtpParamsContainsFec() {
         assertEquals("useinbandfec=1", codec.fmtpParams());
+    }
+
+    @Test
+    void payloadTypeIs120() {
+        assertEquals(120, codec.metadata().payloadType());
+    }
+
+    @Test
+    void rtpClockRateIs48000() {
+        assertEquals(48_000, codec.metadata().rtpClockRate());
+    }
+
+    @Test
+    void inputSampleRateIs48000() {
+        assertEquals(48_000, codec.metadata().inputSampleRate());
+    }
+
+    @Test
+    void samplesPerFrameIs960() {
+        assertEquals(960, codec.metadata().samplesPerFrame());
+    }
+
+    @Test
+    void rtpTimestampIncrementIs960() {
+        assertEquals(960, codec.metadata().rtpTimestampIncrement());
+    }
+
+    @Test
+    void sdpNameIsOpus() {
+        assertEquals("opus", codec.metadata().sdpName());
+    }
+
+    @Test
+    void sdpChannelCountIsTwo() {
+        // given: RFC 7587 §5 mandates 2 in SDP regardless of actual channel count
+        // when / then
+        assertEquals(2, codec.metadata().sdpChannelCount());
     }
 
     // -------------------------------------------------------------------------

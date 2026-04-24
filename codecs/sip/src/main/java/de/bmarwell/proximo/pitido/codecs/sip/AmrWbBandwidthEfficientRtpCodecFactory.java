@@ -57,15 +57,7 @@ public final class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecF
     private static final System.Logger LOGGER =
             System.getLogger(AmrWbBandwidthEfficientRtpCodecFactory.class.getName());
 
-    /**
-     * Payload type for bandwidth-efficient AMR-WB (dynamic; typically 104 from 1&1 Mobilfunk).
-     * This is a placeholder used only during factory bean construction.
-     * The {@link #payloadType()} method always returns this constant because the SDP negotiation
-     * framework handles dynamic payload type mapping externally.
-     * The actual PT used in SDP answers and RTP demux is determined by {@link SdpNegotiator},
-     * which wraps this codec in a {@link NegotiatedRtpCodec} with the correct PT.
-     */
-    private static final int PAYLOAD_TYPE_PLACEHOLDER = 104;
+    private static final RtpCodecMetadata METADATA = new AmrWbBandwidthEfficientMetadata();
 
     /**
      * Preference order: bandwidth-efficient is now preferred (lower number = higher preference).
@@ -94,26 +86,9 @@ public final class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecF
     }
 
     @Override
-    public String sdpName() {
-        return "AMR-WB";
-    }
-
-    @Override
-    public int payloadType() {
-        return PAYLOAD_TYPE_PLACEHOLDER;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return RTP_CLOCK_RATE;
-    }
-
-    @Override
     public int preference() {
         return PREFERENCE;
     }
-
-    private static final RtpCodecMetadata METADATA = new AmrWbBandwidthEfficientMetadata();
 
     @Override
     public RtpCodecMetadata metadata() {

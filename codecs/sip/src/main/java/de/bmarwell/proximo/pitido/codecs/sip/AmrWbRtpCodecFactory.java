@@ -90,14 +90,7 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
 
     private static final System.Logger LOGGER = System.getLogger(AmrWbRtpCodecFactory.class.getName());
 
-    /** Dynamic payload type for AMR-WB; conventional value used by all major VoLTE stacks. */
-    private static final int PAYLOAD_TYPE = 98;
-
-    /** AMR-WB processes audio at 16 000 Hz. */
-    private static final int SAMPLE_RATE = 16_000;
-
-    /** 20 ms frame at 16 000 Hz: 320 samples. */
-    private static final int FRAME_SAMPLES = 320;
+    private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
 
     /**
      * Probes for {@code libvo-amrwbenc.so.0} and binds all required FFM method handles.
@@ -132,8 +125,6 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
         return 40;
     }
 
-    private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
-
     @Override
     public RtpCodecMetadata metadata() {
         return METADATA;
@@ -167,38 +158,6 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
     static boolean isOctetAlignParam(String param) {
         String[] kv = param.split("=", 2);
         return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());
-    }
-
-    @Override
-    public int payloadType() {
-        return PAYLOAD_TYPE;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return SAMPLE_RATE;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return SAMPLE_RATE;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        // 20 ms × 16 000 Hz = 320 samples
-        return FRAME_SAMPLES;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        // 16 000 Hz / 50 packets per second = 320
-        return FRAME_SAMPLES;
-    }
-
-    @Override
-    public String sdpName() {
-        return "AMR-WB";
     }
 
     /**
