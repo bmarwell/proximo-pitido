@@ -23,6 +23,13 @@ import java.util.Locale;
  *
  * All methods accept pre-computed diagnostic values and are responsible only for formatting and
  * emitting log messages.
+ *
+ * **To enable trace logging for this channel only, configure the logger name:**
+ * ```
+ * de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging=TRACE
+ * ```
+ *
+ * This allows selective debugging without enabling trace on the main codec class.
  * -->
  */
 public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
