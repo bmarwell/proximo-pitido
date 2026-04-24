@@ -106,7 +106,7 @@ class SipRegistrationListenerTest {
     void resolveGrantedExpires_usesMatchingContactExpires_whenHeaderIsMissing() throws Exception {
         // given
         var listener = new SipRegistrationListener();
-        listener.sipId = "051143820934";
+        listener.sipId = java.util.Optional.of("051143820934");
         SipServletResponse response = mock(SipServletResponse.class);
         Address contactAddress = mock(Address.class);
         SipURI sipUri = mock(SipURI.class);

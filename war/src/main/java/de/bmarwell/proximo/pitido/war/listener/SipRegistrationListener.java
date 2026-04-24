@@ -19,6 +19,7 @@ import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
 import java.io.IOException;
 import java.util.ListIterator;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -86,26 +87,26 @@ public class SipRegistrationListener {
     /** SIP domain of the registrar, e.g. {@code tel.t-online.de} or {@code sip.sipgate.de}. Maps to {@code SIP_REGISTRAR}. */
     @Inject
     @ConfigProperty(name = "sip.registrar", defaultValue = "")
-    String registrar;
+    Optional<String> registrar;
 
     /** SIP subscriber ID / phone number used to build the SIP URI. Maps to {@code SIP_SIPID}. */
     @Inject
     @ConfigProperty(name = "sip.sipid", defaultValue = "")
-    String sipId;
+    Optional<String> sipId;
 
     /** Authentication username (often an e-mail address). Maps to {@code SIP_USER_ID}. */
     @Inject
     @ConfigProperty(name = "sip.user.id", defaultValue = "")
-    String loginUserId;
+    Optional<String> loginUserId;
 
     /** Authentication password. Maps to {@code SIP_USER_PASSWORD}. */
     @Inject
     @ConfigProperty(name = "sip.user.password", defaultValue = "")
-    String loginPassword;
+    Optional<String> loginPassword;
 
     @Inject
     @ConfigProperty(name = "sip.registration.expires", defaultValue = "3600")
-    int expires = 3600;
+    int expires;
 
     @Inject
     SrvDnsResolver srvDnsResolver;
@@ -263,7 +264,7 @@ public class SipRegistrationListener {
 
         var applicationSession = sipFactory.createApplicationSession();
         Objects.requireNonNull(applicationSession.getApplicationName(), "applicationName must not be null");
-        var fromUri = sipFactory.createSipURI(this.sipId, this.registrar);
+        var fromUri = sipFactory.createSipURI(this.sipId.orElse(""), this.registrar.orElse(""));
 
         try {
             var requestURI = buildRequestUri(sipFactory);
@@ -510,12 +511,12 @@ public class SipRegistrationListener {
     }
 
     private URI buildRequestUri(SipFactory sipFactory) throws ServletParseException {
-        String sipServer = srvDnsResolver.resolve(this.registrar);
+        String sipServer = srvDnsResolver.resolve(this.registrar.orElse(""));
         return sipFactory.createURI("sip:" + sipServer + ":5060;transport=tcp");
     }
 
     private Address buildContactAddress(SipFactory sipFactory) {
-        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId, localSipHostProvider.get()));
+        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId.orElse(""), localSipHostProvider.get()));
     }
 
     private String buildAuthHeader(SipServletResponse challengeResponse) {
@@ -529,7 +530,7 @@ public class SipRegistrationListener {
         LOGGER.log(System.Logger.Level.DEBUG, "WWW-Authenticate challenge: [{0}]", wwwAuth);
         var challenge = SipDigestChallenge.parse(wwwAuth);
         return digestComputer.buildAuthorizationHeader(
-                this.loginUserId, this.loginPassword, challenge, "sip:" + this.registrar);
+                this.loginUserId.orElse(""), this.loginPassword.orElse(""), challenge, "sip:" + this.registrar);
     }
 
     private static void cancelTask(ScheduledFuture<?> task) {

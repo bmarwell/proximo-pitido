@@ -14,6 +14,7 @@ package de.bmarwell.proximo.pitido.war.listener;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.annotation.PostConstruct;
@@ -49,19 +50,19 @@ public class SipCallBlacklist {
 
     @Inject
     @ConfigProperty(name = "sip.blacklist.from.users", defaultValue = "")
-    String fromUsersConfig;
+    Optional<String> fromUsersConfig;
 
     @Inject
     @ConfigProperty(name = "sip.blacklist.user.agents", defaultValue = "")
-    String userAgentsConfig;
+    Optional<String> userAgentsConfig;
 
     private List<String> fromUsers;
     private List<String> userAgentPrefixes;
 
     @PostConstruct
     void init() {
-        this.fromUsers = parseCommaSeparated(this.fromUsersConfig);
-        this.userAgentPrefixes = parseCommaSeparated(this.userAgentsConfig);
+        this.fromUsers = parseCommaSeparated(this.fromUsersConfig.orElse(""));
+        this.userAgentPrefixes = parseCommaSeparated(this.userAgentsConfig.orElse(""));
         LOGGER.log(
                 System.Logger.Level.INFO,
                 "Call blacklist initialised — blocked from-users: {0}, blocked user-agent prefixes: {1}",
@@ -74,6 +75,10 @@ public class SipCallBlacklist {
      * Checks the {@code User-Agent} header and the user part of the {@code From} URI.
      */
     public boolean isBlacklisted(SipServletRequest req) {
+        if (!this.isBlocklistEnabled()) {
+            return false;
+        }
+
         String userAgent = req.getHeader("User-Agent");
 
         if (userAgent != null && isBlockedUserAgent(userAgent)) {
@@ -112,10 +117,18 @@ public class SipCallBlacklist {
     }
 
     private boolean isBlockedUserAgent(String userAgent) {
+        if (this.userAgentPrefixes.isEmpty()) {
+            return false;
+        }
+
         return this.userAgentPrefixes.stream().anyMatch(userAgent::startsWith);
     }
 
     private boolean isBlockedFromUser(String user) {
+        if (this.fromUsers.isEmpty()) {
+            return false;
+        }
+
         return this.fromUsers.contains(user);
     }
 
@@ -174,5 +187,17 @@ public class SipCallBlacklist {
                 .map(String::strip)
                 .filter(s -> !s.isEmpty())
                 .toList();
+    }
+
+    public List<String> getFromUsers() {
+        return List.copyOf(fromUsers);
+    }
+
+    public List<String> getUserAgentPrefixes() {
+        return List.copyOf(userAgentPrefixes);
+    }
+
+    public boolean isBlocklistEnabled() {
+        return !this.getFromUsers().isEmpty() || !this.getUserAgentPrefixes().isEmpty();
     }
 }

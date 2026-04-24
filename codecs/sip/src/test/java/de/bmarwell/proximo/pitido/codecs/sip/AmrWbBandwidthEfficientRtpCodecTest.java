@@ -251,9 +251,8 @@ class AmrWbBandwidthEfficientRtpCodecTest {
     private boolean isLibVoAmrwbencAvailable() {
         try {
             codec.probe();
-            var testCodec = codec.forCall();
-            testCodec.encode(generateTestFrame());
-            return true;
+
+            return codec.isAvailable();
         } catch (UnsatisfiedLinkError | NoClassDefFoundError exception) {
             return false;
         } catch (Exception exception) {

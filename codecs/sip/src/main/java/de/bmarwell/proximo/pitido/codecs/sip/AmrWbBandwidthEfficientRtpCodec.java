@@ -18,6 +18,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.util.Arrays;
+import java.util.Locale;
 import javax.enterprise.context.ApplicationScoped;
 
 /**
@@ -273,9 +274,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             LOGGER.log(
                     System.Logger.Level.TRACE,
                     "Encoder output first 3 bytes (hex): {0} {1} {2}",
-                    String.format("%02x", firstByte & 0xFF),
-                    String.format("%02x", secondByte & 0xFF),
-                    String.format("%02x", thirdByte & 0xFF));
+                    String.format(Locale.ROOT, "%02x", firstByte & 0xFF),
+                    String.format(Locale.ROOT, "%02x", secondByte & 0xFF),
+                    String.format(Locale.ROOT, "%02x", thirdByte & 0xFF));
 
             // Sanity check: encoder should output octet-aligned ToC as first byte
             byte expectedOctetAlignedToC = (byte) ((this.encodingMode << 3) | 0x04);
@@ -388,10 +389,11 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                 int bytesToShow = Math.min(10, bwEfficientPayload.length);
                 for (int i = 0; i < bytesToShow; i++) {
                     if (i > 0) hexDump.append(' ');
-                    hexDump.append(String.format("%02x", bwEfficientPayload[i] & 0xFF));
+                    hexDump.append(String.format(Locale.ROOT, "%02x", bwEfficientPayload[i] & 0xFF));
                 }
                 if (bwEfficientPayload.length > bytesToShow) {
-                    hexDump.append(String.format(" ... (%d more)", bwEfficientPayload.length - bytesToShow));
+                    hexDump.append(
+                            String.format(Locale.ROOT, " ... (%d more)", bwEfficientPayload.length - bytesToShow));
                 }
 
                 LOGGER.log(

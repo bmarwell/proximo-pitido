@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.Optional;
 import javax.servlet.sip.Address;
 import javax.servlet.sip.SipServletRequest;
 import javax.servlet.sip.SipURI;
@@ -26,10 +27,35 @@ class SipCallBlacklistTest {
 
     private static SipCallBlacklist blacklist(String fromUsers, String userAgents) {
         var bl = new SipCallBlacklist();
-        bl.fromUsersConfig = fromUsers;
-        bl.userAgentsConfig = userAgents;
+        bl.fromUsersConfig = Optional.ofNullable(fromUsers);
+        bl.userAgentsConfig = Optional.ofNullable(userAgents);
         bl.init();
         return bl;
+    }
+
+    @Test
+    void empty_string_or_null_is_empty_list() {
+        // given
+        final SipCallBlacklist blacklist = blacklist(null, null);
+
+        // when
+        final boolean blacklisted = blacklist.isBlacklisted(mockRequest("any", "any", null, null));
+
+        // then
+        assertTrue(blacklist.getFromUsers().isEmpty());
+        assertTrue(blacklist.getUserAgentPrefixes().isEmpty());
+        assertFalse(blacklisted);
+
+        // given
+        final var blacklist2 = blacklist("", "");
+
+        // when
+        final var blacklisted2 = blacklist2.isBlacklisted(mockRequest("any", "any", null, null));
+
+        // then
+        assertTrue(blacklist.getFromUsers().isEmpty());
+        assertTrue(blacklist.getUserAgentPrefixes().isEmpty());
+        assertFalse(blacklisted2);
     }
 
     @Test
@@ -101,7 +127,7 @@ class SipCallBlacklistTest {
     @Test
     void blocksSipBotWithoutAssertedOrPhoneIdentity() {
         // given
-        var blacklist = blacklist("", "");
+        var blacklist = blacklist("13216220427", "Z");
         var request = mockRequest("1001", "Cisco-SIPGateway/IOS-12.x", null, null);
 
         // when
