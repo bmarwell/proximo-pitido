@@ -12,6 +12,14 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logBwEfficientPayload;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logBwEfficientToCANConversion;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logEncodeComplete;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logEncoderOutputSample;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logPcmInputDiagnostics;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logToCANVersionMatch;
+import static de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging.logToCANVersionMismatch;
+
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -246,7 +254,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             }
 
             if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logPcmInputDiagnostics(
+                logPcmInputDiagnostics(
                         this.encodingMode, pcmFrame.length, minSample, maxSample, firstSample, lastSample);
             }
 
@@ -276,7 +284,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             }
 
             if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logEncoderOutputSample(firstByte, secondByte, thirdByte);
+                logEncoderOutputSample(firstByte, secondByte, thirdByte);
             }
 
             /* Sanity check: encoder should output octet-aligned ToC as first byte. */
@@ -284,10 +292,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             byte firstEncoderByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
 
             if (firstEncoderByte != expectedOctetAlignedToC) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logToCANVersionMismatch(
-                        firstEncoderByte, expectedOctetAlignedToC, this.encodingMode);
+                logToCANVersionMismatch(firstEncoderByte, expectedOctetAlignedToC, this.encodingMode);
             } else if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logToCANVersionMatch(firstEncoderByte);
+                logToCANVersionMatch(firstEncoderByte);
             }
 
             /* Get encoder output as byte array. */
@@ -334,16 +341,17 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             bwEfficientPayload[1] =
                     (byte) (((ftLow1 & 0x01) << 7) | ((qFromEncoder & 0x01) << 6) | (speechBits6from1 & 0x3F));
 
-            /* Remaining bytes: shift speech left by 4 bits.
-            The encoder byte 1 has 2 bits of ToC+padding in the top, which we don't use.
-            Those 2 bits represent "used bits", so the remaining speech starts 2 bits into byte 1.
-            We've already extracted 6 bits from byte 1 for bwEfficientPayload[1].
-            Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32.
-            These 2 bits become the top 2 bits of bwEfficientPayload[2].
+            /*
+              Remaining bytes: shift speech left by 4 bits.
+              Encoder byte 1 has 2 bits of ToC+padding in the top, which we don't use.
+              Those 2 bits represent "used bits", so the remaining speech starts 2 bits into byte 1.
+              We've already extracted 6 bits from byte 1 for bwEfficientPayload[1].
+              Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32.
+              These 2 bits become the top 2 bits of bwEfficientPayload[2].
 
-            RFC 4867 §4.3: BW-efficient payload is 263 bits (CMR(4) + ToC(6) + speech(253)),
-            which rounds up to 33 bytes = 264 bits.
-            The lower 1 bit of byte 32 is padding and MUST be zeroed per RFC.
+              RFC 4867 §4.3: BW-efficient payload is 263 bits (CMR(4) + ToC(6) + speech(253)),
+              which rounds up to 33 bytes = 264 bits.
+              The lower 1 bit of byte 32 is padding and MUST be zeroed per RFC.
             */
             int carryover = (encoderOutput[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
             for (int i = 2; i < encoderOutput.length; i++) {
@@ -357,7 +365,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
             }
 
             if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logBwEfficientToCANConversion(
+                logBwEfficientToCANConversion(
                         firstEncoderByte,
                         bwEfficientPayload[0],
                         bwEfficientPayload[1],
@@ -379,12 +387,11 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                 int qualityBit = (bwByte1 >> 6) & 0x01;
                 int frameType = (ftHigh << 1) | ftLow; // Reconstruct 4-bit FT
 
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logBwEfficientPayload(
-                        this.encodingMode, bwEfficientPayload, cmrBits, fBit, frameType, qualityBit);
+                logBwEfficientPayload(this.encodingMode, bwEfficientPayload, cmrBits, fBit, frameType, qualityBit);
             }
 
             if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
-                AmrWbBandwidthEfficientRtpCodecChannelLogging.logEncodeComplete(speechBytes, bwEfficientPayload.length);
+                logEncodeComplete(speechBytes, bwEfficientPayload.length);
             }
 
             return bwEfficientPayload;
@@ -414,6 +421,7 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                     "AmrWbBandwidthEfficientRtpCodec.createForCallInstance: creating instance with encodingMode={0}",
                     encodingMode);
         }
+
         return new AmrWbBandwidthEfficientRtpCodec(eIfEncodeHandle, arena, stateSegment, encodingMode);
     }
 
@@ -428,7 +436,6 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
         // RFC 4867: Simply echo back the offered fmtp.
         // The remote side knows what we're sending via the CMR field in each frame.
         // (CMR is set to our encoding mode; the decoder will adapt to what we send.)
-        String answer = offeredFmtp;
 
         if (LOGGER.isLoggable(System.Logger.Level.TRACE)) {
             LOGGER.log(
@@ -436,9 +443,9 @@ public final class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec {
                     "AmrWbBandwidthEfficientRtpCodec.fmtpAnswer: offeredFmtp=''{0}'' encodingMode={1} → answer=''{2}''",
                     offeredFmtp,
                     this.encodingMode,
-                    answer);
+                    offeredFmtp);
         }
 
-        return answer;
+        return offeredFmtp;
     }
 }

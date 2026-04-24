@@ -12,26 +12,23 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
+import java.lang.System.Logger.Level;
 import java.util.Locale;
 
-/**
- * <!-- Dedicated channel for complex trace/debug logging of bandwidth-efficient AMR-WB codec operations.
- *
- * This class encapsulates verbose, multi-line logging that would clutter the main codec implementation.
- * Methods are designed to be called only when isLoggable() guards are true to avoid unnecessary string
- * formatting and object allocation when logging is disabled.
- *
- * All methods accept pre-computed diagnostic values and are responsible only for formatting and
- * emitting log messages.
- *
- * **To enable trace logging for this channel only, configure the logger name:**
- * ```
- * de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging=TRACE
- * ```
- *
- * This allows selective debugging without enabling trace on the main codec class.
- * -->
- */
+/// Dedicated channel for complex trace/debug logging of bandwidth-efficient AMR-WB codec operations.
+///
+/// This class encapsulates verbose, multi-line logging that would clutter the main codec implementation.
+/// Methods are designed to be called only when isLoggable() guards are true to avoid unnecessary string
+/// formatting and object allocation when logging is disabled.
+/// All methods accept pre-computed diagnostic values and are responsible only for formatting and
+/// emitting log messages.
+///
+/// **To enable trace logging for this channel only, configure the logger name:**
+/// ```
+/// de.bmarwell.proximo.pitido.codecs.sip.AmrWbBandwidthEfficientRtpCodecChannelLogging=TRACE
+/// ```
+///
+/// This allows selective debugging without enabling trace on the main codec class.
 public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
 
     private static final System.Logger LOGGER =
@@ -41,12 +38,7 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
         // Utility class, no instances.
     }
 
-    /**
-     * <!-- Log PCM input diagnostics: sample range, first and last values.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable().
-     * -->
-     */
+    /// Log PCM input diagnostics: sample range, first and last values.
     public static void logPcmInputDiagnostics(
             int encodingMode,
             int pcmSampleCount,
@@ -54,6 +46,9 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
             short maxSample,
             short firstSample,
             short lastSample) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
@@ -66,13 +61,11 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 lastSample);
     }
 
-    /**
-     * <!-- Log first three bytes of encoder output in hex format.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable().
-     * -->
-     */
+    /// Log the first three bytes of encoder output in hex format.
     public static void logEncoderOutputSample(byte firstByte, byte secondByte, byte thirdByte) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
@@ -82,14 +75,13 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 String.format(Locale.ROOT, "%02x", thirdByte & 0xFF));
     }
 
-    /**
-     * <!-- Log validation of encoder output ToC byte against expected value.
-     *
-     * Called from encode() when encoder output does not match expected value or when
-     * System.Logger.Level.TRACE isLoggable().
-     * -->
-     */
+    /// Log validation of encoder output ToC byte against the expected value.
+    ///
+    /// System.Logger.Level.TRACE isLoggable().
     public static void logToCANVersionMismatch(byte firstEncoderByte, byte expectedOctetAlignedToC, int encodingMode) {
+        if (!LOGGER.isLoggable(Level.WARNING)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.WARNING,
@@ -99,14 +91,13 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 encodingMode);
     }
 
-    /**
-     * <!-- Log successful validation of encoder output ToC byte.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable() and encoder output
-     * matches expected octet-aligned ToC.
-     * -->
-     */
+    /// Log successful validation of encoder output ToC byte.
+    ///
+    /// matches the expected octet-aligned ToC.
     public static void logToCANVersionMatch(byte firstEncoderByte) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
@@ -114,13 +105,9 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 String.format(Locale.ROOT, "%02x", firstEncoderByte & 0xFF));
     }
 
-    /**
-     * <!-- Log ToC conversion from octet-aligned encoder format to bandwidth-efficient RTP format.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable().
-     * Logs the transformation: encoder first byte → BW-efficient bytes 0-1 with field breakdown.
-     * -->
-     */
+    /// Log ToC conversion from octet-aligned encoder format to bandwidth-efficient RTP format.
+    ///
+    /// Logs the transformation: encoder-first byte → BW-efficient bytes 0-1 with field breakdown.
     public static void logBwEfficientToCANConversion(
             byte firstEncoderByte,
             byte bwByte0,
@@ -129,6 +116,9 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
             int fBit,
             int ftFromEncoder,
             int qFromEncoder) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
@@ -142,16 +132,15 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 qFromEncoder);
     }
 
-    /**
-     * <!-- Log complete payload structure: bytes, fields, and hex dump.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable().
-     * Shows CMR, F, FT, Q fields extracted from bandwidth-efficient header plus hex dump of
-     * first several payload bytes.
-     * -->
-     */
+    /// Log the complete payload structure: bytes, fields, and hex dump.
+    ///
+    /// Shows CMR, F, FT, Q fields extracted from the bandwidth-efficient header plus hex dump of the
+    /// first several payload bytes.
     public static void logBwEfficientPayload(
             int encodingMode, byte[] bwEfficientPayload, int cmrBits, int fBit, int frameType, int qualityBit) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         StringBuilder hexDump = new StringBuilder();
         int bytesToShow = Math.min(10, bwEfficientPayload.length);
@@ -175,13 +164,11 @@ public final class AmrWbBandwidthEfficientRtpCodecChannelLogging {
                 hexDump.toString());
     }
 
-    /**
-     * <!-- Log completion of encode() operation with summary statistics.
-     *
-     * Called from encode() when System.Logger.Level.TRACE isLoggable().
-     * -->
-     */
+    /// Log completion of encode() operation with summary statistics.
     public static void logEncodeComplete(int speechBytes, int payloadLength) {
+        if (!LOGGER.isLoggable(Level.TRACE)) {
+            return;
+        }
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
