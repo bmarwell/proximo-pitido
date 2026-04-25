@@ -13,71 +13,19 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import java.io.IOException;
-import javax.enterprise.context.ApplicationScoped;
 
-/**
- * G.711 A-law (PCMA) RTP codec, payload type 8.
- *
- * <p>PCMA is the mandatory baseline codec for SIP telephony (RFC 3551 §4.5.14).
- * It encodes 13-bit linear PCM to 8-bit A-law logarithmic PCM at 8 kHz, producing 64 kbps audio
- * in 20 ms packets of 160 encoded bytes each.
- *
- * <p>G.711 A-law is memoryless: each sample encodes independently, so the encoder carries no state
- * across packets.
- * This bean is {@code @ApplicationScoped} (a CDI singleton) and safe to share across call legs;
- * {@link #forCall()} returns {@code this}.
- *
- * <p>{@link #INSTANCE} is kept as a static fallback for code paths that cannot use CDI injection
- * (e.g. default return values in {@link SdpNegotiator}).
- * Prefer CDI injection wherever possible.
- *
- * @see G722RtpCodec
- */
-@ApplicationScoped
-public final class PcmaRtpCodec implements RtpCodec {
+public class PcmaRtpCodec implements RtpCodec {
 
-    /**
-     * Static fallback instance for non-CDI contexts.
-     * Prefer injecting via CDI; use this only where injection is unavailable.
-     */
-    public static final PcmaRtpCodec INSTANCE = new PcmaRtpCodec();
-
-    PcmaRtpCodec() {}
+    private static final RtpCodecMetadata METADATA = new PcmaMetadata();
 
     @Override
-    public boolean isAvailable() {
-        return true;
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 
     @Override
-    public int preference() {
-        // PCMA is the narrowband baseline; prefer higher-quality codecs when available.
-        return 100;
-    }
-
-    @Override
-    public int payloadType() {
-        return 8;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 8000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 160;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
+    public String fmtpParams() {
+        return "";
     }
 
     @Override
@@ -89,16 +37,6 @@ public final class PcmaRtpCodec implements RtpCodec {
         }
 
         return pcma;
-    }
-
-    @Override
-    public String sdpName() {
-        return "PCMA";
-    }
-
-    @Override
-    public String fmtpParams() {
-        return "";
     }
 
     /**

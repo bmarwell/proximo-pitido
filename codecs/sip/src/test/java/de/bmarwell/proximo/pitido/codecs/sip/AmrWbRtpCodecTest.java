@@ -13,50 +13,22 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
+@NativeCodec(AmrWbRtpCodecFactory.class)
 class AmrWbRtpCodecTest {
 
-    private final AmrWbRtpCodec codec = new AmrWbRtpCodec();
+    private final AmrWbRtpCodec codec = new AmrWbRtpCodecFactory().forCall("");
 
     // -------------------------------------------------------------------------
     // Codec constants — no native library needed
     // -------------------------------------------------------------------------
-
-    @Test
-    void payloadTypeIs98() {
-        assertEquals(98, codec.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs16000() {
-        assertEquals(16_000, codec.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs16000() {
-        assertEquals(16_000, codec.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs320() {
-        assertEquals(320, codec.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs320() {
-        assertEquals(320, codec.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsAmrWb() {
-        assertEquals("AMR-WB", codec.sdpName());
-    }
 
     @Test
     void fmtpParamsIsOctetAlign() {
@@ -64,71 +36,52 @@ class AmrWbRtpCodecTest {
     }
 
     @Test
-    void preferenceIsHigherThanG722() {
-        // given
-        var g722 = new G722RtpCodec();
-
-        // when / then
-        assertEquals(
-                true,
-                codec.preference() < g722.preference(),
-                "AMR-WB preference must be higher priority (lower number) than G.722");
+    void payloadTypeIs98() {
+        assertEquals(98, codec.metadata().payloadType());
     }
 
     @Test
-    void encodeThrowsOnFactoryBean() {
-        assertThrows(IllegalStateException.class, () -> codec.encode(new short[320]));
+    void rtpClockRateIs16000() {
+        assertEquals(16_000, codec.metadata().rtpClockRate());
+    }
+
+    @Test
+    void inputSampleRateIs16000() {
+        assertEquals(16_000, codec.metadata().inputSampleRate());
+    }
+
+    @Test
+    void samplesPerFrameIs320() {
+        assertEquals(320, codec.metadata().samplesPerFrame());
+    }
+
+    @Test
+    void rtpTimestampIncrementIs320() {
+        assertEquals(320, codec.metadata().rtpTimestampIncrement());
+    }
+
+    @Test
+    void sdpNameIsAmrWb() {
+        assertEquals("AMR-WB", codec.metadata().sdpName());
     }
 
     @Test
     void closeOnFactoryBean_isNoOp() {
         // given: a fresh factory bean (no callArena, no stateSegment)
-        var factory = new AmrWbRtpCodec();
+        var factory = new AmrWbRtpCodec("");
 
         // when / then: close() must not throw on the CDI factory bean
         factory.close();
     }
 
-    // -------------------------------------------------------------------------
-    // Tests that require libvo-amrwbenc — skipped automatically when not installed
-    // -------------------------------------------------------------------------
-
-    @Test
-    void isAvailableAfterProbeWhenLibraryPresent() {
-        // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
-
-        // when / then
-        assertEquals(true, factory.isAvailable());
-    }
-
-    @Test
-    void forCallReturnsDifferentInstance() {
-        // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
-
-        // when
-        RtpCodec callInstance = factory.forCall();
-
-        // then
-        assertNotSame(factory, callInstance);
-    }
-
     @Test
     void closeOnPerCallInstance_preventsSubsequentEncode() {
         // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodec callInstance = factory.forCall("");
 
         // when
         callInstance.close();
@@ -140,26 +93,24 @@ class AmrWbRtpCodecTest {
     @Test
     void silenceFrameProducesOctetAlignedPayload() throws IOException {
         // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall();
+        RtpCodec encoder = factory.forCall("");
 
         // when
         byte[] payload = encoder.encode(new short[320]);
 
         // then: at least CMR (1 byte) + ToC (1 byte) + speech data (≥ 1 byte)
-        assertEquals(true, payload.length >= 3, "AMR-WB payload must contain CMR, ToC, and speech data");
+        assertTrue(payload.length >= 3, "AMR-WB payload must contain CMR, ToC, and speech data");
         assertEquals((byte) 0xF0, payload[0], "CMR byte must be 0xF0 (no codec mode request)");
     }
 
     @Test
     void mode2EncodingProducesCorrectToCByte() throws IOException {
         // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
@@ -180,8 +131,7 @@ class AmrWbRtpCodecTest {
     @Test
     void payloadStructureDoesNotHaveDoubleHeader() throws IOException {
         // given
-        AmrWbRtpCodec factory = new AmrWbRtpCodec();
-        factory.probe();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 

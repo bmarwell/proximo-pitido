@@ -13,66 +13,19 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import java.io.IOException;
-import javax.enterprise.context.ApplicationScoped;
 
-/**
- * G.711 µ-law (PCMU) RTP codec, payload type 0.
- *
- * <p>PCMU is the North American and Japanese variant of G.711 (RFC 3551 §4.5.14).
- * It encodes 14-bit linear PCM to 8-bit µ-law logarithmic PCM at 8 kHz, producing 64 kbps audio
- * in 20 ms packets of 160 encoded bytes each.
- * RFC 3551 mandates that any SIP UA MUST be able to receive both PT=0 (PCMU) and PT=8 (PCMA).
- *
- * <p>G.711 µ-law is memoryless: each sample encodes independently, so the encoder carries no state
- * across packets.
- * This bean is {@code @ApplicationScoped} (a CDI singleton) and safe to share across call legs;
- * {@link #forCall()} returns {@code this}.
- *
- * <p>Preference is set to 110 — slightly lower priority than {@link PcmaRtpCodec} (100) because
- * A-law is the European standard and most SIP providers in this region prefer PCMA.
- *
- * @see PcmaRtpCodec
- */
-@ApplicationScoped
-public final class PcmuRtpCodec implements RtpCodec {
+public class PcmuRtpCodec implements RtpCodec {
 
-    PcmuRtpCodec() {}
+    private static final RtpCodecMetadata METADATA = new PcmuMetadata();
 
     @Override
-    public boolean isAvailable() {
-        return true;
+    public RtpCodecMetadata metadata() {
+        return METADATA;
     }
 
     @Override
-    public int preference() {
-        // Lower priority than PCMA (100); both are always available but PCMA is preferred at
-        // European SIP providers.
-        return 110;
-    }
-
-    @Override
-    public int payloadType() {
-        return 0;
-    }
-
-    @Override
-    public int rtpClockRate() {
-        return 8000;
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return 8000;
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return 160;
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return 160;
+    public String fmtpParams() {
+        return "";
     }
 
     @Override
@@ -84,16 +37,6 @@ public final class PcmuRtpCodec implements RtpCodec {
         }
 
         return pcmu;
-    }
-
-    @Override
-    public String sdpName() {
-        return "PCMU";
-    }
-
-    @Override
-    public String fmtpParams() {
-        return "";
     }
 
     /**

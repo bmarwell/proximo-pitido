@@ -12,16 +12,18 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
+import de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
-import java.io.IOException;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata;
 
 /**
- * Wraps a {@link RtpCodec} and overrides {@link #payloadType()} to return the payload type
+ * Wraps a {@link RtpCodecFactory} and overrides {@link #payloadType()} to return the payload type
  * actually negotiated with the caller rather than the codec's static default.
  *
  * <p>VoLTE callers (e.g. Deutsche Telekom) assign dynamic payload types (96–127) per-call via
  * {@code a=rtpmap} lines.
- * The underlying codec (e.g. {@link de.bmarwell.proximo.pitido.codecs.sip.AmrWbRtpCodec}) carries a
+ * The underlying codec (e.g. {@link AmrWbRtpCodecFactory}) carries a
  * conventional default PT for identification purposes only.
  * This wrapper carries the actual PT assigned by the caller so that outgoing RTP packet headers
  * and the SDP answer use the same PT value the caller expects.
@@ -30,33 +32,24 @@ import java.io.IOException;
  *
  * <p>{@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator#negotiate} returns an instance
  * whose {@code delegate} is the CDI bean descriptor — no confined arena is allocated yet.
- * The announcement or menu-runner lambda calls {@link #forCall()} at its start, on the executor
- * thread that will also call {@link #encode} and {@link #close}.
+ * The announcement or menu-runner lambda calls {@link #forCall(String)} with the {@code offeredFmtp},
+ * on the executor thread that will also call {@link #encode} and {@link #close}.
  * This guarantees that the {@link java.lang.foreign.Arena#ofConfined() confined arena} created by
  * native codecs is owned by the thread that uses and closes it, preventing
  * {@link java.lang.WrongThreadException}.
  *
- * <p>All methods other than {@link #payloadType()} and {@link #forCall()} delegate transparently
- * to the wrapped codec instance.
+ * <p>All methods delegate transparently to the wrapped codec factory instance.
+ * The {@link #metadata()} method returns a wrapped metadata that overrides {@code payloadType()}
+ * to return the negotiated value.
  *
- * @param delegate               the codec instance; either a CDI bean descriptor (before
- *                               {@link #forCall()}) or a per-call instance (after
- *                               {@link #forCall()})
+ * @param delegate               the RtpCodecFactory CDI bean
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
  * @param offeredFmtp            the raw {@code a=fmtp} parameter string from the caller's SDP offer
  *                               for this payload type; empty string if no {@code a=fmtp} line was
  *                               present in the offer
  */
-record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String offeredFmtp) implements RtpCodec {
-
-    /**
-     * Returns the payload type assigned by the caller in the SDP offer's {@code a=rtpmap} line.
-     * This value is used in outgoing RTP packet headers and in the SDP answer.
-     */
-    @Override
-    public int payloadType() {
-        return this.negotiatedPayloadType;
-    }
+record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp)
+        implements RtpCodecFactory {
 
     @Override
     public boolean isAvailable() {
@@ -69,61 +62,13 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
     }
 
     @Override
-    public RtpCodec forCall() {
-        return new NegotiatedRtpCodec(
-                this.delegate.forCall(this.offeredFmtp), this.negotiatedPayloadType, this.offeredFmtp);
+    public RtpCodecMetadata metadata() {
+        return new WrappedMetadata(this.delegate.metadata(), this.negotiatedPayloadType);
     }
 
     @Override
-    public int rtpClockRate() {
-        return this.delegate.rtpClockRate();
-    }
-
-    @Override
-    public int inputSampleRate() {
-        return this.delegate.inputSampleRate();
-    }
-
-    @Override
-    public int samplesPerFrame() {
-        return this.delegate.samplesPerFrame();
-    }
-
-    @Override
-    public int rtpTimestampIncrement() {
-        return this.delegate.rtpTimestampIncrement();
-    }
-
-    @Override
-    public byte[] encode(short[] pcmFrame) throws IOException {
-        return this.delegate.encode(pcmFrame);
-    }
-
-    @Override
-    public int sdpChannelCount() {
-        return this.delegate.sdpChannelCount();
-    }
-
-    @Override
-    public String sdpName() {
-        return this.delegate.sdpName();
-    }
-
-    @Override
-    public String fmtpParams() {
-        // Delegate to the codec's own answer logic (e.g. AMR-WB echoes mode-set per RFC 4867 §8.3.2).
-        String answer = this.delegate.fmtpAnswer(this.offeredFmtp);
-
-        System.getLogger(NegotiatedRtpCodec.class.getName())
-                .log(
-                        System.Logger.Level.TRACE,
-                        "NegotiatedRtpCodec.fmtpParams: codec={0} PT={1} offeredFmtp=''{2}'' answerFmtp=''{3}''",
-                        this.delegate.sdpName(),
-                        this.negotiatedPayloadType,
-                        this.offeredFmtp,
-                        answer);
-
-        return answer;
+    public RtpCodec forCall(String offeredFmtp) {
+        return this.delegate.forCall(this.offeredFmtp);
     }
 
     @Override
@@ -132,7 +77,50 @@ record NegotiatedRtpCodec(RtpCodec delegate, int negotiatedPayloadType, String o
     }
 
     @Override
-    public void close() {
-        this.delegate.close();
+    public String fmtpAnswer(String offeredFmtp) {
+        return this.delegate.fmtpAnswer(offeredFmtp);
+    }
+
+    /**
+     * Wraps delegate metadata and overrides {@code payloadType()} to return the negotiated value.
+     *
+     * <p>All other metadata methods delegate to the wrapped metadata unchanged.
+     */
+    private record WrappedMetadata(RtpCodecMetadata delegate, int negotiatedPayloadType) implements RtpCodecMetadata {
+
+        @Override
+        public int payloadType() {
+            return this.negotiatedPayloadType;
+        }
+
+        @Override
+        public int rtpClockRate() {
+            return this.delegate.rtpClockRate();
+        }
+
+        @Override
+        public int inputSampleRate() {
+            return this.delegate.inputSampleRate();
+        }
+
+        @Override
+        public int samplesPerFrame() {
+            return this.delegate.samplesPerFrame();
+        }
+
+        @Override
+        public int rtpTimestampIncrement() {
+            return this.delegate.rtpTimestampIncrement();
+        }
+
+        @Override
+        public String sdpName() {
+            return this.delegate.sdpName();
+        }
+
+        @Override
+        public int sdpChannelCount() {
+            return this.delegate.sdpChannelCount();
+        }
     }
 }

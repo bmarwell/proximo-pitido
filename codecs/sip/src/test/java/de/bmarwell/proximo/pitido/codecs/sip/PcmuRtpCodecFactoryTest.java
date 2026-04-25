@@ -12,29 +12,25 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import java.lang.foreign.Arena;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public abstract class NativeRtpCodec implements RtpCodec {
+import org.junit.jupiter.api.Test;
 
-    /**
-     * Confined arena owning the per-call native encoder state.
-     * {@code null} in the CDI factory bean; non-null in per-call instances.
-     *
-     * <p>Closed by {@link #close()} when the call ends.
-     */
-    protected final Arena callArena;
+public class PcmuRtpCodecFactoryTest {
 
-    protected NativeRtpCodec() {
-        this.callArena = Arena.ofConfined();
+    private final PcmuRtpCodecFactory codecFactory = new PcmuRtpCodecFactory();
+
+    @Test
+    void isAlwaysAvailable() {
+        assertTrue(codecFactory.isAvailable());
     }
 
-    /**
-     * Closes the confined arena, releasing the native encoder state immediately.
-     */
-    @Override
-    public void close() {
-        if (this.callArena != null) {
-            this.callArena.close();
-        }
+    @Test
+    void preferenceIsLowerThanPcma() {
+        var pcma = new PcmaRtpCodecFactory();
+
+        assertTrue(
+                codecFactory.preference() > pcma.preference(),
+                "PCMU preference must be lower priority (higher number) than PCMA");
     }
 }

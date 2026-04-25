@@ -13,56 +13,16 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import org.junit.jupiter.api.Test;
 
+@NativeCodec(OpusRtpCodecFactory.class)
 class OpusRtpCodecTest {
 
-    private final OpusRtpCodec codec = new OpusRtpCodec();
-
-    // -------------------------------------------------------------------------
-    // Codec constants — no native library needed
-    // -------------------------------------------------------------------------
-
-    @Test
-    void payloadTypeIs111() {
-        assertEquals(111, codec.payloadType());
-    }
-
-    @Test
-    void rtpClockRateIs48000() {
-        assertEquals(48_000, codec.rtpClockRate());
-    }
-
-    @Test
-    void inputSampleRateIs48000() {
-        assertEquals(48_000, codec.inputSampleRate());
-    }
-
-    @Test
-    void samplesPerFrameIs960() {
-        assertEquals(960, codec.samplesPerFrame());
-    }
-
-    @Test
-    void rtpTimestampIncrementIs960() {
-        assertEquals(960, codec.rtpTimestampIncrement());
-    }
-
-    @Test
-    void sdpNameIsOpus() {
-        assertEquals("opus", codec.sdpName());
-    }
-
-    @Test
-    void sdpChannelCountIsTwo() {
-        // given: RFC 7587 §5 mandates 2 in SDP regardless of actual channel count
-        // when / then
-        assertEquals(2, codec.sdpChannelCount());
-    }
+    private final OpusRtpCodec codec = new OpusRtpCodecFactory().forCall("");
 
     @Test
     void fmtpParamsContainsFec() {
@@ -70,27 +30,40 @@ class OpusRtpCodecTest {
     }
 
     @Test
-    void preferenceIs30() {
-        assertEquals(30, codec.preference());
+    void payloadTypeIs120() {
+        assertEquals(120, codec.metadata().payloadType());
     }
 
     @Test
-    void preferenceIsHigherThanG722() {
-        // given
-        var g722 = new G722RtpCodec();
-
-        // when / then: Opus (30) must beat G.722 (50) — lower number = higher priority
-        assertEquals(
-                true,
-                codec.preference() < g722.preference(),
-                "Opus preference must be higher priority (lower number) than G.722");
+    void rtpClockRateIs48000() {
+        assertEquals(48_000, codec.metadata().rtpClockRate());
     }
 
     @Test
-    void encodeThrowsOnFactoryBean() {
-        // given: an un-probed CDI factory bean with no encoder state
+    void inputSampleRateIs48000() {
+        assertEquals(48_000, codec.metadata().inputSampleRate());
+    }
+
+    @Test
+    void samplesPerFrameIs960() {
+        assertEquals(960, codec.metadata().samplesPerFrame());
+    }
+
+    @Test
+    void rtpTimestampIncrementIs960() {
+        assertEquals(960, codec.metadata().rtpTimestampIncrement());
+    }
+
+    @Test
+    void sdpNameIsOpus() {
+        assertEquals("opus", codec.metadata().sdpName());
+    }
+
+    @Test
+    void sdpChannelCountIsTwo() {
+        // given: RFC 7587 §5 mandates 2 in SDP regardless of actual channel count
         // when / then
-        assertThrows(IllegalStateException.class, () -> codec.encode(new short[960]));
+        assertEquals(2, codec.metadata().sdpChannelCount());
     }
 
     // -------------------------------------------------------------------------
@@ -99,53 +72,21 @@ class OpusRtpCodecTest {
 
     @Test
     void closeOnFactoryBean_isNoOp() {
-        // given: a fresh factory bean (no callArena)
-        var factory = new OpusRtpCodec();
+        // given: a fresh factory
+        var factory = new OpusRtpCodecFactory().forCall("");
 
-        // when / then: close() must not throw on the CDI factory bean
+        // when / then: close() must not throw
         factory.close();
-    }
-
-    @Test
-    void forCallReturnsDifferentInstance() {
-        // given
-        OpusRtpCodec factory = new OpusRtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
-
-        // when
-        RtpCodec callInstance = factory.forCall();
-
-        // then
-        assertNotSame(factory, callInstance);
-    }
-
-    @Test
-    void forCallReturnsFreshInstanceEachTime() {
-        // given
-        OpusRtpCodec factory = new OpusRtpCodec();
-        factory.probe();
-
-        assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
-
-        // when
-        RtpCodec first = factory.forCall();
-        RtpCodec second = factory.forCall();
-
-        // then: each call leg must have independent encoder state
-        assertNotSame(first, second);
     }
 
     @Test
     void closeOnPerCallInstance_releasesArena() {
         // given
-        OpusRtpCodec factory = new OpusRtpCodec();
-        factory.probe();
+        OpusRtpCodecFactory factory = new OpusRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
-        RtpCodec callInstance = factory.forCall();
+        RtpCodec callInstance = factory.forCall("");
 
         // when
         callInstance.close();
@@ -157,12 +98,11 @@ class OpusRtpCodecTest {
     @Test
     void silenceFrameEncodesSuccessfully() throws Exception {
         // given
-        OpusRtpCodec factory = new OpusRtpCodec();
-        factory.probe();
+        OpusRtpCodecFactory factory = new OpusRtpCodecFactory();
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
-        RtpCodec encoder = factory.forCall();
+        RtpCodec encoder = factory.forCall("");
         short[] silence = new short[960];
 
         // when

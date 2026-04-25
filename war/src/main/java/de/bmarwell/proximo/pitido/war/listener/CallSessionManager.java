@@ -129,7 +129,7 @@ public class CallSessionManager {
 
         callState.callFuture().cancel(true);
         callState.receiverFuture().cancel(true);
-        String codecName = callState.media().codec().sdpName();
+        String codecName = callState.media().codecFactory().metadata().sdpName();
         closeSocket(callState.media());
         Duration callDuration = Duration.between(callState.startTime(), Instant.now());
         LOGGER.log(
@@ -189,11 +189,11 @@ public class CallSessionManager {
     static void closeMedia(CallMedia media) {
         closeSocket(media);
 
-        try {
-            media.codec().close();
-        } catch (Exception closeException) {
-            LOGGER.log(System.Logger.Level.WARNING, "Error closing codec after call", closeException);
-        }
+        /*
+         * The per-call RtpCodec is closed by the announcement or menu-runner thread
+         * in its try-finally block in CallAcceptor.java. The factory (CodecFactory)
+         * is an @ApplicationScoped CDI singleton and must not be closed.
+         */
     }
 
     static void sendBye(SipSession session) {

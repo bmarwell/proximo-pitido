@@ -18,9 +18,14 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.AmrWbMetadata;
+import de.bmarwell.proximo.pitido.codecs.sip.G722Metadata;
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaMetadata;
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class SdpNegotiatorTest {
@@ -79,6 +84,7 @@ class SdpNegotiatorTest {
             """;
 
     @Test
+    @DisplayName("Parse telephone-event from SDP offer")
     void parseTelephoneEventPayloadType_withTelephoneEvent_returnsPayloadType() {
         // given
         String sdp = SDP_OFFER_WITH_TELEPHONE_EVENT;
@@ -91,6 +97,7 @@ class SdpNegotiatorTest {
     }
 
     @Test
+    @DisplayName("Return -1 when telephone-event not in offer")
     void parseTelephoneEventPayloadType_withoutTelephoneEvent_returnsMinusOne() {
         // given
         String sdp = SDP_OFFER_WITHOUT_TELEPHONE_EVENT;
@@ -103,8 +110,9 @@ class SdpNegotiatorTest {
     }
 
     @Test
+    @DisplayName("SDP answer includes telephone-event parameters when offered")
     void buildSdpAnswer_withTelephoneEvent_includesTelephoneEventLineAndSendonly() {
-        // given — simulate the result of negotiate() for a simple PCMA + telephone-event offer
+        // given
         String localIp = "192.168.1.1";
         int localPort = 20000;
         int telephoneEventPt = 101;
@@ -122,6 +130,7 @@ class SdpNegotiatorTest {
     }
 
     @Test
+    @DisplayName("SDP answer is sendonly even without telephone-event")
     void buildSdpAnswer_withoutTelephoneEvent_isSendonly() {
         // given
         String localIp = "192.168.1.1";
@@ -140,13 +149,9 @@ class SdpNegotiatorTest {
      */
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
         try {
-            var codec = de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodec.INSTANCE;
+            var codec = new PcmaRtpCodecFactory();
             var method = SdpNegotiator.class.getDeclaredMethod(
-                    "buildSdpAnswer",
-                    String.class,
-                    int.class,
-                    de.bmarwell.proximo.pitido.codecs.sip.RtpCodec.class,
-                    int.class);
+                    "buildSdpAnswer", String.class, int.class, RtpCodecFactory.class, int.class);
             method.setAccessible(true);
             return (String) method.invoke(null, localIp, localPort, codec, telephoneEventPt);
         } catch (ReflectiveOperationException reflectiveOperationException) {
@@ -155,6 +160,7 @@ class SdpNegotiatorTest {
     }
 
     @Test
+    @DisplayName("Parse rtpmap lines for AMR-WB at both octet-aligned and bandwidth-efficient payload types")
     void parseRtpmap_withTelekomVolteSdp_extractsAmrWbAtBothPayloadTypes() {
         // given
         String sdp = SDP_OFFER_TELEKOM_VOLTE;
@@ -169,61 +175,58 @@ class SdpNegotiatorTest {
     }
 
     @Test
+    @DisplayName("Select octet-aligned AMR-WB at negotiated payload type")
     void selectCodec_withTelekomVolteSdp_selectsOctetAlignedAmrWbAtNegotiatedPayloadType() {
         // given
         String sdp = SDP_OFFER_TELEKOM_VOLTE;
 
-        RtpCodec g722Stub = mock(RtpCodec.class);
+        RtpCodecFactory g722Stub = mock(RtpCodecFactory.class);
+        when(g722Stub.metadata()).thenReturn(new G722Metadata());
         when(g722Stub.isAvailable()).thenReturn(true);
         when(g722Stub.preference()).thenReturn(50);
-        when(g722Stub.sdpName()).thenReturn("G722");
-        when(g722Stub.rtpClockRate()).thenReturn(8000);
-        when(g722Stub.payloadType()).thenReturn(9);
         when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
-        when(g722Stub.forCall()).thenReturn(g722Stub);
 
-        RtpCodec amrWbStub = mock(RtpCodec.class);
+        RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
         when(amrWbStub.isAvailable()).thenReturn(true);
         when(amrWbStub.preference()).thenReturn(40);
-        when(amrWbStub.sdpName()).thenReturn("AMR-WB");
-        when(amrWbStub.rtpClockRate()).thenReturn(16000);
-        when(amrWbStub.payloadType()).thenReturn(98);
+        when(amrWbStub.metadata()).thenReturn(new AmrWbMetadata());
         when(amrWbStub.matchesFmtp(anyString()))
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
-        when(amrWbStub.forCall()).thenReturn(amrWbStub);
 
         // when
-        RtpCodec selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp);
+        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
+        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, pcmaFallback);
 
-        // then — AMR-WB must be selected at the octet-aligned PT 110, not the BW-efficient PT 104
-        assertEquals("AMR-WB", selected.sdpName(), "Selected codec must be AMR-WB");
-        assertEquals(110, selected.payloadType(), "Negotiated PT must be 110 (octet-aligned), not 104 (BW-efficient)");
+        // then
+        assertEquals("AMR-WB", selected.metadata().sdpName(), "Selected codec must be AMR-WB");
+        // NegotiatedRtpCodec wraps the delegate and overrides payloadType() to return negotiated PT
+        assertEquals(
+                110,
+                selected.metadata().payloadType(),
+                "Negotiated PT must be 110 (octet-aligned), not 104 (BW-efficient) or 98 (default)");
     }
 
     @Test
+    @DisplayName("Codec selection wraps descriptor without eagerly calling forCall")
     void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
-        // given — a stateful codec stub whose forCall() returns a distinct per-call instance
-        RtpCodec perCallInstance = mock(RtpCodec.class);
-        when(perCallInstance.sdpName()).thenReturn("PCMA");
-        when(perCallInstance.payloadType()).thenReturn(8);
-
-        RtpCodec descriptorStub = mock(RtpCodec.class);
+        // given
+        RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
-        when(descriptorStub.sdpName()).thenReturn("PCMA");
-        when(descriptorStub.rtpClockRate()).thenReturn(8000);
-        when(descriptorStub.payloadType()).thenReturn(8);
+        when(descriptorStub.metadata()).thenReturn(new PcmaMetadata());
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
-        when(descriptorStub.forCall()).thenReturn(perCallInstance);
 
         // when
-        RtpCodec selected = SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT);
+        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
+        RtpCodecFactory selected =
+                SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, pcmaFallback);
 
-        // then — forCall() must NOT have been called during codec selection;
-        // the announcement thread must call it, not the SDP-negotiation thread.
-        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall();
-        assertEquals(8, selected.payloadType());
-        // The returned wrapper must hold the original descriptor, not a per-call instance.
-        assertEquals(descriptorStub, ((NegotiatedRtpCodec) selected).delegate());
+        // then
+        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall(anyString());
+        assertEquals(8, selected.metadata().payloadType());
+        assertEquals(
+                descriptorStub,
+                ((NegotiatedRtpCodec) selected).delegate(),
+                "Returned wrapper must hold the original descriptor, not a per-call instance");
     }
 }
