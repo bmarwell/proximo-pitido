@@ -2,8 +2,16 @@ name: Forbidden APIs check
 
 on:
   workflow_dispatch: {}
-  push: {}
-  pull_request: {}
+  push:
+    paths:
+      - '**.java'
+      - '**/pom.xml'
+      - '.github/workflows/forbidden-apis-check.yml'
+  pull_request:
+    paths:
+      - '**.java'
+      - '**/pom.xml'
+      - '.github/workflows/forbidden-apis-check.yml'
 
 permissions:
   contents: read
