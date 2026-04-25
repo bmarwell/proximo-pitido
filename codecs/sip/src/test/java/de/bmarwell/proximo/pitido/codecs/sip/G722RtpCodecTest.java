@@ -78,7 +78,6 @@ class G722RtpCodecTest {
     void closeOnPerCallInstance_releasesArena() {
         // given
         G722RtpCodecFactory factory = new G722RtpCodecFactory();
-        factory.probe();
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 

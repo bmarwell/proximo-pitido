@@ -13,9 +13,6 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.Linker;
-import java.lang.foreign.SymbolLookup;
-import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 
 /**
@@ -71,32 +68,16 @@ import javax.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
 
-    private static final System.Logger LOGGER = System.getLogger(G722RtpCodecFactory.class.getName());
-
     private static final RtpCodecMetadata METADATA = new G722Metadata();
 
     /**
-     * Probes for {@code libspandsp.so.2} and binds the required FFM method handles.
+     * Probes for {@code libspandsp.so.2} on construction.
      *
-     * <p>Called once at construction time.
-     * Sets {@link #available} to {@code true} when the library is found and all symbols resolve.
-     * Uses {@link Arena#global()} so the library remains loaded for the lifetime of the JVM.
+     * <p>Sets {@link #available} to {@code true} if the library is found and all symbols resolve.
+     * Library remains loaded for the lifetime of the JVM via {@link Arena#global()}.
      */
-    @PostConstruct
-    @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
-    void probe() {
-        try (var arena = Arena.ofConfined()) {
-            SymbolLookup _ = SymbolLookup.libraryLookup("libspandsp.so.2", arena);
-            Linker _ = Linker.nativeLinker();
-
-            this.available = true;
-            LOGGER.log(System.Logger.Level.INFO, "libspandsp detected — G.722 wideband codec available");
-        } catch (IllegalArgumentException illegalArgumentException) {
-            LOGGER.log(
-                    System.Logger.Level.WARNING,
-                    "libspandsp not found — G.722 wideband codec disabled: {0}",
-                    illegalArgumentException.getMessage());
-        }
+    public G722RtpCodecFactory() {
+        probeLibrary("libspandsp.so.2", "G.722 wideband codec");
     }
 
     @Override

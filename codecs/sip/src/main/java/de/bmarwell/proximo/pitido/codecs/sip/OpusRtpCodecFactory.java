@@ -12,10 +12,6 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.Linker;
-import java.lang.foreign.SymbolLookup;
-import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 
 /**
@@ -78,8 +74,6 @@ import javax.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
 
-    private static final System.Logger LOGGER = System.getLogger(OpusRtpCodecFactory.class.getName());
-
     private static final RtpCodecMetadata METADATA = new OpusMetadata();
 
     /** Opus native sample rate: 48 000 Hz. */
@@ -89,27 +83,12 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
     private static final int FRAME_SAMPLES = 960;
 
     /**
-     * Probes for {@code libopus.so.0}.
+     * Probes for {@code libopus.so.0} on construction.
      *
-     * <p>Called once at construction time.
-     * Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
+     * <p>Sets {@link NativeRtpCodecFactory#available} to {@code true} if the library is found.
      */
-    @PostConstruct
-    @SuppressWarnings("restricted") // SymbolLookup.libraryLookup is FFM restricted — intentional use
-    void probe() {
-        try {
-            SymbolLookup _ = SymbolLookup.libraryLookup("libopus.so.0", Arena.global());
-            Linker _ = Linker.nativeLinker();
-
-            this.available = true;
-            LOGGER.log(System.Logger.Level.INFO, "libopus detected — Opus RTP codec available");
-
-        } catch (IllegalArgumentException illegalArgumentException) {
-            LOGGER.log(
-                    System.Logger.Level.WARNING,
-                    "libopus not found — Opus RTP codec disabled: {0}",
-                    illegalArgumentException.getMessage());
-        }
+    public OpusRtpCodecFactory() {
+        probeLibrary("libopus.so.0", "Opus RTP codec");
     }
 
     @Override

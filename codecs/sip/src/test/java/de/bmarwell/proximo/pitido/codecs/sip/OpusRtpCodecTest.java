@@ -81,7 +81,6 @@ class OpusRtpCodecTest {
     void closeOnPerCallInstance_releasesArena() {
         // given
         OpusRtpCodecFactory factory = new OpusRtpCodecFactory();
-        factory.probe();
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 
@@ -98,7 +97,6 @@ class OpusRtpCodecTest {
     void silenceFrameEncodesSuccessfully() throws Exception {
         // given
         OpusRtpCodecFactory factory = new OpusRtpCodecFactory();
-        factory.probe();
 
         assumeTrue(factory.isAvailable(), "libopus not available on this host — skipping");
 

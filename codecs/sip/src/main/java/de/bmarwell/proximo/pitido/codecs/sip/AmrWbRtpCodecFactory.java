@@ -12,9 +12,6 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.Linker;
-import java.lang.foreign.SymbolLookup;
 import java.util.Arrays;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -93,26 +90,13 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
     private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
 
     /**
-     * Probes for {@code libvo-amrwbenc.so.0} and binds all required FFM method handles.
+     * Probes for {@code libvo-amrwbenc.so.0} on construction.
      *
-     * <p>Called once at construction time.
-     * Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
-     * Uses {@link Arena#global()} so the library remains loaded for the lifetime of the JVM.
+     * <p>Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
+     * Library remains loaded for the lifetime of the JVM via {@link Arena#global()}.
      */
     public AmrWbRtpCodecFactory() {
-        try {
-            SymbolLookup _ = SymbolLookup.libraryLookup("libvo-amrwbenc.so.0", Arena.global());
-            Linker _ = Linker.nativeLinker();
-
-            this.available = true;
-            LOGGER.log(System.Logger.Level.INFO, "libvo-amrwbenc detected — AMR-WB RTP codec available");
-
-        } catch (IllegalArgumentException illegalArgumentException) {
-            LOGGER.log(
-                    System.Logger.Level.WARNING,
-                    "libvo-amrwbenc not found — AMR-WB RTP codec disabled: {0}",
-                    illegalArgumentException.getMessage());
-        }
+        probeLibrary("libvo-amrwbenc.so.0", "AMR-WB RTP codec");
     }
 
     @Override

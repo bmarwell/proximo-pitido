@@ -40,7 +40,6 @@ public class G722RtpCodecFactoryTest {
     @Test
     void isAvailableAfterProbeWhenLibraryPresent() {
         G722RtpCodecFactory factory = new G722RtpCodecFactory();
-        factory.probe();
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
@@ -56,7 +55,6 @@ public class G722RtpCodecFactoryTest {
     @Test
     void silenceFrameEncodesTo160Bytes() throws IOException {
         G722RtpCodecFactory factory = new G722RtpCodecFactory();
-        factory.probe();
 
         assumeTrue(factory.isAvailable(), "libspandsp not available on this host — skipping");
 
