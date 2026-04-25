@@ -21,11 +21,10 @@ import javax.enterprise.context.ApplicationScoped;
  * It encodes 13-bit linear PCM to 8-bit A-law logarithmic PCM at 8 kHz, producing 64 kbps audio
  * in 20 ms packets of 160 encoded bytes each.
  *
- * <p>G.711 A-law is memoryless: each sample encodes independently, so the encoder carries no state
- * across packets.
- * This bean is {@code @ApplicationScoped} (a CDI singleton) and safe to share across call legs;
- * {@link #forCall(String)} returns a new {@link PcmaRtpCodec} instance (the codec is stateless
- * so sharing would be fine, but factory pattern is consistent with stateful codecs).
+ * <p>G.711 A-law is memoryless: each sample encodes independently with no encoder state.
+ * This factory is {@code @ApplicationScoped} and stateless; {@link #forCall(String)} returns
+ * a new {@link PcmaRtpCodec} instance for each call leg, following the factory pattern
+ * for consistency with stateful codecs.
  *
  * @see G722RtpCodecFactory
  */

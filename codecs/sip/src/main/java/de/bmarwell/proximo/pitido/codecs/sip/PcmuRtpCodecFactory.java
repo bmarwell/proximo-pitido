@@ -22,8 +22,8 @@ import javax.enterprise.context.ApplicationScoped;
  * in 20 ms packets of 160 encoded bytes each.
  * RFC 3551 mandates that any SIP UA MUST be able to receive both PT=0 (PCMU) and PT=8 (PCMA).
  *
- * <p>G.711 µ-law is memoryless: each sample encodes independently, so the encoder carries no state
- * across packets.
+ * <p>G.711 µ-law is memoryless: each sample encodes independently with no encoder state.
+ * This factory is {@code @ApplicationScoped} and stateless.
  *
  * <p>Preference is set to 110 — slightly lower priority than {@link PcmaRtpCodecFactory} (100) because
  * A-law is the European standard and most SIP providers in this region prefer PCMA.

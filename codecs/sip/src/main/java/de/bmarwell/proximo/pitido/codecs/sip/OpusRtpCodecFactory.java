@@ -67,7 +67,7 @@ import javax.enterprise.context.ApplicationScoped;
  * <h2>Factory / per-call pattern</h2>
  *
  * <p>Opus carries predictor state across packets.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} determines the
+ * This {@code @ApplicationScoped} factory is stateless; {@link #forCall(String)} determines the
  * required encoder state size via {@code opus_encoder_get_size}, allocates a confined
  * {@link Arena}, initialises it with {@code opus_encoder_init}, and returns a plain (non-CDI)
  * {@code OpusRtpCodec} instance.
@@ -91,7 +91,7 @@ public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
     /**
      * Probes for {@code libopus.so.0}.
      *
-     * <p>Called once by the CDI container after construction.
+     * <p>Called once at construction time.
      * Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
      */
     @PostConstruct

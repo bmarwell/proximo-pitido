@@ -80,7 +80,7 @@ public final class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecF
      */
     private static final int RTP_CLOCK_RATE = 16_000;
 
-    /** CDI no-args constructor. */
+    /** No-args constructor. */
     public AmrWbBandwidthEfficientRtpCodecFactory() {
         super();
     }

@@ -76,11 +76,11 @@ import javax.enterprise.context.ApplicationScoped;
  *
  * <p>AMR-WB ACELP carries pitch and gain predictor state across packets; sharing encoder state
  * between calls corrupts audio.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} calls
+ * This {@code @ApplicationScoped} factory is stateless; {@link #forCall(String)} calls
  * {@code E_IF_init()} to obtain a fresh encoder state, then returns a plain (non-CDI)
  * {@code AmrWbRtpCodec} instance.
  * When the call ends, {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager}
- * calls {@link #close()}, which calls {@code E_IF_exit(state)} to release the native state.
+ * calls {@link RtpCodec#close()}, which calls {@code E_IF_exit(state)} to release the native state.
  *
  * @see G722RtpCodecFactory
  * @see NativeRtpCodecFactory
@@ -95,7 +95,7 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
     /**
      * Probes for {@code libvo-amrwbenc.so.0} and binds all required FFM method handles.
      *
-     * <p>Called once by the CDI container after construction.
+     * <p>Called once at construction time.
      * Sets {@link NativeRtpCodecFactory#available} to {@code true} when the library is found.
      * Uses {@link Arena#global()} so the library remains loaded for the lifetime of the JVM.
      */

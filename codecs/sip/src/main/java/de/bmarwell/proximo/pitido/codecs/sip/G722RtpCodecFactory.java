@@ -47,17 +47,17 @@ import javax.enterprise.context.ApplicationScoped;
  *   <li>{@code g722_encode_init(state*, rate, options)} — initialises the ADPCM encoder state
  *       in a pre-allocated segment; called once per call leg in {@link #forCall(String)}.</li>
  *   <li>{@code g722_encode(state*, out_bytes*, in_pcm*, len)} — encodes one frame; called per
- *       packet in {@link #encode(short[])}.</li>
+ *       packet in {@link RtpCodec#encode(short[])}.</li>
  * </ul>
  *
  * <h2>Factory / per-call separation</h2>
  *
  * <p>G.722 ADPCM carries predictor state across packets; sharing encoder state between calls
  * would corrupt audio.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} allocates a
+ * This {@code @ApplicationScoped} factory is stateless; {@link #forCall(String)} allocates a
  * fresh {@link Arena} and {@code g722_encode_state_t} segment for each call leg and returns a
  * plain (non-CDI) {@code G722RtpCodec} instance that implements {@link AutoCloseable}.
- * Callers must invoke {@link #close()} when the call ends to release the native encoder state
+ * Callers must invoke {@link RtpCodec#close()} when the call ends to release the native encoder state
  * promptly; {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager} handles this.
  *
  * <h2>G.729 — will not be implemented</h2>
@@ -78,7 +78,7 @@ public final class G722RtpCodecFactory extends NativeRtpCodecFactory {
     /**
      * Probes for {@code libspandsp.so.2} and binds the required FFM method handles.
      *
-     * <p>Called once by the CDI container after construction.
+     * <p>Called once at construction time.
      * Sets {@link #available} to {@code true} when the library is found and all symbols resolve.
      * Uses {@link Arena#global()} so the library remains loaded for the lifetime of the JVM.
      */

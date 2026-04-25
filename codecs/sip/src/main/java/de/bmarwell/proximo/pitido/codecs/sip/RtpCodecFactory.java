@@ -13,23 +13,30 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 /**
- * Abstracts a single RTP audio codec: sample-rate requirements, payload type, SDP description,
- * and the PCM → wire-format encoding step.
+ * Factory for creating per-call RTP codec instances with awareness of SDP offer parameters.
  *
- * <p>Each call leg negotiates exactly one codec during SDP offer/answer exchange.
- * The negotiated instance is stored in {@link CallMedia#codec()} and used by
- * {@link RtpAudioPlayer} for every packet in that call.
+ * <p><strong>Architecture:</strong> This factory pattern separates codec descriptor (sample rates,
+ * payload type, SDP name) from per-call codec state (encoder predictor state, memory arenas).
+ * The factory is {@code @ApplicationScoped} and stateless; each call leg obtains its own
+ * per-call {@link RtpCodec} instance by calling {@link #forCall(String)}.
  *
- * <p>Most codecs are stateful (the encoder carries ADPCM predictor state across packets) and must
- * <em>not</em> be shared across call legs.
- * {@link PcmaRtpCodecFactory} is the exception: G.711 A-law is memoryless, so its CDI singleton instance
- * is safe to share — {@link #forCall(String)} returns {@code this}.
+ * <p><strong>Lifecycle:</strong>
+ * <ol>
+ *   <li>{@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all {@code RtpCodecFactory}
+ *       beans via CDI {@code Instance<RtpCodecFactory>} during SDP offer/answer exchange.</li>
+ *   <li>Negotiator filters by {@link #isAvailable()} and {@link #preference()}, then calls
+ *       {@link #forCall(String)} to create a per-call {@link RtpCodec} instance.</li>
+ *   <li>The {@link RtpCodec} instance encodes audio frames via {@link RtpCodec#encode(short[])}
+ *       and must be released via {@link RtpCodec#close()} when the call ends.</li>
+ * </ol>
  *
- * <p>Each implementation is an {@code @ApplicationScoped} CDI bean.
- * {@link #isAvailable()} reports whether the codec can actually be used on the current host
- * (e.g. the required native library is installed).
- * {@link de.bmarwell.proximo.pitido.war.media.SdpNegotiator} discovers all beans via CDI
- * {@code Instance<RtpCodec>} and filters by availability and preference.
+ * <p><strong>Codec state:</strong> Most codecs are stateful (ADPCM predictor state, encoder memory).
+ * Each call leg must use its own {@link RtpCodec} instance; sharing encoder state across calls corrupts audio.
+ * {@link PcmaRtpCodecFactory} is stateless (G.711 A-law is memoryless) but follows the factory pattern
+ * for consistency and extensibility.
+ *
+ * <p>Each implementation provides metadata (payload type, sample rates, SDP parameters) via
+ * {@link #metadata()} for use during SDP negotiation and fmtp compatibility checking.
  */
 public interface RtpCodecFactory {
 
