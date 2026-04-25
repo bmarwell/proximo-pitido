@@ -1,0 +1,139 @@
+/*
+ * Licensed under the EUPL, Version 1.2 or – as soon they will be approved by the European Commission - subsequent
+ * versions of the EUPL (the "Licence");
+ * You may not use this work except in compliance with the Licence.
+ * You may obtain a copy of the Licence at:
+ *
+ * ${PROJECT_HOME}/LICENSE
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the Licence is
+ * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the Licence for the specific language governing permissions and limitations under the Licence.
+ */
+package de.bmarwell.proximo.pitido.war.media;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import de.bmarwell.proximo.pitido.codecs.input.PcmDecoderFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
+import java.time.Duration;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class RtpAudioPlayerTest {
+
+    @Mock
+    DatagramSocket socket;
+
+    @Mock
+    RtpCodec codec;
+
+    @Mock
+    RtpCodecMetadata metadata;
+
+    @Mock
+    PcmDecoderFactory pcmDecoderFactory;
+
+    @Mock
+    CallMedia callMedia;
+
+    private RtpAudioPlayer player;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        when(this.callMedia.localSocket()).thenReturn(this.socket);
+        when(this.callMedia.remoteRtp()).thenReturn(new InetSocketAddress("127.0.0.1", 5004));
+        when(this.callMedia.isHeld()).thenReturn(false);
+        when(this.codec.metadata()).thenReturn(this.metadata);
+        when(this.metadata.payloadType()).thenReturn(8); // PCMA
+        when(this.metadata.rtpTimestampIncrement()).thenReturn(160); // 20ms at 8kHz
+        when(this.metadata.samplesPerFrame()).thenReturn(160);
+        when(this.codec.encode(any())).thenReturn(new byte[20]);
+
+        this.player = new RtpAudioPlayer(this.callMedia, this.codec, this.pcmDecoderFactory);
+    }
+
+    // ── Marker bit tests ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("First packet of call has marker bit M=1")
+    void playSilence_firstPacket_hasMarkerBit() throws InterruptedException, IOException {
+        // given: fresh RtpAudioPlayer (firstPacketOfTalkspurt = true)
+        // when: send first silence packet
+        this.player.playSilence(Duration.ofMillis(20));
+
+        // then: first packet has M=1
+        ArgumentCaptor<DatagramPacket> captor = ArgumentCaptor.forClass(DatagramPacket.class);
+        verify(this.socket).send(captor.capture());
+
+        byte[] firstPacket = captor.getValue().getData();
+        byte markerByte = firstPacket[1];
+        int markerBit = (markerByte & 0x80) >> 7;
+
+        assertEquals(1, markerBit, "First packet should have marker bit M=1");
+    }
+
+    @Test
+    @DisplayName("Subsequent packets in same talkspurt have marker bit M=0")
+    void playSilence_subsequentPackets_noMarkerBit() throws InterruptedException, IOException {
+        // given: fresh RtpAudioPlayer
+        // when: send three silence packets
+        this.player.playSilence(Duration.ofMillis(60));
+
+        // then: first packet has M=1, second and third have M=0
+        ArgumentCaptor<DatagramPacket> captor = ArgumentCaptor.forClass(DatagramPacket.class);
+        verify(this.socket, times(3)).send(captor.capture());
+
+        java.util.List<DatagramPacket> packets = captor.getAllValues();
+
+        // First packet: M=1
+        int firstMarkerBit = (packets.get(0).getData()[1] & 0x80) >> 7;
+        assertEquals(1, firstMarkerBit, "First packet should have M=1");
+
+        // Second packet: M=0
+        int secondMarkerBit = (packets.get(1).getData()[1] & 0x80) >> 7;
+        assertEquals(0, secondMarkerBit, "Second packet should have M=0");
+
+        // Third packet: M=0
+        int thirdMarkerBit = (packets.get(2).getData()[1] & 0x80) >> 7;
+        assertEquals(0, thirdMarkerBit, "Third packet should have M=0");
+    }
+
+    @Test
+    @DisplayName("Marker bit is correctly positioned in byte 1 without overwriting payload type")
+    void sendRtpPacket_markerBitPreservesPayloadType() throws InterruptedException, IOException {
+        // given: codec with payload type 120 (Opus)
+        when(this.metadata.payloadType()).thenReturn(120);
+
+        // when: send first packet
+        this.player.playSilence(Duration.ofMillis(20));
+
+        // then: byte 1 = M(1) + PT(120) = 0x80 | 120 = 0xF8
+        ArgumentCaptor<DatagramPacket> captor = ArgumentCaptor.forClass(DatagramPacket.class);
+        verify(this.socket).send(captor.capture());
+
+        byte[] packet = captor.getValue().getData();
+        byte byte1 = packet[1];
+
+        int markerBit = (byte1 & 0x80) >> 7;
+        int payloadType = byte1 & 0x7F;
+
+        assertEquals(1, markerBit, "Marker bit should be set");
+        assertEquals(120, payloadType, "Payload type should be 120 (Opus), not modified by marker bit");
+    }
+}
