@@ -26,7 +26,7 @@ import javax.servlet.sip.SipURI;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
- * Rejects incoming SIP calls whose caller identity or User-Agent is on the configured blacklist.
+ * Rejects incoming SIP calls whose caller identity or User-Agent is on the configured blocklist.
  *
  * <p>Two lists are supported, both configured as comma-separated strings via MicroProfile Config:
  * <ul>
@@ -65,7 +65,7 @@ public class SipCallBlacklist {
         this.userAgentPrefixes = parseCommaSeparated(this.userAgentsConfig.orElse(""));
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "Call blacklist initialised — blocked from-users: {0}, blocked user-agent prefixes: {1}",
+                "Call blocklist initialised — blocked from-users: {0}, blocked user-agent prefixes: {1}",
                 this.fromUsers,
                 this.userAgentPrefixes);
     }
@@ -74,7 +74,7 @@ public class SipCallBlacklist {
      * Returns {@code true} if the request should be rejected.
      * Checks the {@code User-Agent} header and the user part of the {@code From} URI.
      */
-    public boolean isBlacklisted(SipServletRequest req) {
+    public boolean isBlocklisted(SipServletRequest req) {
         if (!this.isBlocklistEnabled()) {
             return false;
         }
