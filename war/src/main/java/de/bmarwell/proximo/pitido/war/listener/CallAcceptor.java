@@ -123,7 +123,7 @@ public class CallAcceptor {
 
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "{0}INVITE from [{1}] to [{2}]",
+                "{0}Incoming call from [{1}], calling [{2}]",
                 SipCallHeaders.callPrefix(sessionId),
                 req.getFrom(),
                 req.getTo());

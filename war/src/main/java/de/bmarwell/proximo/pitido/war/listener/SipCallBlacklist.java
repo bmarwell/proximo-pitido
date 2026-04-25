@@ -83,8 +83,8 @@ public class SipCallBlacklist {
 
         if (userAgent != null && isBlockedUserAgent(userAgent)) {
             LOGGER.log(
-                    System.Logger.Level.DEBUG,
-                    "Blacklisted call from [{0}] — User-Agent [{1}] is blocked",
+                    System.Logger.Level.INFO,
+                    "Rejecting call from [{0}] — User-Agent [{1}] is blocked",
                     req.getFrom(),
                     userAgent);
             return true;
@@ -97,8 +97,8 @@ public class SipCallBlacklist {
 
             if (user != null && isBlockedFromUser(user)) {
                 LOGGER.log(
-                        System.Logger.Level.DEBUG,
-                        "Blacklisted call from [{0}] — From user [{1}] is blocked",
+                        System.Logger.Level.INFO,
+                        "Rejecting call from [{0}] — from-user [{1}] is blocked",
                         req.getFrom(),
                         user);
                 return true;
@@ -110,8 +110,8 @@ public class SipCallBlacklist {
         }
 
         LOGGER.log(
-                System.Logger.Level.DEBUG,
-                "Blacklisted call from [{0}] — caller is not a trusted phone identity",
+                System.Logger.Level.INFO,
+                "Rejecting call from [{0}] — caller identity is not a trusted phone number",
                 req.getFrom());
         return true;
     }

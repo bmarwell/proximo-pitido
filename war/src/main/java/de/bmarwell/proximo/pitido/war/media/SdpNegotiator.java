@@ -87,7 +87,7 @@ public class SdpNegotiator {
         String sdpOffer = readSdpBody(invite);
 
         LOGGER.log(
-                System.Logger.Level.DEBUG, "{0}SDP offer:{1}{2}", callPrefix(callId), System.lineSeparator(), sdpOffer);
+                System.Logger.Level.TRACE, "{0}SDP offer:{1}{2}", callPrefix(callId), System.lineSeparator(), sdpOffer);
 
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
@@ -99,7 +99,7 @@ public class SdpNegotiator {
         String localIp = localSipHostProvider.get();
 
         LOGGER.log(
-                System.Logger.Level.DEBUG,
+                System.Logger.Level.TRACE,
                 "{0}SDP negotiation: local RTP {1}:{2} → remote RTP {3}:{4} — codec [{5}], telephone-event PT [{6}]",
                 callPrefix(callId),
                 localIp,
