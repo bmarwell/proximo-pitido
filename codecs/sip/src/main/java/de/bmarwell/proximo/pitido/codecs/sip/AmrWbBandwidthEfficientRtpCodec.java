@@ -191,26 +191,25 @@ public class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec implements Rt
             bwEfficientPayload[0] = (byte) (((cmr & 0x0F) << 4) | ((f & 0x01) << 3) | (ftHigh3 & 0x07));
 
             /* Byte 1: [FT_low(1)][Q(1)][speech(6)].
-            The first 6 bits of speech come from encoder's byte 1 (which has [ToC][P][speech(4)])
-            We want bits 5-0 of encoder byte 1 (the bottom 6 bits are the 4 speech bits + padding)
+            The first 6 bits of speech come from encoder's byte 1.
+            Encoder byte 1 has 8 bits of speech data.
+            We need the top 6 bits (bits 7-2), right-aligned to positions 5-0.
             */
-            int speechBits6from1 = encoderOutput[1] & 0x3F;
+            int speechBits6from1 = (encoderOutput[1] >> 2) & 0x3F;
             bwEfficientPayload[1] =
                     (byte) (((ftLow1 & 0x01) << 7) | ((qFromEncoder & 0x01) << 6) | (speechBits6from1 & 0x3F));
 
             /*
               Remaining bytes: shift speech left by 4 bits.
-              Encoder byte 1 has 2 bits of ToC+padding in the top, which we don't use.
-              Those 2 bits represent "used bits", so the remaining speech starts 2 bits into byte 1.
-              We've already extracted 6 bits from byte 1 for bwEfficientPayload[1].
-              Remaining speech: 2 bits from byte 1 (bits 7-6) + all of bytes 2-32.
-              These 2 bits become the top 2 bits of bwEfficientPayload[2].
+              We've already extracted top 6 bits (bits 7-2) from encoder byte 1.
+              Remaining 2 bits: bits 1-0 of encoder byte 1 become the top 2 bits of bwEfficientPayload[2].
+              Plus all of encoder bytes 2-32.
 
               RFC 4867 §4.3: BW-efficient payload is 263 bits (CMR(4) + ToC(6) + speech(253)),
               which rounds up to 33 bytes = 264 bits.
               The lower 1 bit of byte 32 is padding and MUST be zeroed per RFC.
             */
-            int carryover = (encoderOutput[1] >> 6) & 0x03; // Top 2 bits of encoder byte 1
+            int carryover = encoderOutput[1] & 0x03; // Bottom 2 bits of encoder byte 1
             for (int i = 2; i < encoderOutput.length; i++) {
                 bwEfficientPayload[i] = (byte) (((encoderOutput[i] & 0xFF) >> 2) | ((carryover & 0x03) << 6));
                 carryover = (encoderOutput[i] & 0x03); // Save bottom 2 bits for next iteration
