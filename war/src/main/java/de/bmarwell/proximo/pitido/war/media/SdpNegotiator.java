@@ -67,7 +67,7 @@ public class SdpNegotiator {
     Instance<RtpCodecFactory> availableCodecFactories;
 
     @Inject
-    PcmaRtpCodecFactory pcmaFallback;
+    Instance<PcmaRtpCodecFactory> pcmaFallback;
 
     /**
      * Negotiates media for the given INVITE.
@@ -293,7 +293,7 @@ public class SdpNegotiator {
      *         on the announcement thread before encoding
      */
     private RtpCodecFactory selectCodec(String sdpOffer) {
-        return selectCodec(this.availableCodecFactories.stream(), sdpOffer, this.pcmaFallback);
+        return selectCodec(this.availableCodecFactories.stream(), sdpOffer, this.pcmaFallback.get());
     }
 
     /**
