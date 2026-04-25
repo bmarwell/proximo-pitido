@@ -45,6 +45,8 @@ import java.util.Random;
  *   <li>20 ms packets at {@link RtpCodecFactory#samplesPerFrame()} samples per packet</li>
  *   <li>Sequence number and timestamp increment per packet</li>
  *   <li>SSRC is chosen randomly at construction time</li>
+ *   <li>Marker bit (M) is set to 1 on the first packet of the call and on the first packet
+ *       of each talkspurt (after silence ≥10 ms), per RFC 3551 §2.3</li>
  * </ul>
  *
  * <p>The caller is responsible for closing the {@link DatagramSocket} that backs this player;
@@ -64,6 +66,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private int seqNumber;
     private long timestamp;
     private Instant lastPacketSentAt;
+    private boolean firstPacketOfTalkspurt = true;
 
     /**
      * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
@@ -203,6 +206,8 @@ public class RtpAudioPlayer implements AudioPlayer {
      * {@code this.timestamp} does not, causing the receiver to see no gap in the RTP stream.
      * This method calculates the extra elapsed time and advances the timestamp by the equivalent
      * number of silent 20 ms frames so that the receiver hears genuine silence.
+     * When silence of 10 ms or more is detected, the {@link #firstPacketOfTalkspurt} flag is
+     * set to true, which causes the next RTP packet to have the marker bit (M) set per RFC 3551 §2.3.
      */
     private void advanceTimestampForSilence() {
         if (this.lastPacketSentAt == null) {
@@ -217,6 +222,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         if (extraSilenceMs >= 10L) {
             long silencePackets = extraSilenceMs / 20L;
             this.timestamp += silencePackets * this.codec.metadata().rtpTimestampIncrement();
+            this.firstPacketOfTalkspurt = true;
         }
     }
 
@@ -302,7 +308,10 @@ public class RtpAudioPlayer implements AudioPlayer {
         byte[] packet = new byte[12 + payload.length];
 
         packet[0] = (byte) 0x80; // V=2, P=0, X=0, CC=0
-        packet[1] = (byte) this.codec.metadata().payloadType(); // M=0, PT from negotiated codec
+
+        int markerBit = this.firstPacketOfTalkspurt ? 0x80 : 0x00;
+        packet[1] = (byte) (markerBit | this.codec.metadata().payloadType());
+
         packet[2] = (byte) (seqNumber >> 8);
         packet[3] = (byte) (seqNumber & 0xFF);
         packet[4] = (byte) (timestamp >> 24);
@@ -315,19 +324,20 @@ public class RtpAudioPlayer implements AudioPlayer {
         packet[11] = (byte) (ssrc & 0xFF);
         System.arraycopy(payload, 0, packet, 12, payload.length);
 
-        boolean markerBit = (packet[1] & 0x80) != 0;
+        boolean markerBitSet = (packet[1] & 0x80) != 0;
 
         LOGGER.log(
                 System.Logger.Level.TRACE,
                 "Sending RTP packet: seqNum={0} ts={1} marker={2} payloadBytes={3}",
                 this.seqNumber,
                 timestamp,
-                markerBit,
+                markerBitSet,
                 payload.length);
 
         this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
         timestamp += this.codec.metadata().rtpTimestampIncrement();
+        this.firstPacketOfTalkspurt = false;
     }
 }
