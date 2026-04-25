@@ -14,8 +14,10 @@ package de.bmarwell.proximo.pitido.codecs.sip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import org.junit.jupiter.api.Test;
 
+@NativeCodec(OpusRtpCodecFactory.class)
 public class OpusRtpCodecFactoryTest {
 
     private final OpusRtpCodecFactory codecFactory = new OpusRtpCodecFactory();

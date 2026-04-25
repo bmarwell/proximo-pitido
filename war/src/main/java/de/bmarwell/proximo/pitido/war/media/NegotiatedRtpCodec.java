@@ -67,7 +67,7 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     }
 
     @Override
-    public <T extends RtpCodec> T forCall(String offeredFmtp) {
+    public RtpCodec forCall(String offeredFmtp) {
         return this.delegate.forCall(this.offeredFmtp);
     }
 

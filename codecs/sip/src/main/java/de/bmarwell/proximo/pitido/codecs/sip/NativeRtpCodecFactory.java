@@ -23,7 +23,7 @@ import java.lang.foreign.SymbolLookup;
  * to check library availability and set the {@code available} flag.
  * Probing occurs at construction time; availability cannot change during runtime.
  */
-public abstract class NativeRtpCodecFactory<T extends RtpCodec> implements RtpCodecFactory {
+public abstract class NativeRtpCodecFactory implements RtpCodecFactory {
 
     private static final System.Logger LOGGER = System.getLogger(NativeRtpCodecFactory.class.getName());
 

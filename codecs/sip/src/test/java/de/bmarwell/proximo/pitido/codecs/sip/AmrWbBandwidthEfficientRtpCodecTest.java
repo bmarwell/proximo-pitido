@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>These tests validate the bandwidth-efficient RTP payload format (RFC 4867 §4.3).
  */
+@NativeCodec(AmrWbBandwidthEfficientRtpCodecFactory.class)
 class AmrWbBandwidthEfficientRtpCodecTest {
 
     private final AmrWbBandwidthEfficientRtpCodec codec = new AmrWbBandwidthEfficientRtpCodecFactory().forCall("");

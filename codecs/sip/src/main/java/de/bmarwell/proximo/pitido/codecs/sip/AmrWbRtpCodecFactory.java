@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
+import java.lang.foreign.Arena;
 import java.util.Arrays;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -83,7 +84,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see NativeRtpCodecFactory
  */
 @ApplicationScoped
-public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory<AmrWbRtpCodec> {
+public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory {
 
     private static final System.Logger LOGGER = System.getLogger(AmrWbRtpCodecFactory.class.getName());
 

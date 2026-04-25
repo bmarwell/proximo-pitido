@@ -16,8 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import org.junit.jupiter.api.Test;
 
+@NativeCodec(AmrWbRtpCodecFactory.class)
 public class AmrWbRtpCodecFactoryTest {
 
     private final AmrWbRtpCodecFactory codec = new AmrWbRtpCodecFactory();

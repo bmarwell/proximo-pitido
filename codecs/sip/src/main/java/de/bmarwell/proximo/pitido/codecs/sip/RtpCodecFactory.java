@@ -49,7 +49,7 @@ public interface RtpCodecFactory {
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty if absent
      */
-    <T extends RtpCodec> T forCall(String offeredFmtp);
+    RtpCodec forCall(String offeredFmtp);
 
     /**
      * Returns {@code true} if this codec can be used on the current host.

@@ -16,8 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import org.junit.jupiter.api.Test;
 
+@NativeCodec(G722RtpCodecFactory.class)
 class G722RtpCodecTest {
 
     private final G722RtpCodec codec = new G722RtpCodecFactory().forCall("");
