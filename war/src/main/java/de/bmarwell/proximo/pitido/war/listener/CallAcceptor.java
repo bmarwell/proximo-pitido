@@ -66,7 +66,7 @@ public class CallAcceptor {
     PcmDecoderFactory pcmDecoderFactory;
 
     @Inject
-    SipCallBlacklist sipCallBlacklist;
+    SipCallBlacklist sipCallBlocklist;
 
     @Inject
     @ConfigProperty(name = "sip.languages.enabled", defaultValue = "")
@@ -92,7 +92,7 @@ public class CallAcceptor {
 
     /**
      * Handles an incoming INVITE.
-     * Rejects with {@code 403 Forbidden} for blacklisted callers, {@code 480 Temporarily
+     * Rejects with {@code 403 Forbidden} for blocklisted callers, {@code 480 Temporarily
      * Unavailable} when no language factory is registered.
      * Sends {@code 180 Ringing} immediately and delegates further processing to a managed
      * executor task.
@@ -123,15 +123,15 @@ public class CallAcceptor {
 
         LOGGER.log(
                 System.Logger.Level.INFO,
-                "{0}INVITE from [{1}] to [{2}]",
+                "{0}Incoming call from [{1}], calling [{2}]",
                 SipCallHeaders.callPrefix(sessionId),
                 req.getFrom(),
                 req.getTo());
 
-        if (this.sipCallBlacklist.isBlacklisted(req)) {
+        if (this.sipCallBlocklist.isBlocklisted(req)) {
             LOGGER.log(
                     System.Logger.Level.INFO,
-                    "{0}Rejecting blacklisted call from [{1}]",
+                    "{0}Rejecting blocklisted call from [{1}]",
                     SipCallHeaders.callPrefix(sessionId),
                     req.getFrom());
             this.callSessionManager.releaseSipCallId(sipCallId);

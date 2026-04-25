@@ -141,7 +141,7 @@ public class CallSessionManager {
                 callDuration.toSeconds());
         LOGGER.log(
                 System.Logger.Level.DEBUG,
-                "{0}Caller identity: {1}",
+                "{0}Caller identity details: {1}",
                 SipCallHeaders.callPrefix(sessionId),
                 callState.callerIdentitySummary());
         this.pendingSelections.remove(sessionId);

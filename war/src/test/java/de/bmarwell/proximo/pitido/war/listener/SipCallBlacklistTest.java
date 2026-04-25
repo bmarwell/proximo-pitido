@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 
 class SipCallBlacklistTest {
 
-    private static SipCallBlacklist blacklist(String fromUsers, String userAgents) {
+    private static SipCallBlacklist blocklist(String fromUsers, String userAgents) {
         var bl = new SipCallBlacklist();
         bl.fromUsersConfig = Optional.ofNullable(fromUsers);
         bl.userAgentsConfig = Optional.ofNullable(userAgents);
@@ -36,36 +36,36 @@ class SipCallBlacklistTest {
     @Test
     void empty_string_or_null_is_empty_list() {
         // given
-        final SipCallBlacklist blacklist = blacklist(null, null);
+        final SipCallBlacklist blocklist = blocklist(null, null);
 
         // when
-        final boolean blacklisted = blacklist.isBlacklisted(mockRequest("any", "any", null, null));
+        final boolean blocklisted = blocklist.isBlocklisted(mockRequest("any", "any", null, null));
 
         // then
-        assertTrue(blacklist.getFromUsers().isEmpty());
-        assertTrue(blacklist.getUserAgentPrefixes().isEmpty());
-        assertFalse(blacklisted);
+        assertTrue(blocklist.getFromUsers().isEmpty());
+        assertTrue(blocklist.getUserAgentPrefixes().isEmpty());
+        assertFalse(blocklisted);
 
         // given
-        final var blacklist2 = blacklist("", "");
+        final var blocklist2 = blocklist("", "");
 
         // when
-        final var blacklisted2 = blacklist2.isBlacklisted(mockRequest("any", "any", null, null));
+        final var blocklisted2 = blocklist2.isBlocklisted(mockRequest("any", "any", null, null));
 
         // then
-        assertTrue(blacklist.getFromUsers().isEmpty());
-        assertTrue(blacklist.getUserAgentPrefixes().isEmpty());
-        assertFalse(blacklisted2);
+        assertTrue(blocklist.getFromUsers().isEmpty());
+        assertTrue(blocklist.getUserAgentPrefixes().isEmpty());
+        assertFalse(blocklisted2);
     }
 
     @Test
     void blocksCallByFromUser() {
         // given
-        var bl = blacklist("test,spam", "");
+        var bl = blocklist("test,spam", "");
         var req = mockRequest("test", null, null, null);
 
         // when
-        boolean result = bl.isBlacklisted(req);
+        boolean result = bl.isBlocklisted(req);
 
         // then
         assertTrue(result);
@@ -74,25 +74,25 @@ class SipCallBlacklistTest {
     @Test
     void blocksCallByUserAgentPrefix() {
         // given
-        var bl = blacklist("", "Z ");
+        var bl = blocklist("", "Z ");
         var req = mockRequest("alice", "Z 5.6.4 v2.10.20.4", null, null);
 
         // when
-        boolean result = bl.isBlacklisted(req);
+        boolean result = bl.isBlocklisted(req);
 
         // then
         assertTrue(result);
     }
 
     @Test
-    void allowsCallWithAssertedPhoneIdentityWhenBlacklistIsEmpty() {
+    void allowsCallWithAssertedPhoneIdentityWhenBlocklistIsEmpty() {
         // given
-        var bl = blacklist("", "");
+        var bl = blocklist("", "");
         var req = mockRequest(
                 "+491707139317", null, "phone", "<sip:+491707139317@1und1-mobilfunk.de;user=phone;transport=udp>");
 
         // when
-        boolean result = bl.isBlacklisted(req);
+        boolean result = bl.isBlocklisted(req);
 
         // then
         assertFalse(result);
@@ -101,11 +101,11 @@ class SipCallBlacklistTest {
     @Test
     void allowsCallWithFromUserPhoneParamWhenNeitherUserNorAgentMatch() {
         // given
-        var bl = blacklist("test", "Z ");
+        var bl = blocklist("test", "Z ");
         var req = mockRequest("+491707139317", null, "phone", null);
 
         // when
-        boolean result = bl.isBlacklisted(req);
+        boolean result = bl.isBlocklisted(req);
 
         // then
         assertFalse(result);
@@ -114,11 +114,11 @@ class SipCallBlacklistTest {
     @Test
     void blocksKnownPolycomBotByFromUser() {
         // given
-        var blacklist = blacklist("13216220427", "");
+        var blocklist = blocklist("13216220427", "");
         var request = mockRequest("13216220427", "PolycomSoundPointIP-SPIP_335-UA/3.3.1.0907", null, null);
 
         // when
-        boolean result = blacklist.isBlacklisted(request);
+        boolean result = blocklist.isBlocklisted(request);
 
         // then
         assertTrue(result);
@@ -127,11 +127,11 @@ class SipCallBlacklistTest {
     @Test
     void blocksSipBotWithoutAssertedOrPhoneIdentity() {
         // given
-        var blacklist = blacklist("13216220427", "Z");
+        var blocklist = blocklist("13216220427", "Z");
         var request = mockRequest("1001", "Cisco-SIPGateway/IOS-12.x", null, null);
 
         // when
-        boolean result = blacklist.isBlacklisted(request);
+        boolean result = blocklist.isBlocklisted(request);
 
         // then
         assertTrue(result);

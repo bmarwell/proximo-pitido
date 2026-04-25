@@ -60,18 +60,30 @@
 
   <!--
     Default runtime logging profile.
-    Liberty base level stays at AUDIT for framework noise control.
-    All classes under de.bmarwell.proximo.pitido.* are set to fine (DEBUG) so that technical details are captured in trace.log without appearing in docker compose logs.
-    This replaces the previous class-by-class list (SipCallHandler, SipRegistrationListener, LanguageInfoListener): SipCallHandler is a routing-only delegate with no log statements of its own; the package wildcard covers all actual logging classes without needing to enumerate them individually.
-    RtpAudioPlayer and RtpDtmfReceiver are set to finest because their per-packet logging is extremely verbose and is only useful for RTP-level diagnosis.
-
-    Optional trace selectors to enable when diagnosing specific problems:
+    
+    Console (INFO level): business events only
+    - Incoming calls
+    - Call ended (with codec, duration, caller identity)
+    - Blacklisted calls (caller rejected)
+    - Registration status (successful, auth issues, etc)
+    - Errors and warnings
+    
+    Trace file (FINE=DEBUG level): operational details
+    - SDP offer/answer details
+    - Codec selection and negotiation
+    - Duplicate call forks
+    - Caller identity details (debug-level expansion of INFO events)
+    
+    Trace selectors (FINEST=TRACE level, enable when diagnosing specific problems):
     - de.bmarwell.proximo.pitido.war.media.SdpNegotiator=finest
-      Shows parsed SDP offer details, selected RTP endpoint data, and codec matching.
+      Full multiline SDP offer/answer and RTP endpoint details
+    - de.bmarwell.proximo.pitido.war.media.RtpAudioPlayer=finest
+    - de.bmarwell.proximo.pitido.war.media.RtpDtmfReceiver=finest
+      Per-packet RTP transmission and DTMF reception (extremely verbose)
     - de.bmarwell.proximo.pitido.codecs.input.*=finest
-      Shows native decoder and mixer capability probes (opus/soxr) and fallback decisions.
+      Native decoder and mixer capability probes (opus/soxr)
     - de.bmarwell.proximo.pitido.codecs.sip.*=finest
-      Shows SIP codec availability probes (for example, G.722 native encoder readiness).
+      SIP codec availability probes (G.722 encoder, etc)
   -->
   <logging
     consoleLogLevel="INFO"
