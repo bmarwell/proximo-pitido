@@ -64,7 +64,7 @@ public class MenuRunner {
             String sessionId,
             CallMedia media) {
         try {
-            Thread.sleep(5_000);
+            Thread.sleep(500);
             runMenuLoop(player, menu, sessionId);
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();

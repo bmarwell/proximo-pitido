@@ -35,25 +35,23 @@ import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.servlet.sip.SipServletRequest;
 
-/**
- * Performs SDP offer/answer negotiation for incoming INVITE requests.
- *
- * <p>Parses the SDP offer from the INVITE body to extract the remote RTP endpoint,
- * allocates a local UDP socket for sending RTP, selects the best mutually supported codec,
- * and builds the SDP answer string to include in the 200 OK response.
- *
- * <p>Codec preference is driven by CDI-injected {@link RtpCodecFactory} beans, filtered by
- * {@link RtpCodecFactory#isAvailable()} and sorted by {@link RtpCodecFactory#preference()} (lower = preferred).
- * The first available codec whose payload type appears in the SDP offer is selected.
- * If no injected codec matches, the injected {@link PcmaRtpCodecFactory} is used as the unconditional
- * fallback (PCMA is always available).
- *
- * <p>The SDP answer advertises {@code sendonly} direction since this application is a
- * speaking clock that transmits audio but never expects to receive it.
- *
- * <p>The returned {@link CallMedia} record's {@link CallMedia#localSocket()} must be
- * closed by the caller when the call ends.
- */
+/// Performs SDP offer/answer negotiation for incoming INVITE requests.
+///
+/// Parses the SDP offer from the INVITE body to extract the remote RTP endpoint,
+/// allocates a local UDP socket for sending RTP, selects the best mutually supported codec,
+/// and builds the SDP answer string to include in the 200 OK response.
+///
+/// Codec preference is driven by CDI-injected [RtpCodecFactory] beans, filtered by
+/// [RtpCodecFactory#isAvailable()] and sorted by [RtpCodecFactory#preference()] (lower = preferred).
+/// The first available codec whose payload type appears in the SDP offer is selected.
+/// If no injected codec matches, the injected [PcmaRtpCodecFactory] is used as the unconditional
+/// fallback (PCMA is always available).
+///
+/// The SDP answer advertises `sendrecv` direction to enable DTMF (telephone-event)
+/// reception on the shared RTP socket.
+///
+/// The returned [CallMedia] record's [CallMedia#localSocket()] must be
+/// closed by the caller when the call ends.
 @ApplicationScoped
 public class SdpNegotiator {
 
@@ -463,9 +461,17 @@ public class SdpNegotiator {
             sdp.append("a=fmtp:").append(telephoneEventPt).append(" 0-15\r\n");
         }
 
-        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendonly\r\n");
+        sdp.append("a=ptime:").append(PTIME_MS).append("\r\n").append("a=sendrecv\r\n");
 
-        return sdp.toString();
+        String answer = sdp.toString();
+        LOGGER.log(
+                System.Logger.Level.DEBUG,
+                "{0}SDP answer:{1}{2}",
+                callPrefix(codec.metadata().sdpName()),
+                System.lineSeparator(),
+                answer);
+
+        return answer;
     }
 
     private static String callPrefix(String callId) {

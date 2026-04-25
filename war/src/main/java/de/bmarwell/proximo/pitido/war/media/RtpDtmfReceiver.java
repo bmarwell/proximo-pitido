@@ -121,6 +121,11 @@ public class RtpDtmfReceiver implements Runnable {
         int payloadType = data[1] & 0x7F;
 
         if (payloadType != this.telephoneEventPayloadType) {
+            LOGGER.log(
+                    System.Logger.Level.TRACE,
+                    "Received RTP packet with PT {0} (not telephone-event PT {1})",
+                    payloadType,
+                    this.telephoneEventPayloadType);
             return;
         }
 
