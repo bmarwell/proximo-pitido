@@ -39,6 +39,8 @@ import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata;
  * {@link java.lang.WrongThreadException}.
  *
  * <p>All methods delegate transparently to the wrapped codec factory instance.
+ * The {@link #metadata()} method returns a wrapped metadata that overrides {@code payloadType()}
+ * to return the negotiated value.
  *
  * @param delegate               the RtpCodecFactory CDI bean
  * @param negotiatedPayloadType  the payload type assigned by the caller in the SDP offer
@@ -61,7 +63,7 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
 
     @Override
     public RtpCodecMetadata metadata() {
-        return this.delegate.metadata();
+        return new WrappedMetadata(this.delegate.metadata(), this.negotiatedPayloadType);
     }
 
     @Override
@@ -77,5 +79,48 @@ record NegotiatedRtpCodec(RtpCodecFactory delegate, int negotiatedPayloadType, S
     @Override
     public String fmtpAnswer(String offeredFmtp) {
         return this.delegate.fmtpAnswer(offeredFmtp);
+    }
+
+    /**
+     * Wraps delegate metadata and overrides {@code payloadType()} to return the negotiated value.
+     *
+     * <p>All other metadata methods delegate to the wrapped metadata unchanged.
+     */
+    private record WrappedMetadata(RtpCodecMetadata delegate, int negotiatedPayloadType) implements RtpCodecMetadata {
+
+        @Override
+        public int payloadType() {
+            return this.negotiatedPayloadType;
+        }
+
+        @Override
+        public int rtpClockRate() {
+            return this.delegate.rtpClockRate();
+        }
+
+        @Override
+        public int inputSampleRate() {
+            return this.delegate.inputSampleRate();
+        }
+
+        @Override
+        public int samplesPerFrame() {
+            return this.delegate.samplesPerFrame();
+        }
+
+        @Override
+        public int rtpTimestampIncrement() {
+            return this.delegate.rtpTimestampIncrement();
+        }
+
+        @Override
+        public String sdpName() {
+            return this.delegate.sdpName();
+        }
+
+        @Override
+        public int sdpChannelCount() {
+            return this.delegate.sdpChannelCount();
+        }
     }
 }
