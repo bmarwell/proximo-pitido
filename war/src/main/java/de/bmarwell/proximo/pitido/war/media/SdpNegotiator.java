@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.enterprise.context.ApplicationScoped;
@@ -67,7 +68,7 @@ public class SdpNegotiator {
     Instance<RtpCodecFactory> availableCodecFactories;
 
     @Inject
-    PcmaRtpCodecFactory pcmaFallback;
+    Instance<PcmaRtpCodecFactory> pcmaFallback;
 
     /**
      * Negotiates media for the given INVITE.
@@ -181,7 +182,7 @@ public class SdpNegotiator {
      * Extracts the offered RTP payload type integers from the {@code m=audio} line of the SDP offer.
      * Returns {@code {8}} (PCMA) as default if the line cannot be parsed.
      */
-    static Set<Integer> parseOfferedPayloadTypes(String sdp, RtpCodecFactory pcmaFallback) {
+    static Set<Integer> parseOfferedPayloadTypes(String sdp, Supplier<RtpCodecFactory> fallbackSupplier) {
         return sdp.lines()
                 .filter(line -> line.startsWith("m=audio "))
                 .findFirst()
@@ -192,7 +193,7 @@ public class SdpNegotiator {
                             .map(Integer::parseInt)
                             .collect(Collectors.toSet());
                 })
-                .orElse(Set.of(pcmaFallback.metadata().payloadType()));
+                .orElse(Set.of(fallbackSupplier.get().metadata().payloadType()));
     }
 
     /**
@@ -293,7 +294,7 @@ public class SdpNegotiator {
      *         on the announcement thread before encoding
      */
     private RtpCodecFactory selectCodec(String sdpOffer) {
-        return selectCodec(this.availableCodecFactories.stream(), sdpOffer, this.pcmaFallback);
+        return selectCodec(this.availableCodecFactories.stream(), sdpOffer, () -> this.pcmaFallback.get());
     }
 
     /**
@@ -303,12 +304,13 @@ public class SdpNegotiator {
      *
      * @param codecs      available codec descriptors, each an {@code @ApplicationScoped} CDI bean
      * @param sdpOffer    the full SDP offer string from the INVITE body
-     * @param pcmaFallback PCMA codec factory to use as fallback
+     * @param fallbackSupplier Supplier for PCMA codec factory as fallback
      * @return a {@link NegotiatedRtpCodec} wrapping the selected codec descriptor with the
      *         negotiated payload type; call {@link RtpCodecFactory#forCall(String)} on the announcement thread
      */
-    static RtpCodecFactory selectCodec(Stream<RtpCodecFactory> codecs, String sdpOffer, RtpCodecFactory pcmaFallback) {
-        Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer, pcmaFallback);
+    static RtpCodecFactory selectCodec(
+            Stream<RtpCodecFactory> codecs, String sdpOffer, Supplier<RtpCodecFactory> fallbackSupplier) {
+        Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer, fallbackSupplier);
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
         Map<Integer, String> fmtp = parseFmtp(sdpOffer);
 
@@ -323,8 +325,8 @@ public class SdpNegotiator {
             LOGGER.log(System.Logger.Level.DEBUG, "No matching codec found in SDP offer; falling back to PCMA (PT 8)");
         }
 
-        NegotiatedRtpCodec result = selected.orElseGet(() ->
-                new NegotiatedRtpCodec(pcmaFallback, pcmaFallback.metadata().payloadType(), ""));
+        NegotiatedRtpCodec result = selected.orElseGet(() -> new NegotiatedRtpCodec(
+                fallbackSupplier.get(), fallbackSupplier.get().metadata().payloadType(), ""));
 
         LOGGER.log(
                 System.Logger.Level.DEBUG,

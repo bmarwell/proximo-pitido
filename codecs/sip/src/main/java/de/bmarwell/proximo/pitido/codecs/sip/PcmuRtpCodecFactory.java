@@ -31,7 +31,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see PcmaRtpCodecFactory
  */
 @ApplicationScoped
-public final class PcmuRtpCodecFactory implements RtpCodecFactory {
+public class PcmuRtpCodecFactory implements RtpCodecFactory {
 
     private static final RtpCodecMetadata METADATA = new PcmuMetadata();
 

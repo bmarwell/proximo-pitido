@@ -52,7 +52,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see AmrWbRtpCodecFactory
  */
 @ApplicationScoped
-public final class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecFactory {
+public class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecFactory {
 
     private static final System.Logger LOGGER =
             System.getLogger(AmrWbBandwidthEfficientRtpCodecFactory.class.getName());

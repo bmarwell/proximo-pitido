@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.codecs.sip;
 
+import java.lang.foreign.Arena;
 import javax.enterprise.context.ApplicationScoped;
 
 /**
@@ -72,7 +73,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see NativeRtpCodecFactory
  */
 @ApplicationScoped
-public final class OpusRtpCodecFactory extends NativeRtpCodecFactory {
+public class OpusRtpCodecFactory extends NativeRtpCodecFactory {
 
     private static final RtpCodecMetadata METADATA = new OpusMetadata();
 

@@ -194,8 +194,8 @@ class SdpNegotiatorTest {
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
 
         // when
-        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
-        RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, pcmaFallback);
+        RtpCodecFactory selected =
+                SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, PcmaRtpCodecFactory::new);
 
         // then
         assertEquals("AMR-WB", selected.metadata().sdpName(), "Selected codec must be AMR-WB");
@@ -217,9 +217,8 @@ class SdpNegotiatorTest {
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
 
         // when
-        RtpCodecFactory pcmaFallback = new PcmaRtpCodecFactory();
-        RtpCodecFactory selected =
-                SdpNegotiator.selectCodec(Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, pcmaFallback);
+        RtpCodecFactory selected = SdpNegotiator.selectCodec(
+                Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, PcmaRtpCodecFactory::new);
 
         // then
         org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall(anyString());

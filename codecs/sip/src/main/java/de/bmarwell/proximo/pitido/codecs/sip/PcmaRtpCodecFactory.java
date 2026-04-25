@@ -29,7 +29,7 @@ import javax.enterprise.context.ApplicationScoped;
  * @see G722RtpCodecFactory
  */
 @ApplicationScoped
-public final class PcmaRtpCodecFactory implements RtpCodecFactory {
+public class PcmaRtpCodecFactory implements RtpCodecFactory {
 
     private static final RtpCodecMetadata METADATA = new PcmaMetadata();
 
