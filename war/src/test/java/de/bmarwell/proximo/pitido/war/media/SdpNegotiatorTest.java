@@ -125,13 +125,12 @@ class SdpNegotiatorTest {
                 sdpAnswer.contains("a=rtpmap:101 telephone-event/8000"),
                 "SDP answer must include telephone-event rtpmap");
         assertTrue(sdpAnswer.contains("a=fmtp:101 0-15"), "SDP answer must include telephone-event fmtp");
-        assertTrue(
-                sdpAnswer.contains("a=sendonly"), "SDP answer must use sendonly — speaking clock never receives audio");
+        assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv to enable DTMF reception");
     }
 
     @Test
-    @DisplayName("SDP answer is sendonly even without telephone-event")
-    void buildSdpAnswer_withoutTelephoneEvent_isSendonly() {
+    @DisplayName("SDP answer is sendrecv even without telephone-event")
+    void buildSdpAnswer_withoutTelephoneEvent_isSendrecv() {
         // given
         String localIp = "192.168.1.1";
         int localPort = 20000;
@@ -141,7 +140,7 @@ class SdpNegotiatorTest {
         String sdpAnswer = invokeBuildSdpAnswer(localIp, localPort, telephoneEventPt);
 
         // then
-        assertTrue(sdpAnswer.contains("a=sendonly"), "SDP answer must use sendonly even without telephone-event");
+        assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv to enable DTMF reception");
     }
 
     /**
