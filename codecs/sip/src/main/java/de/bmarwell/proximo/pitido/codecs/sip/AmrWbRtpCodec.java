@@ -178,7 +178,7 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
      *
      * <p>The returned array contains the complete RFC 4867 §4.4 octet-aligned payload:
      * a 1-byte CMR header, a 1-byte Table of Contents entry, and the encoded speech bytes.
-     * This method is only valid on per-call instances created by {@link #forCall()}.
+     * This method is only valid on per-call instances created by {@link #forCall(String)}.
      *
      * @param pcmFrame 320 mono PCM samples at 16 000 Hz; length must equal
      *                 {@link #samplesPerFrame()}

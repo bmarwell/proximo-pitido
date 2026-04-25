@@ -18,6 +18,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import de.bmarwell.proximo.pitido.codecs.sip.AmrWbMetadata;
+import de.bmarwell.proximo.pitido.codecs.sip.G722Metadata;
+import de.bmarwell.proximo.pitido.codecs.sip.PcmaMetadata;
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.util.Map;
@@ -171,19 +174,15 @@ class SdpNegotiatorTest {
         String sdp = SDP_OFFER_TELEKOM_VOLTE;
 
         RtpCodecFactory g722Stub = mock(RtpCodecFactory.class);
+        when(g722Stub.metadata()).thenReturn(new G722Metadata());
         when(g722Stub.isAvailable()).thenReturn(true);
         when(g722Stub.preference()).thenReturn(50);
-        when(g722Stub.sdpName()).thenReturn("G722");
-        when(g722Stub.rtpClockRate()).thenReturn(8000);
-        when(g722Stub.payloadType()).thenReturn(9);
         when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
 
         RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
         when(amrWbStub.isAvailable()).thenReturn(true);
         when(amrWbStub.preference()).thenReturn(40);
-        when(amrWbStub.sdpName()).thenReturn("AMR-WB");
-        when(amrWbStub.rtpClockRate()).thenReturn(16000);
-        when(amrWbStub.payloadType()).thenReturn(98);
+        when(amrWbStub.metadata()).thenReturn(new AmrWbMetadata());
         when(amrWbStub.matchesFmtp(anyString()))
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
 
@@ -192,8 +191,11 @@ class SdpNegotiatorTest {
         RtpCodecFactory selected = SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, pcmaFallback);
 
         // then — AMR-WB must be selected at the octet-aligned PT 110, not the BW-efficient PT 104
-        assertEquals("AMR-WB", selected.sdpName(), "Selected codec must be AMR-WB");
-        assertEquals(110, selected.payloadType(), "Negotiated PT must be 110 (octet-aligned), not 104 (BW-efficient)");
+        assertEquals("AMR-WB", selected.metadata().sdpName(), "Selected codec must be AMR-WB");
+        assertEquals(
+                110,
+                selected.metadata().payloadType(),
+                "Negotiated PT must be 110 (octet-aligned), not 104 (BW-efficient)");
     }
 
     @Test
@@ -202,9 +204,7 @@ class SdpNegotiatorTest {
         RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
-        when(descriptorStub.sdpName()).thenReturn("PCMA");
-        when(descriptorStub.rtpClockRate()).thenReturn(8000);
-        when(descriptorStub.payloadType()).thenReturn(8);
+        when(descriptorStub.metadata()).thenReturn(new PcmaMetadata());
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
 
         // when
@@ -215,7 +215,7 @@ class SdpNegotiatorTest {
         // then — forCall() must NOT have been called during codec selection;
         // the announcement thread must call it, not the SDP-negotiation thread.
         org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall(anyString());
-        assertEquals(8, selected.payloadType());
+        assertEquals(8, selected.metadata().payloadType());
         // The returned wrapper must hold the original descriptor, not a per-call instance.
         assertEquals(descriptorStub, ((NegotiatedRtpCodec) selected).delegate());
     }

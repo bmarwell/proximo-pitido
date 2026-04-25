@@ -45,7 +45,7 @@ import javax.enterprise.context.ApplicationScoped;
  * <p>The FFM binding calls two functions:
  * <ul>
  *   <li>{@code g722_encode_init(state*, rate, options)} — initialises the ADPCM encoder state
- *       in a pre-allocated segment; called once per call leg in {@link #forCall()}.</li>
+ *       in a pre-allocated segment; called once per call leg in {@link #forCall(String)}.</li>
  *   <li>{@code g722_encode(state*, out_bytes*, in_pcm*, len)} — encodes one frame; called per
  *       packet in {@link #encode(short[])}.</li>
  * </ul>
@@ -54,7 +54,7 @@ import javax.enterprise.context.ApplicationScoped;
  *
  * <p>G.722 ADPCM carries predictor state across packets; sharing encoder state between calls
  * would corrupt audio.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall()} allocates a
+ * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} allocates a
  * fresh {@link Arena} and {@code g722_encode_state_t} segment for each call leg and returns a
  * plain (non-CDI) {@code G722RtpCodec} instance that implements {@link AutoCloseable}.
  * Callers must invoke {@link #close()} when the call ends to release the native encoder state

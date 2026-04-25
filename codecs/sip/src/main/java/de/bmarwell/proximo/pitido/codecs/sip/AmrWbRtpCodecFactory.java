@@ -76,7 +76,7 @@ import javax.enterprise.context.ApplicationScoped;
  *
  * <p>AMR-WB ACELP carries pitch and gain predictor state across packets; sharing encoder state
  * between calls corrupts audio.
- * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall()} calls
+ * This {@code @ApplicationScoped} CDI bean acts as a factory: {@link #forCall(String)} calls
  * {@code E_IF_init()} to obtain a fresh encoder state, then returns a plain (non-CDI)
  * {@code AmrWbRtpCodec} instance.
  * When the call ends, {@link de.bmarwell.proximo.pitido.war.media.CallSessionManager}

@@ -30,7 +30,7 @@ public interface RtpCodec extends AutoCloseable {
      * Returns static metadata for this codec: payload type, sample rates, SDP parameters, etc.
      *
      * <p>Metadata is codec-wide and independent of per-call state.
-     * Both the factory and per-call codec instances expose the same metadata.
+     * All per-call codec instances for the same codec type expose the same metadata.
      *
      * @return immutable metadata object
      */
@@ -59,12 +59,14 @@ public interface RtpCodec extends AutoCloseable {
      */
     String fmtpParams();
 
-    /// Releases any native resources held by this per-call codec instance.
-    ///
-    /// Stateless codecs (e.g. PCMA) do not hold any native resources and inherit the default no-op implementation.
-    /// Stateful per-call codecs (e.g. G.722) override this to release their native [Arena].
+    /**
+     * Releases any native resources held by this per-call codec instance.
+     *
+     * <p>Stateless codecs (e.g. PCMA) do not hold any native resources and inherit the default no-op implementation.
+     * Stateful per-call codecs (e.g. G.722) override this to release their native Arena.
+     */
     @Override
     default void close() {
-        // no-op for stateless codecs (e.g. PCMA) whose forCall() returns the shared CDI singleton
+        // no-op for stateless codecs; stateful codecs override this
     }
 }

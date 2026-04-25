@@ -23,7 +23,7 @@ package de.bmarwell.proximo.pitido.codecs.sip;
  * <p>Most codecs are stateful (the encoder carries ADPCM predictor state across packets) and must
  * <em>not</em> be shared across call legs.
  * {@link PcmaRtpCodecFactory} is the exception: G.711 A-law is memoryless, so its CDI singleton instance
- * is safe to share — {@link #forCall()} returns {@code this}.
+ * is safe to share — {@link #forCall(String)} returns {@code this}.
  *
  * <p>Each implementation is an {@code @ApplicationScoped} CDI bean.
  * {@link #isAvailable()} reports whether the codec can actually be used on the current host
