@@ -12,7 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -21,7 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Holds the negotiated media parameters for one call leg.
  *
  * <p>Created by {@link SdpNegotiator} from the SDP offer in the incoming INVITE.
- * The caller is responsible for closing {@link #localSocket()} when the call ends.
+ * The codec instance is created separately by the caller (typically on the executor thread)
+ * and passed to CallMedia for use during RTP encoding.
+ * The caller is responsible for closing the codec when the call ends.
  *
  * <p>{@link #held} is an {@link AtomicBoolean} embedded in this record.
  * The record keeps its identity (the reference is final) while the hold state is
@@ -36,8 +38,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *                                  {@code c=} and {@code m=audio} lines
  * @param sdpAnswer                 the fully formatted SDP answer body to include in the 200 OK
  *                                  response
- * @param codec                     the negotiated RTP codec; determines payload type, encoding,
- *                                  and clock rate
+ * @param codec                     the negotiated RTP codec (already created, ready to encode);
+ *                                  must be closed by the caller when the call ends
  * @param telephoneEventPayloadType the dynamic RTP payload type negotiated for RFC 4733
  *                                  telephone-event, or {@code -1} if the remote side did not
  *                                  offer telephone-event in its SDP
@@ -48,8 +50,7 @@ public record CallMedia(
         DatagramSocket localSocket,
         InetSocketAddress remoteRtp,
         String sdpAnswer,
-        RtpCodecFactory codecFactory,
-        String offeredFmtp,
+        RtpCodec codec,
         int telephoneEventPayloadType,
         AtomicBoolean held) {
 
