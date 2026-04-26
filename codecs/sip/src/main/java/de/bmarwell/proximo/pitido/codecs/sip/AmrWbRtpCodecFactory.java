@@ -141,32 +141,21 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory {
     }
 
     /**
-     * Generates the fmtp answer for the SDP response.
+     * Generates the fmtp answer for the SDP response (octet-aligned variant).
      *
-     * <p>Per RFC 4867 §8.1, the answer must guarantee {@code octet-align=1}.
-     * If the offer is empty, echo the default format.
-     * If the offer has octet-align explicitly, echo it as-is.
-     * Otherwise, add {@code octet-align=1} to ensure the caller uses octet-aligned mode.
+     * <p>If the offer is empty, provide default octet-aligned format.
+     * Otherwise, echo back the offered fmtp as-is (respecting caller's preference).
      *
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
-     * @return the fmtp string for the SDP answer, with {@code octet-align=1} guaranteed
+     * @return the fmtp string for the SDP answer
      */
     @Override
     public String fmtpAnswer(String offeredFmtp) {
         String answer;
-
         if (offeredFmtp.isEmpty()) {
             answer = "octet-align=1";
         } else {
-            boolean hasExplicitOctetAlign = Arrays.stream(offeredFmtp.split(";"))
-                    .map(String::strip)
-                    .anyMatch(AmrWbRtpCodecFactory::isOctetAlignParam);
-
-            if (hasExplicitOctetAlign) {
-                answer = offeredFmtp;
-            } else {
-                answer = offeredFmtp + ";octet-align=1";
-            }
+            answer = offeredFmtp;
         }
 
         LOGGER.log(

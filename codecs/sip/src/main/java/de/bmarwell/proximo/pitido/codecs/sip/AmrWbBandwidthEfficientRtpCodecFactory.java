@@ -166,4 +166,25 @@ public class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecFactory
 
         return new AmrWbBandwidthEfficientRtpCodec(offeredFmtp);
     }
+
+    /**
+     * Generates the fmtp answer for the SDP response (bandwidth-efficient variant).
+     *
+     * <p>Echo back the offered fmtp parameters as-is without forcing octet-align.
+     * If the offer includes mode parameters and no explicit octet-align, respect that preference.
+     * If empty, return empty (no fmtp for bandwidth-efficient).
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
+     * @return the fmtp string for the SDP answer
+     */
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbBandwidthEfficientRtpCodecFactory.fmtpAnswer: offeredFmtp=''{0}'' → answer=''{1}''",
+                offeredFmtp,
+                offeredFmtp);
+
+        return offeredFmtp;
+    }
 }
