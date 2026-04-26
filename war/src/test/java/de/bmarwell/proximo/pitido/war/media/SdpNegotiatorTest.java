@@ -22,6 +22,7 @@ import de.bmarwell.proximo.pitido.codecs.sip.AmrWbMetadata;
 import de.bmarwell.proximo.pitido.codecs.sip.G722Metadata;
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaMetadata;
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -148,11 +149,13 @@ class SdpNegotiatorTest {
      */
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
         try {
-            var codec = new PcmaRtpCodecFactory();
+            var codecFactory = new PcmaRtpCodecFactory();
+            var actualCodec = codecFactory.forCall("");
+            var negotiatedCodec = new NegotiatedRtpCodec(actualCodec, 8, "");
             var method = SdpNegotiator.class.getDeclaredMethod(
-                    "buildSdpAnswer", String.class, int.class, RtpCodecFactory.class, int.class);
+                    "buildSdpAnswer", String.class, int.class, NegotiatedRtpCodec.class, int.class);
             method.setAccessible(true);
-            return (String) method.invoke(null, localIp, localPort, codec, telephoneEventPt);
+            return (String) method.invoke(null, localIp, localPort, negotiatedCodec, telephoneEventPt);
         } catch (ReflectiveOperationException reflectiveOperationException) {
             throw new AssertionError("Could not invoke buildSdpAnswer", reflectiveOperationException);
         }
@@ -185,15 +188,19 @@ class SdpNegotiatorTest {
         when(g722Stub.preference()).thenReturn(50);
         when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
 
+        RtpCodec amrWbCodecStub = mock(RtpCodec.class);
+        when(amrWbCodecStub.metadata()).thenReturn(new AmrWbMetadata());
+
         RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
         when(amrWbStub.isAvailable()).thenReturn(true);
         when(amrWbStub.preference()).thenReturn(40);
         when(amrWbStub.metadata()).thenReturn(new AmrWbMetadata());
         when(amrWbStub.matchesFmtp(anyString()))
                 .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
+        when(amrWbStub.forCall(anyString())).thenReturn(amrWbCodecStub);
 
         // when
-        RtpCodecFactory selected =
+        NegotiatedRtpCodec selected =
                 SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, PcmaRtpCodecFactory::new);
 
         // then
@@ -206,25 +213,28 @@ class SdpNegotiatorTest {
     }
 
     @Test
-    @DisplayName("Codec selection wraps descriptor without eagerly calling forCall")
-    void selectCodec_doesNotCallForCallEagerly_wrapsDelegateDescriptor() {
+    @DisplayName("Codec selection creates actual codec instance via forCall")
+    void selectCodec_callsForCall_createsActualCodecInstance() {
         // given
+        RtpCodec actualCodecStub = mock(RtpCodec.class);
         RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
         when(descriptorStub.metadata()).thenReturn(new PcmaMetadata());
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
+        when(descriptorStub.forCall(anyString())).thenReturn(actualCodecStub);
+        when(actualCodecStub.metadata()).thenReturn(new PcmaMetadata());
 
         // when
-        RtpCodecFactory selected = SdpNegotiator.selectCodec(
+        NegotiatedRtpCodec selected = SdpNegotiator.selectCodec(
                 Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, PcmaRtpCodecFactory::new);
 
         // then
-        org.mockito.Mockito.verify(descriptorStub, org.mockito.Mockito.never()).forCall(anyString());
+        org.mockito.Mockito.verify(descriptorStub).forCall(anyString());
         assertEquals(8, selected.metadata().payloadType());
         assertEquals(
-                descriptorStub,
-                ((NegotiatedRtpCodec) selected).delegate(),
-                "Returned wrapper must hold the original descriptor, not a per-call instance");
+                actualCodecStub,
+                selected.delegate(),
+                "Returned wrapper must hold the actual codec instance created via forCall");
     }
 }
