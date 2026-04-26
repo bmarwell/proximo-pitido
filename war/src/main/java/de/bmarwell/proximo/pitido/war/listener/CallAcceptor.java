@@ -227,9 +227,8 @@ public class CallAcceptor {
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            AudioPlayer player = new RtpAudioPlayer(media, media.codec(), this.pcmDecoderFactory);
-
-            try {
+            try (var codec = media.codecFactory().forCall("")) {
+                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
                 this.announcementLoop.play(session, player, factory, sessionId, media);
             } catch (Exception exception) {
                 LOGGER.log(
@@ -275,9 +274,8 @@ public class CallAcceptor {
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            AudioPlayer player = new RtpAudioPlayer(media, media.codec(), this.pcmDecoderFactory);
-
-            try {
+            try (var codec = media.codecFactory().forCall("")) {
+                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
                 this.menuRunner.run(session, player, menu, sessionId, media);
             } catch (Exception exception) {
                 LOGGER.log(
@@ -310,7 +308,7 @@ public class CallAcceptor {
                 "{0}200 OK — {1}, codec [{2}], remote RTP [{3}]",
                 SipCallHeaders.callPrefix(sessionId),
                 description,
-                media.codec().metadata().sdpName(),
+                media.codecFactory().metadata().sdpName(),
                 media.remoteRtp());
         SipServletResponse response = req.createResponse(SipServletResponse.SC_OK);
         response.setContent(media.sdpAnswer().getBytes(StandardCharsets.UTF_8), "application/sdp");

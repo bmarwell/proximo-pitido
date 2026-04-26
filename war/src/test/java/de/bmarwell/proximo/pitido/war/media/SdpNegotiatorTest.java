@@ -150,12 +150,11 @@ class SdpNegotiatorTest {
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
         try {
             var codecFactory = new PcmaRtpCodecFactory();
-            var actualCodec = codecFactory.forCall("");
-            var negotiatedCodec = new NegotiatedRtpCodec(actualCodec, 8, "");
+            var negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
             var method = SdpNegotiator.class.getDeclaredMethod(
-                    "buildSdpAnswer", String.class, int.class, NegotiatedRtpCodec.class, int.class);
+                    "buildSdpAnswer", String.class, int.class, NegotiatedRtpCodecFactory.class, int.class);
             method.setAccessible(true);
-            return (String) method.invoke(null, localIp, localPort, negotiatedCodec, telephoneEventPt);
+            return (String) method.invoke(null, localIp, localPort, negotiatedCodecFactory, telephoneEventPt);
         } catch (ReflectiveOperationException reflectiveOperationException) {
             throw new AssertionError("Could not invoke buildSdpAnswer", reflectiveOperationException);
         }
@@ -200,12 +199,12 @@ class SdpNegotiatorTest {
         when(amrWbStub.forCall(anyString())).thenReturn(amrWbCodecStub);
 
         // when
-        NegotiatedRtpCodec selected =
+        NegotiatedRtpCodecFactory selected =
                 SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, PcmaRtpCodecFactory::new);
 
         // then
         assertEquals("AMR-WB", selected.metadata().sdpName(), "Selected codec must be AMR-WB");
-        // NegotiatedRtpCodec wraps the delegate and overrides payloadType() to return negotiated PT
+        // NegotiatedRtpCodecFactory wraps the factory and overrides payloadType() to return negotiated PT
         assertEquals(
                 110,
                 selected.metadata().payloadType(),
@@ -213,28 +212,24 @@ class SdpNegotiatorTest {
     }
 
     @Test
-    @DisplayName("Codec selection creates actual codec instance via forCall")
-    void selectCodec_callsForCall_createsActualCodecInstance() {
+    @DisplayName("Codec selection returns factory wrapper for deferred codec creation")
+    void selectCodec_returnsFactoryWrapper_deferresCodecCreation() {
         // given
-        RtpCodec actualCodecStub = mock(RtpCodec.class);
         RtpCodecFactory descriptorStub = mock(RtpCodecFactory.class);
         when(descriptorStub.isAvailable()).thenReturn(true);
         when(descriptorStub.preference()).thenReturn(100);
         when(descriptorStub.metadata()).thenReturn(new PcmaMetadata());
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
-        when(descriptorStub.forCall(anyString())).thenReturn(actualCodecStub);
-        when(actualCodecStub.metadata()).thenReturn(new PcmaMetadata());
+        when(descriptorStub.fmtpAnswer(anyString())).thenReturn("fmtp-answer");
 
         // when
-        NegotiatedRtpCodec selected = SdpNegotiator.selectCodec(
+        NegotiatedRtpCodecFactory selected = SdpNegotiator.selectCodec(
                 Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, PcmaRtpCodecFactory::new);
 
         // then
-        org.mockito.Mockito.verify(descriptorStub).forCall(anyString());
         assertEquals(8, selected.metadata().payloadType());
-        assertEquals(
-                actualCodecStub,
-                selected.delegate(),
-                "Returned wrapper must hold the actual codec instance created via forCall");
+        assertEquals(descriptorStub, selected.delegate(), "Returned factory wrapper must hold the codec factory");
+        // fmtpAnswer should return answer using negotiated fmtp (deferred to later call on executor thread)
+        assertEquals("fmtp-answer", selected.fmtpAnswer("ignored"));
     }
 }
