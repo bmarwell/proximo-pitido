@@ -221,14 +221,16 @@ public class CallAcceptor {
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
-        // CRITICAL: Do NOT add a sleep/delay here.
-        // The 1-second ringing delay already happened in the INVITE handler thread (line 168)
-        // before 200 OK was sent. Audio playback must begin immediately after 200 OK
-        // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
-        // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
+
+                LOGGER.log(
+                        System.Logger.Level.DEBUG,
+                        "{0}Sending 500ms silence to establish media path",
+                        SipCallHeaders.callPrefix(sessionId));
+                player.playSilence(java.time.Duration.ofMillis(500));
+
                 this.announcementLoop.play(session, player, factory, sessionId, media);
             } catch (Exception exception) {
                 LOGGER.log(
@@ -276,6 +278,13 @@ public class CallAcceptor {
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
+
+                LOGGER.log(
+                        System.Logger.Level.DEBUG,
+                        "{0}Sending 500ms silence to establish media path",
+                        SipCallHeaders.callPrefix(sessionId));
+                player.playSilence(java.time.Duration.ofMillis(500));
+
                 this.menuRunner.run(session, player, menu, sessionId, media);
             } catch (Exception exception) {
                 LOGGER.log(
