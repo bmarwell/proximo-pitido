@@ -21,9 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Holds the negotiated media parameters for one call leg.
  *
  * <p>Created by {@link SdpNegotiator} from the SDP offer in the incoming INVITE.
- * The codec instance is created separately by the caller (typically on the executor thread)
- * and passed to CallMedia for use during RTP encoding.
- * The caller is responsible for closing the codec when the call ends.
+ * The codec instance is created during negotiation and owned by CallMedia.
+ * The caller must call {@link #close()} when the call ends to release the codec.
  *
  * <p>{@link #held} is an {@link AtomicBoolean} embedded in this record.
  * The record keeps its identity (the reference is final) while the hold state is
@@ -38,8 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *                                  {@code c=} and {@code m=audio} lines
  * @param sdpAnswer                 the fully formatted SDP answer body to include in the 200 OK
  *                                  response
- * @param codec                     the negotiated RTP codec (already created, ready to encode);
- *                                  must be closed by the caller when the call ends
+ * @param codec                     the negotiated RTP codec (NegotiatedRtpCodec wrapping actual codec);
+ *                                  closed when {@link #close()} is called at end of call
  * @param telephoneEventPayloadType the dynamic RTP payload type negotiated for RFC 4733
  *                                  telephone-event, or {@code -1} if the remote side did not
  *                                  offer telephone-event in its SDP
@@ -52,7 +51,8 @@ public record CallMedia(
         String sdpAnswer,
         RtpCodec codec,
         int telephoneEventPayloadType,
-        AtomicBoolean held) {
+        AtomicBoolean held)
+        implements AutoCloseable {
 
     /**
      * Pauses RTP transmission.
@@ -75,5 +75,14 @@ public record CallMedia(
      */
     public boolean isHeld() {
         return this.held.get();
+    }
+
+    /**
+     * Closes the negotiated codec to release native resources and FFM arenas.
+     * Called when the call ends.
+     */
+    @Override
+    public void close() {
+        this.codec.close();
     }
 }

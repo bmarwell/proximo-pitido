@@ -231,8 +231,13 @@ public class CallAcceptor {
 
             try {
                 this.announcementLoop.play(session, player, factory, sessionId, media);
-            } finally {
-                media.codec().close();
+            } catch (Exception exception) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "{0}Announcement playback failed: {1}",
+                        SipCallHeaders.callPrefix(sessionId),
+                        exception.getMessage(),
+                        exception);
             }
         });
 
@@ -274,8 +279,13 @@ public class CallAcceptor {
 
             try {
                 this.menuRunner.run(session, player, menu, sessionId, media);
-            } finally {
-                media.codec().close();
+            } catch (Exception exception) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "{0}Menu playback failed: {1}",
+                        SipCallHeaders.callPrefix(sessionId),
+                        exception.getMessage(),
+                        exception);
             }
         });
         Future<?> receiverFuture = this.dtmfDispatcher.startReceiver(media, sessionId);

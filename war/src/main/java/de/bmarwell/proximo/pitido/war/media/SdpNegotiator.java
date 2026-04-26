@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import java.io.IOException;
@@ -59,15 +60,6 @@ public class SdpNegotiator {
 
     private static final int PTIME_MS = 20;
 
-    /**
-     * Result of codec selection during SDP negotiation.
-     *
-     * @param codecFactory       the selected codec factory
-     * @param negotiatedPayloadType the payload type assigned by the caller
-     * @param offeredFmtp        the fmtp parameters from the offer, or empty string
-     */
-    record CodecSelection(RtpCodecFactory codecFactory, int negotiatedPayloadType, String offeredFmtp) {}
-
     @Inject
     LocalSipHostProvider localSipHostProvider;
 
@@ -101,7 +93,7 @@ public class SdpNegotiator {
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
         int telephoneEventPt = parseTelephoneEventPayloadType(sdpOffer);
-        CodecSelection codecSel = selectCodec(sdpOffer);
+        NegotiatedRtpCodec negotiatedCodec = selectCodec(sdpOffer);
 
         DatagramSocket localSocket = new DatagramSocket(0);
         int localPort = localSocket.getLocalPort();
@@ -115,16 +107,11 @@ public class SdpNegotiator {
                 localPort,
                 remoteIp,
                 remotePort,
-                codecSel.codecFactory.metadata().sdpName(),
+                negotiatedCodec.metadata().sdpName(),
                 telephoneEventPt);
 
-        String sdpAnswer = buildSdpAnswer(localIp, localPort, codecSel, telephoneEventPt);
+        String sdpAnswer = buildSdpAnswer(localIp, localPort, negotiatedCodec, telephoneEventPt);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
-
-        // Create the actual codec now (needed for fmtpAnswer during SDP building).
-        // Wrap it with negotiated PT for use during encoding.
-        var actualCodec = codecSel.codecFactory.forCall(codecSel.offeredFmtp);
-        var negotiatedCodec = new NegotiatedRtpCodec(actualCodec, codecSel.negotiatedPayloadType, codecSel.offeredFmtp);
 
         return new CallMedia(
                 localSocket, remoteAddr, sdpAnswer, negotiatedCodec, telephoneEventPt, new AtomicBoolean(false));
@@ -305,7 +292,7 @@ public class SdpNegotiator {
      *         actually negotiated with the caller; callers must call {@link RtpCodecFactory#forCall()}
      *         on the announcement thread before encoding
      */
-    private CodecSelection selectCodec(String sdpOffer) {
+    private NegotiatedRtpCodec selectCodec(String sdpOffer) {
         return selectCodec(this.availableCodecFactories.stream(), sdpOffer, () -> this.pcmaFallback.get());
     }
 
@@ -317,9 +304,9 @@ public class SdpNegotiator {
      * @param codecs      available codec descriptors, each an {@code @ApplicationScoped} CDI bean
      * @param sdpOffer    the full SDP offer string from the INVITE body
      * @param fallbackSupplier Supplier for PCMA codec factory as fallback
-     * @return a codec descriptor with factory, negotiated PT, and offered fmtp
+     * @return a NegotiatedRtpCodec wrapping the selected codec with negotiated PT and fmtp
      */
-    static CodecSelection selectCodec(
+    static NegotiatedRtpCodec selectCodec(
             Stream<RtpCodecFactory> codecs, String sdpOffer, Supplier<RtpCodecFactory> fallbackSupplier) {
         Set<Integer> offeredPts = parseOfferedPayloadTypes(sdpOffer, fallbackSupplier);
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
@@ -350,7 +337,9 @@ public class SdpNegotiator {
                 result.negotiatedPt,
                 offeredPts);
 
-        return new CodecSelection(result.factory, result.negotiatedPt, result.offeredFmtp);
+        // Create actual codec and wrap it immediately to enable fmtpAnswer during SDP building.
+        RtpCodec actualCodec = result.factory.forCall(result.offeredFmtp);
+        return new NegotiatedRtpCodec(actualCodec, result.negotiatedPt, result.offeredFmtp);
     }
 
     /**
@@ -422,9 +411,9 @@ public class SdpNegotiator {
         return Optional.empty();
     }
 
-    private static String buildSdpAnswer(String localIp, int localPort, CodecSelection codecSel, int telephoneEventPt) {
+    private static String buildSdpAnswer(
+            String localIp, int localPort, NegotiatedRtpCodec negotiatedCodec, int telephoneEventPt) {
         StringBuilder sdp = new StringBuilder();
-        RtpCodecFactory codecFactory = codecSel.codecFactory;
 
         sdp.append("v=0\r\n")
                 .append("o=proximo-pitido 0 0 IN IP4 ")
@@ -438,7 +427,7 @@ public class SdpNegotiator {
                 .append("m=audio ")
                 .append(localPort)
                 .append(" RTP/AVP ")
-                .append(codecSel.negotiatedPayloadType);
+                .append(negotiatedCodec.metadata().payloadType());
 
         if (telephoneEventPt >= 0) {
             sdp.append(" ").append(telephoneEventPt);
@@ -446,29 +435,29 @@ public class SdpNegotiator {
 
         sdp.append("\r\n")
                 .append("a=rtpmap:")
-                .append(codecSel.negotiatedPayloadType)
+                .append(negotiatedCodec.metadata().payloadType())
                 .append(" ")
-                .append(codecFactory.metadata().sdpName())
+                .append(negotiatedCodec.metadata().sdpName())
                 .append("/")
-                .append(codecFactory.metadata().rtpClockRate());
+                .append(negotiatedCodec.metadata().rtpClockRate());
 
-        if (codecFactory.metadata().sdpChannelCount() > 1) {
-            sdp.append("/").append(codecFactory.metadata().sdpChannelCount());
+        if (negotiatedCodec.metadata().sdpChannelCount() > 1) {
+            sdp.append("/").append(negotiatedCodec.metadata().sdpChannelCount());
         }
 
         sdp.append("\r\n");
 
-        String fmtpParams = codecFactory.fmtpAnswer(codecSel.offeredFmtp);
+        String fmtpParams = negotiatedCodec.fmtpAnswer(negotiatedCodec.offeredFmtp());
         LOGGER.log(
                 System.Logger.Level.TRACE,
                 "SDP answer fmtp: codec={0} PT={1} fmtpParams=''{2}''",
-                codecFactory.metadata().sdpName(),
-                codecSel.negotiatedPayloadType,
+                negotiatedCodec.metadata().sdpName(),
+                negotiatedCodec.metadata().payloadType(),
                 fmtpParams);
 
         if (!fmtpParams.isEmpty()) {
             sdp.append("a=fmtp:")
-                    .append(codecSel.negotiatedPayloadType)
+                    .append(negotiatedCodec.metadata().payloadType())
                     .append(" ")
                     .append(fmtpParams)
                     .append("\r\n");
@@ -485,7 +474,7 @@ public class SdpNegotiator {
         LOGGER.log(
                 System.Logger.Level.DEBUG,
                 "{0}SDP answer:{1}{2}",
-                callPrefix(codecFactory.metadata().sdpName()),
+                callPrefix(negotiatedCodec.metadata().sdpName()),
                 System.lineSeparator(),
                 answer);
 
