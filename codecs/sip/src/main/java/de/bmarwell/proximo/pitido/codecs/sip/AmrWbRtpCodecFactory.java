@@ -140,6 +140,44 @@ public class AmrWbRtpCodecFactory extends NativeRtpCodecFactory {
         return new AmrWbRtpCodec(offeredFmtp);
     }
 
+    /**
+     * Generates the fmtp answer for the SDP response.
+     *
+     * <p>Per RFC 4867 §8.1, the answer must guarantee {@code octet-align=1}.
+     * If the offer is empty, echo the default format.
+     * If the offer has octet-align explicitly, echo it as-is.
+     * Otherwise, add {@code octet-align=1} to ensure the caller uses octet-aligned mode.
+     *
+     * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
+     * @return the fmtp string for the SDP answer, with {@code octet-align=1} guaranteed
+     */
+    @Override
+    public String fmtpAnswer(String offeredFmtp) {
+        String answer;
+
+        if (offeredFmtp.isEmpty()) {
+            answer = "octet-align=1";
+        } else {
+            boolean hasExplicitOctetAlign = Arrays.stream(offeredFmtp.split(";"))
+                    .map(String::strip)
+                    .anyMatch(AmrWbRtpCodecFactory::isOctetAlignParam);
+
+            if (hasExplicitOctetAlign) {
+                answer = offeredFmtp;
+            } else {
+                answer = offeredFmtp + ";octet-align=1";
+            }
+        }
+
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AmrWbRtpCodecFactory.fmtpAnswer (octet-aligned): offeredFmtp=''{0}'' → answer=''{1}''",
+                offeredFmtp,
+                answer);
+
+        return answer;
+    }
+
     static boolean isOctetAlignParam(String param) {
         String[] kv = param.split("=", 2);
         return kv.length == 2 && "octet-align".equalsIgnoreCase(kv[0].strip());

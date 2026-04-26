@@ -133,33 +133,6 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
      * @param offeredFmtp the fmtp parameter string from the caller's SDP offer, or empty
      * @return the fmtp string for the SDP answer, with {@code octet-align=1} guaranteed
      */
-    @Override
-    public String fmtpAnswer(String offeredFmtp) {
-        String answer;
-
-        if (offeredFmtp.isEmpty()) {
-            answer = fmtpParams();
-        } else {
-            boolean hasExplicitOctetAlign = Arrays.stream(offeredFmtp.split(";"))
-                    .map(String::strip)
-                    .anyMatch(AmrWbRtpCodecFactory::isOctetAlignParam);
-
-            if (hasExplicitOctetAlign) {
-                answer = offeredFmtp;
-            } else {
-                answer = offeredFmtp + ";octet-align=1";
-            }
-        }
-
-        LOGGER.log(
-                System.Logger.Level.TRACE,
-                "AmrWbRtpCodec.fmtpAnswer (octet-aligned): offeredFmtp=''{0}'' → answer=''{1}''",
-                offeredFmtp,
-                answer);
-
-        return answer;
-    }
-
     private static final RtpCodecMetadata METADATA = new AmrWbMetadata();
 
     @Override
