@@ -227,7 +227,7 @@ public class CallAcceptor {
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            try (var codec = media.codecFactory().forCall("")) {
+            try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
                 this.announcementLoop.play(session, player, factory, sessionId, media);
             } catch (Exception exception) {
@@ -274,7 +274,7 @@ public class CallAcceptor {
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            try (var codec = media.codecFactory().forCall("")) {
+            try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
                 this.menuRunner.run(session, player, menu, sessionId, media);
             } catch (Exception exception) {

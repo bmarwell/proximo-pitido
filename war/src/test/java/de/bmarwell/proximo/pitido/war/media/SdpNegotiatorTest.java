@@ -230,6 +230,6 @@ class SdpNegotiatorTest {
         assertEquals(8, selected.metadata().payloadType());
         assertEquals(descriptorStub, selected.delegate(), "Returned factory wrapper must hold the codec factory");
         // fmtpAnswer should return answer using negotiated fmtp (deferred to later call on executor thread)
-        assertEquals("fmtp-answer", selected.fmtpAnswer("ignored"));
+        assertEquals("fmtp-answer", selected.fmtpAnswer());
     }
 }

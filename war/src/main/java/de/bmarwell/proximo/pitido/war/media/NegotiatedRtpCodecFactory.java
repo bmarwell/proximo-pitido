@@ -17,75 +17,62 @@ import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecMetadata;
 
 /**
- * Wraps an {@link RtpCodecFactory} and carries the negotiated payload type and offered fmtp parameters
- * from SDP negotiation.
+ * Encapsulates the negotiated codec state: payload type and offered fmtp parameters from SDP negotiation.
  *
- * <p>Created by {@link SdpNegotiator} during SDP offer processing and passed to the executor thread.
- * The executor thread calls {@link #forCall(String)} to create the actual {@link RtpCodec} instance
- * with confined FFM arenas on the executor thread.
+ * <p>Replaces the need to pass both codec factory and metadata separately across thread boundaries.
+ * Created by {@link SdpNegotiator} during SDP offer processing and passed to the executor thread.
  *
- * <p>The {@code fmtpAnswer()} method uses the stored {@code offeredFmtp} to generate the correct
- * SDP answer parameters, enabling SDP answer building on the servlet thread before the executor thread
- * receives the factory.
+ * <p>Two phases of use:
+ * <ul>
+ *   <li><strong>Servlet thread (SDP negotiation):</strong> Call {@code fmtpAnswer()} to generate
+ *       correct fmtp parameters for the SDP answer, without creating a codec instance.
+ *   <li><strong>Executor thread (RTP encoding):</strong> Call {@code forCall()} to create the actual
+ *       {@link RtpCodec} instance with confined FFM arenas on the thread where it will be used.
+ * </ul>
  *
- * <h2>Lifecycle</h2>
+ * <p>Key invariant: both phases can complete successfully using only the wrapped factory and
+ * negotiated state, without needing a per-call codec instance until the executor thread.
  *
- * <p>Servlet thread:
- * <ol>
- *   <li>Negotiate codec selection from SDP offer
- *   <li>Create {@code NegotiatedRtpCodecFactory} with negotiated PT and offered fmtp
- *   <li>Call {@code fmtpAnswer()} for SDP answer generation
- *   <li>Pass to executor thread via {@link CallMedia}
- * </ol>
- *
- * <p>Executor thread:
- * <ol>
- *   <li>Call {@code forCall("")} (empty string; fmtp already captured)
- *   <li>Wrap result in try-with-resources or equivalent
- *   <li>Use codec for RTP encoding
- *   <li>Close codec when done
- * </ol>
- *
- * @param delegate              the underlying codec factory
- * @param negotiatedPayloadType the payload type assigned by the caller in the SDP offer
+ * @param delegate              the underlying codec factory (stateless)
+ * @param negotiatedPayloadType the RTP payload type assigned by the caller in the SDP offer
  * @param offeredFmtp           the raw {@code a=fmtp} parameter string from the caller's SDP offer;
  *                              empty string if no {@code a=fmtp} line was present
  */
-public record NegotiatedRtpCodecFactory(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp)
-        implements RtpCodecFactory {
+public record NegotiatedRtpCodecFactory(RtpCodecFactory delegate, int negotiatedPayloadType, String offeredFmtp) {
 
-    @Override
-    public boolean isAvailable() {
-        return this.delegate.isAvailable();
-    }
-
-    @Override
-    public int preference() {
-        return this.delegate.preference();
-    }
-
-    @Override
-    public RtpCodecMetadata metadata() {
-        return new WrappedMetadata(this.delegate.metadata(), this.negotiatedPayloadType);
-    }
-
-    @Override
-    public boolean matchesFmtp(String offeredFmtp) {
-        return this.delegate.matchesFmtp(offeredFmtp);
-    }
-
-    @Override
-    public RtpCodec forCall(String offeredFmtp) {
-        // Use the stored offeredFmtp from negotiation, not the parameter
-        // (parameter is ignored; method signature matches RtpCodecFactory contract).
+    /**
+     * Creates an {@link RtpCodec} instance for this call, with negotiated payload type and fmtp.
+     *
+     * <p>Must be called on the thread where the codec will be used (typically executor thread).
+     * The codec is wrapped to override {@code payloadType()} with the negotiated value.
+     *
+     * @return a codec instance configured for RTP encoding on this call
+     */
+    public RtpCodec forCall() {
         RtpCodec actualCodec = this.delegate.forCall(this.offeredFmtp);
         return new NegotiatedRtpCodec(actualCodec, this.negotiatedPayloadType, this.offeredFmtp);
     }
 
-    @Override
-    public String fmtpAnswer(String offeredFmtp) {
-        // Use the stored offeredFmtp from negotiation.
+    /**
+     * Generates the fmtp parameters for the SDP answer using stored negotiated state.
+     *
+     * <p>Delegates to the underlying factory's {@code fmtpAnswer()}, which uses only the
+     * {@code offeredFmtp} to generate an answer—no codec instance needed.
+     * Safe to call on any thread during SDP negotiation.
+     *
+     * @return the fmtp parameter string for the SDP answer
+     */
+    public String fmtpAnswer() {
         return this.delegate.fmtpAnswer(this.offeredFmtp);
+    }
+
+    /**
+     * Returns codec metadata with {@code payloadType()} overridden to the negotiated value.
+     *
+     * @return metadata with negotiated payload type
+     */
+    public RtpCodecMetadata metadata() {
+        return new WrappedMetadata(this.delegate.metadata(), this.negotiatedPayloadType);
     }
 
     /**

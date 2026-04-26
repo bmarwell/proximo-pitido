@@ -446,7 +446,7 @@ public class SdpNegotiator {
 
         sdp.append("\r\n");
 
-        String fmtpParams = negotiatedCodecFactory.fmtpAnswer(negotiatedCodecFactory.offeredFmtp());
+        String fmtpParams = negotiatedCodecFactory.fmtpAnswer();
         LOGGER.log(
                 System.Logger.Level.TRACE,
                 "SDP answer fmtp: codec={0} PT={1} fmtpParams=''{2}''",

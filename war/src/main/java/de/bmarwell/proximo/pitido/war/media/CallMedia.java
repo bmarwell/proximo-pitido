@@ -12,7 +12,6 @@
  */
 package de.bmarwell.proximo.pitido.war.media;
 
-import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,9 +38,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *                                  {@code c=} and {@code m=audio} lines
  * @param sdpAnswer                 the fully formatted SDP answer body to include in the 200 OK
  *                                  response
- * @param codecFactory              the negotiated RTP codec factory (NegotiatedRtpCodecFactory)
- *                                  carrying negotiated PT and offered fmtp; used to create
- *                                  per-call codec on executor thread
+ * @param codecFactory              the negotiated codec factory carrying negotiated PT and offered
+ *                                  fmtp; used to create per-call codec on executor thread
  * @param telephoneEventPayloadType the dynamic RTP payload type negotiated for RFC 4733
  *                                  telephone-event, or {@code -1} if the remote side did not
  *                                  offer telephone-event in its SDP
@@ -52,7 +50,7 @@ public record CallMedia(
         DatagramSocket localSocket,
         InetSocketAddress remoteRtp,
         String sdpAnswer,
-        RtpCodecFactory codecFactory,
+        NegotiatedRtpCodecFactory codecFactory,
         int telephoneEventPayloadType,
         AtomicBoolean held) {
 
