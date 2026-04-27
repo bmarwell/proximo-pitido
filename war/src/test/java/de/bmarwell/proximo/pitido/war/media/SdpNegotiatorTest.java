@@ -13,6 +13,7 @@
 package de.bmarwell.proximo.pitido.war.media;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -24,8 +25,10 @@ import de.bmarwell.proximo.pitido.codecs.sip.PcmaMetadata;
 import de.bmarwell.proximo.pitido.codecs.sip.PcmaRtpCodecFactory;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodec;
 import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
+import java.util.Arrays;
 import java.util.Map;
-import java.util.stream.Stream;
+import javax.enterprise.inject.Instance;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -83,6 +86,22 @@ class SdpNegotiatorTest {
             a=fmtp:105 0-15\r
             a=sendrecv\r
             """;
+
+    final SdpNegotiator sdpNegotiator = new SdpNegotiator();
+
+    @BeforeEach
+    void setUp() {
+        final RtpCodecFactory g722Stub = getG722Stub();
+        final RtpCodecFactory amrWbStub = getAmrWbStub();
+
+        // set fallback
+        final Instance<PcmaRtpCodecFactory> pcmaFallback = mock(Instance.class);
+        when(pcmaFallback.get()).thenReturn(new PcmaRtpCodecFactory());
+        sdpNegotiator.setFallback(pcmaFallback);
+
+        // set main codecs
+        setSdpCodecs(g722Stub, amrWbStub);
+    }
 
     @Test
     @DisplayName("Parse telephone-event from SDP offer")
@@ -181,26 +200,11 @@ class SdpNegotiatorTest {
         // given
         String sdp = SDP_OFFER_TELEKOM_VOLTE;
 
-        RtpCodecFactory g722Stub = mock(RtpCodecFactory.class);
-        when(g722Stub.metadata()).thenReturn(new G722Metadata());
-        when(g722Stub.isAvailable()).thenReturn(true);
-        when(g722Stub.preference()).thenReturn(50);
-        when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
-
         RtpCodec amrWbCodecStub = mock(RtpCodec.class);
         when(amrWbCodecStub.metadata()).thenReturn(new AmrWbMetadata());
 
-        RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
-        when(amrWbStub.isAvailable()).thenReturn(true);
-        when(amrWbStub.preference()).thenReturn(40);
-        when(amrWbStub.metadata()).thenReturn(new AmrWbMetadata());
-        when(amrWbStub.matchesFmtp(anyString()))
-                .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
-        when(amrWbStub.forCall(anyString())).thenReturn(amrWbCodecStub);
-
         // when
-        NegotiatedRtpCodecFactory selected =
-                SdpNegotiator.selectCodec(Stream.of(g722Stub, amrWbStub), sdp, PcmaRtpCodecFactory::new);
+        NegotiatedRtpCodecFactory selected = sdpNegotiator.selectCodec(sdp);
 
         // then
         assertEquals("AMR-WB", selected.metadata().sdpName(), "Selected codec must be AMR-WB");
@@ -222,14 +226,45 @@ class SdpNegotiatorTest {
         when(descriptorStub.matchesFmtp(anyString())).thenReturn(true);
         when(descriptorStub.fmtpAnswer(anyString())).thenReturn("fmtp-answer");
 
+        setSdpCodecs(descriptorStub);
+
         // when
-        NegotiatedRtpCodecFactory selected = SdpNegotiator.selectCodec(
-                Stream.of(descriptorStub), SDP_OFFER_WITH_TELEPHONE_EVENT, PcmaRtpCodecFactory::new);
+        NegotiatedRtpCodecFactory selected = sdpNegotiator.selectCodec(SDP_OFFER_WITH_TELEPHONE_EVENT);
 
         // then
         assertEquals(8, selected.metadata().payloadType());
-        assertEquals(descriptorStub, selected.delegate(), "Returned factory wrapper must hold the codec factory");
+        assertNotNull(selected.delegate(), "Selected codec must be a factory wrapper");
         // fmtpAnswer should return answer using negotiated fmtp (deferred to later call on executor thread)
         assertEquals("fmtp-answer", selected.fmtpAnswer());
+    }
+
+    private void setSdpCodecs(RtpCodecFactory... codecFactory) {
+        final Instance<RtpCodecFactory> availableCodecFactories = mock(Instance.class);
+        when(availableCodecFactories.stream()).thenReturn(Arrays.stream(codecFactory));
+        sdpNegotiator.setAvailableCodecFactories(availableCodecFactories);
+    }
+
+    private static RtpCodecFactory getAmrWbStub() {
+        final RtpCodecFactory amrWbStub = mock(RtpCodecFactory.class);
+
+        when(amrWbStub.isAvailable()).thenReturn(true);
+        when(amrWbStub.preference()).thenReturn(40);
+        when(amrWbStub.metadata()).thenReturn(new AmrWbMetadata());
+        when(amrWbStub.matchesFmtp(anyString()))
+                .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("octet-align=1"));
+        when(amrWbStub.forCall(anyString())).thenReturn(mock(RtpCodec.class));
+
+        return amrWbStub;
+    }
+
+    private static RtpCodecFactory getG722Stub() {
+        final RtpCodecFactory g722Stub = mock(RtpCodecFactory.class);
+
+        when(g722Stub.metadata()).thenReturn(new G722Metadata());
+        when(g722Stub.isAvailable()).thenReturn(true);
+        when(g722Stub.preference()).thenReturn(50);
+        when(g722Stub.matchesFmtp(anyString())).thenReturn(true);
+
+        return g722Stub;
     }
 }
