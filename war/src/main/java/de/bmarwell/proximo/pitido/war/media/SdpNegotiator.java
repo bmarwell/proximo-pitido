@@ -290,7 +290,7 @@ public class SdpNegotiator {
         Map<Integer, String> rtpmap = parseRtpmap(sdpOffer);
         Map<Integer, String> fmtp = parseFmtp(sdpOffer);
 
-        record SelectionResult(RtpCodecFactory factory, int negotiatedPt, String offeredFmtp) {}
+        record SelectionResult(RtpCodecFactory codecFactory, int negotiatedPt, String offeredFmtp) {}
 
         Optional<SelectionResult> selected = this.availableCodecFactories.stream()
                 .filter(RtpCodecFactory::isAvailable)
@@ -312,13 +312,13 @@ public class SdpNegotiator {
         LOGGER.log(
                 System.Logger.Level.DEBUG,
                 "Codec selected: {0} (negotiated PT {1}) from offered payload types {2}",
-                result.factory.metadata().sdpName(),
+                result.codecFactory.metadata().sdpName(),
                 result.negotiatedPt,
                 offeredPts);
 
         // Wrap factory with negotiated PT and offered fmtp to enable fmtpAnswer during SDP building
         // and codec creation on executor thread.
-        return new NegotiatedRtpCodecFactory(result.factory, result.negotiatedPt, result.offeredFmtp);
+        return new NegotiatedRtpCodecFactory(result.codecFactory, result.negotiatedPt, result.offeredFmtp);
     }
 
     /**
