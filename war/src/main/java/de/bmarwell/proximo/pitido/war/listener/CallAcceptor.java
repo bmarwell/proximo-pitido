@@ -221,21 +221,24 @@ public class CallAcceptor {
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
-        // CRITICAL: Do NOT add a sleep/delay here.
-        // The 1-second ringing delay already happened in the INVITE handler thread (line 168)
-        // before 200 OK was sent. Audio playback must begin immediately after 200 OK
-        // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
-        // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            // forCall() must run on the announcement thread so that the confined Arena is owned
-            // by the thread that will also call encode() and close() — preventing WrongThreadException.
-            var callCodec = media.codecFactory().forCall(media.offeredFmtp());
-            AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
+            try (var codec = media.codecFactory().forCall()) {
+                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
 
-            try {
+                LOGGER.log(
+                        System.Logger.Level.DEBUG,
+                        "{0}Sending 500ms silence to establish media path",
+                        SipCallHeaders.callPrefix(sessionId));
+                player.playSilence(java.time.Duration.ofMillis(500));
+
                 this.announcementLoop.play(session, player, factory, sessionId, media);
-            } finally {
-                callCodec.close();
+            } catch (Exception exception) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "{0}Announcement playback failed: {1}",
+                        SipCallHeaders.callPrefix(sessionId),
+                        exception.getMessage(),
+                        exception);
             }
         });
 
@@ -273,15 +276,23 @@ public class CallAcceptor {
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
-            // forCall() must run on the menu thread so that the confined Arena is owned
-            // by the thread that will also call encode() and close() — preventing WrongThreadException.
-            var callCodec = media.codecFactory().forCall(media.offeredFmtp());
-            AudioPlayer player = new RtpAudioPlayer(media, callCodec, this.pcmDecoderFactory);
+            try (var codec = media.codecFactory().forCall()) {
+                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
 
-            try {
+                LOGGER.log(
+                        System.Logger.Level.DEBUG,
+                        "{0}Sending 500ms silence to establish media path",
+                        SipCallHeaders.callPrefix(sessionId));
+                player.playSilence(java.time.Duration.ofMillis(500));
+
                 this.menuRunner.run(session, player, menu, sessionId, media);
-            } finally {
-                callCodec.close();
+            } catch (Exception exception) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "{0}Menu playback failed: {1}",
+                        SipCallHeaders.callPrefix(sessionId),
+                        exception.getMessage(),
+                        exception);
             }
         });
         Future<?> receiverFuture = this.dtmfDispatcher.startReceiver(media, sessionId);

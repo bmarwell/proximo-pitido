@@ -15,11 +15,16 @@ package de.bmarwell.proximo.pitido.war.listener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import de.bmarwell.proximo.pitido.codecs.sip.RtpCodecFactory;
 import de.bmarwell.proximo.pitido.war.media.CallMedia;
+import de.bmarwell.proximo.pitido.war.media.NegotiatedRtpCodecFactory;
 import java.io.IOException;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -60,7 +65,11 @@ class HoldHandlerTest {
         String sdpOffer = "v=0\r\nm=audio 10000 RTP/AVP 8\r\na=sendonly\r\n";
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=sendrecv\r\n";
         AtomicBoolean held = new AtomicBoolean(false);
-        CallMedia media = new CallMedia(null, null, sdpAnswer, null, "", -1, held);
+        RtpCodecFactory codecFactory = mock(RtpCodecFactory.class);
+        NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
+        DatagramSocket socket = mock(DatagramSocket.class);
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-1");
@@ -87,7 +96,11 @@ class HoldHandlerTest {
         String sdpOffer = "v=0\r\nm=audio 10000 RTP/AVP 8\r\na=inactive\r\n";
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=sendrecv\r\n";
         AtomicBoolean held = new AtomicBoolean(false);
-        CallMedia media = new CallMedia(null, null, sdpAnswer, null, "", -1, held);
+        RtpCodecFactory codecFactory = mock(RtpCodecFactory.class);
+        NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
+        DatagramSocket socket = mock(DatagramSocket.class);
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-2");
@@ -114,7 +127,11 @@ class HoldHandlerTest {
         String sdpOffer = "v=0\r\nm=audio 10000 RTP/AVP 8\r\na=sendrecv\r\n";
         String sdpAnswer = "v=0\r\nm=audio 5000 RTP/AVP 8\r\na=recvonly\r\n";
         AtomicBoolean held = new AtomicBoolean(true);
-        CallMedia media = new CallMedia(null, null, sdpAnswer, null, "", -1, held);
+        RtpCodecFactory codecFactory = mock(RtpCodecFactory.class);
+        NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
+        DatagramSocket socket = mock(DatagramSocket.class);
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-3");
