@@ -69,7 +69,7 @@ class HoldHandlerTest {
         NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
         DatagramSocket socket = mock(DatagramSocket.class);
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
-        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, 8000, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-1");
@@ -100,7 +100,7 @@ class HoldHandlerTest {
         NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
         DatagramSocket socket = mock(DatagramSocket.class);
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
-        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, 8000, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-2");
@@ -131,7 +131,7 @@ class HoldHandlerTest {
         NegotiatedRtpCodecFactory negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
         DatagramSocket socket = mock(DatagramSocket.class);
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 10000);
-        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, held);
+        CallMedia media = new CallMedia(socket, addr, sdpAnswer, negotiatedCodecFactory, -1, 8000, held);
         CallState callState = new CallState(
                 "test-call-id", sipSession, null, null, new LinkedHashMap<>(), media, Instant.now(), "caller");
         when(sipSession.getId()).thenReturn("sess-3");

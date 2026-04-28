@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -90,8 +91,10 @@ public class SdpNegotiator {
 
         String remoteIp = parseConnectionIp(sdpOffer);
         int remotePort = parseAudioPort(sdpOffer);
-        int telephoneEventPt = parseTelephoneEventPayloadType(sdpOffer);
         NegotiatedRtpCodecFactory negotiatedCodecFactory = selectCodec(sdpOffer);
+
+        int audioCodecSampleRate = negotiatedCodecFactory.metadata().rtpClockRate();
+        int telephoneEventPt = parseTelephoneEventPayloadType(sdpOffer, audioCodecSampleRate);
 
         DatagramSocket localSocket = new DatagramSocket(0);
         int localPort = localSocket.getLocalPort();
@@ -108,11 +111,18 @@ public class SdpNegotiator {
                 negotiatedCodecFactory.metadata().sdpName(),
                 telephoneEventPt);
 
-        String sdpAnswer = buildSdpAnswer(localIp, localPort, negotiatedCodecFactory, telephoneEventPt);
+        String sdpAnswer =
+                buildSdpAnswer(localIp, localPort, negotiatedCodecFactory, telephoneEventPt, audioCodecSampleRate);
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
         return new CallMedia(
-                localSocket, remoteAddr, sdpAnswer, negotiatedCodecFactory, telephoneEventPt, new AtomicBoolean(false));
+                localSocket,
+                remoteAddr,
+                sdpAnswer,
+                negotiatedCodecFactory,
+                telephoneEventPt,
+                audioCodecSampleRate,
+                new AtomicBoolean(false));
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {
@@ -166,13 +176,49 @@ public class SdpNegotiator {
      * Scans {@code a=rtpmap:<pt> telephone-event/<clock>} lines.
      * Returns {@code -1} if the remote side did not offer telephone-event.
      */
-    static int parseTelephoneEventPayloadType(String sdp) {
-        return sdp.lines()
+    /**
+     * Selects the telephone-event payload type from the SDP offer, prioritizing one that matches
+     * the negotiated audio codec's sample rate per RFC 4733.
+     *
+     * <p>RFC 4733 specifies that DTMF events should use the same sample rate as the audio stream
+     * for proper gateway interoperability. Gateways may ignore mismatched sample rates and send
+     * DTMF in-band instead.
+     *
+     * <p>Selection strategy:
+     * <ol>
+     *   <li>Search for telephone-event PT matching the audio codec's sample rate (e.g. 16000 Hz)
+     *   <li>If found, use it; otherwise fall back to 8000 Hz telephone-event
+     *   <li>If neither exists, return -1 (no DTMF support in offer)
+     * </ol>
+     *
+     * @param sdp                   the full SDP offer string
+     * @param audioCodecSampleRate  the RTP clock rate of the negotiated audio codec
+     * @return the telephone-event PT matching the audio codec's sample rate, or -1 if not found
+     */
+    static int parseTelephoneEventPayloadType(String sdp, int audioCodecSampleRate) {
+        Map<Integer, Integer> telephoneEventPts = new HashMap<>();
+
+        sdp.lines()
                 .filter(line -> line.startsWith("a=rtpmap:") && line.contains("telephone-event"))
-                .findFirst()
-                .map(line ->
-                        Integer.parseInt(line.substring("a=rtpmap:".length()).split("[/ ]")[0]))
-                .orElse(-1);
+                .forEach(line -> {
+                    String ptAndCodec = line.substring("a=rtpmap:".length());
+                    String[] parts = ptAndCodec.split(" ");
+                    int pt = Integer.parseInt(parts[0]);
+                    String[] codecAndRate = parts[1].split("/");
+                    int rate = Integer.parseInt(codecAndRate[1]);
+                    telephoneEventPts.put(rate, pt);
+                });
+
+        if (telephoneEventPts.isEmpty()) {
+            return -1;
+        }
+
+        Integer matchingPt = telephoneEventPts.get(audioCodecSampleRate);
+        if (matchingPt != null) {
+            return matchingPt;
+        }
+
+        return telephoneEventPts.getOrDefault(8000, -1);
     }
 
     /**
@@ -391,7 +437,11 @@ public class SdpNegotiator {
     }
 
     private static String buildSdpAnswer(
-            String localIp, int localPort, NegotiatedRtpCodecFactory negotiatedCodecFactory, int telephoneEventPt) {
+            String localIp,
+            int localPort,
+            NegotiatedRtpCodecFactory negotiatedCodecFactory,
+            int telephoneEventPt,
+            int audioCodecSampleRate) {
         StringBuilder sdp = new StringBuilder();
 
         sdp.append("v=0\r\n")
@@ -443,7 +493,11 @@ public class SdpNegotiator {
         }
 
         if (telephoneEventPt >= 0) {
-            sdp.append("a=rtpmap:").append(telephoneEventPt).append(" telephone-event/8000\r\n");
+            sdp.append("a=rtpmap:")
+                    .append(telephoneEventPt)
+                    .append(" telephone-event/")
+                    .append(audioCodecSampleRate)
+                    .append("\r\n");
             sdp.append("a=fmtp:").append(telephoneEventPt).append(" 0-15\r\n");
         }
 
