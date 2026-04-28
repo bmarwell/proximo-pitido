@@ -63,28 +63,37 @@ class SdpNegotiatorTest {
      * Real-world Deutsche Telekom VoLTE SDP offer (anonymised).
      * AMR-WB appears twice: PT 104 (bandwidth-efficient, no octet-align) and PT 110 (octet-aligned).
      * Our encoder only handles octet-aligned mode, so PT 110 must be selected.
+     * DTMF is offered at both 8000 Hz (PT 100) and 16000 Hz (PT 105).
+     * Since AMR-WB is 16000 Hz, PT 105 should be selected per RFC 4733.
      */
     private static final String SDP_OFFER_TELEKOM_VOLTE = """
             v=0\r
-            o=- 3896854731 3896854731 IN IP4 10.20.30.40\r
+            o=ccs-0-615-1 061211101626733 1878868699 IN IP4 203.0.113.1\r
             s=-\r
-            c=IN IP4 10.20.30.40\r
+            c=IN IP4 203.0.113.1\r
             t=0 0\r
-            m=audio 51944 RTP/AVP 109 104 110 9 102 108 8 0 100 105\r
+            a=sendrecv\r
+            m=audio 51652 RTP/AVP 109 104 110 9 102 108 8 0 100 105\r
+            a=sendrecv\r
+            a=maxptime:40\r
+            a=ptime:20\r
             a=rtpmap:109 EVS/16000\r
+            a=fmtp:109 br=5.9-24.4;bw=nb-wb;cmr=1;ch-aw-recv=-1;max-red=0\r
             a=rtpmap:104 AMR-WB/16000\r
             a=fmtp:104 mode-set=0,1,2;mode-change-capability=2;max-red=0\r
             a=rtpmap:110 AMR-WB/16000\r
             a=fmtp:110 octet-align=1;mode-set=0,1,2;mode-change-capability=2;max-red=0\r
             a=rtpmap:9 G722/8000\r
             a=rtpmap:102 AMR/8000\r
-            a=rtpmap:108 G722/8000\r
+            a=fmtp:102 mode-change-capability=2;max-red=0\r
+            a=rtpmap:108 AMR/8000\r
+            a=fmtp:108 octet-align=1;mode-change-capability=2;max-red=0\r
             a=rtpmap:8 PCMA/8000\r
             a=rtpmap:0 PCMU/8000\r
-            a=rtpmap:100 telephone-event/16000\r
-            a=rtpmap:105 telephone-event/8000\r
+            a=rtpmap:100 telephone-event/8000\r
+            a=fmtp:100 0-15\r
+            a=rtpmap:105 telephone-event/16000\r
             a=fmtp:105 0-15\r
-            a=sendrecv\r
             """;
 
     final SdpNegotiator sdpNegotiator = new SdpNegotiator();
@@ -110,7 +119,7 @@ class SdpNegotiatorTest {
         String sdp = SDP_OFFER_WITH_TELEPHONE_EVENT;
 
         // when
-        int payloadType = SdpNegotiator.parseTelephoneEventPayloadType(sdp);
+        int payloadType = SdpNegotiator.parseTelephoneEventPayloadType(sdp, 8000);
 
         // then
         assertEquals(101, payloadType);
@@ -123,7 +132,7 @@ class SdpNegotiatorTest {
         String sdp = SDP_OFFER_WITHOUT_TELEPHONE_EVENT;
 
         // when
-        int payloadType = SdpNegotiator.parseTelephoneEventPayloadType(sdp);
+        int payloadType = SdpNegotiator.parseTelephoneEventPayloadType(sdp, 8000);
 
         // then
         assertEquals(-1, payloadType);
@@ -163,20 +172,77 @@ class SdpNegotiatorTest {
         assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv to enable DTMF reception");
     }
 
+    @Test
+    @DisplayName("Select telephone-event PT matching audio codec sample rate (Telekom real-world test)")
+    void parseTelephoneEventPayloadType_withTelekomVolte_selectsPtMatchingAudioSampleRate() {
+        // given
+        String sdp = SDP_OFFER_TELEKOM_VOLTE;
+        int amrWbSampleRate = 16000;
+
+        // when
+        int selectedPt = SdpNegotiator.parseTelephoneEventPayloadType(sdp, amrWbSampleRate);
+
+        // then
+        assertEquals(105, selectedPt, "For 16000 Hz audio codec, should select PT 105 (telephone-event/16000)");
+    }
+
+    @Test
+    @DisplayName("Fall back to 8000 Hz telephone-event when matching sample rate not available")
+    void parseTelephoneEventPayloadType_withTelekomVolte_fallsBackTo8kHz() {
+        // given
+        String sdp = SDP_OFFER_TELEKOM_VOLTE;
+        int unknownSampleRate = 32000;
+
+        // when
+        int selectedPt = SdpNegotiator.parseTelephoneEventPayloadType(sdp, unknownSampleRate);
+
+        // then
+        assertEquals(100, selectedPt, "When audio sample rate not in offer, should fall back to 8000 Hz (PT 100)");
+    }
+
     /**
      * Calls the package-private {@code buildSdpAnswer} using PCMA (PT 8) as the codec.
      */
     private static String invokeBuildSdpAnswer(String localIp, int localPort, int telephoneEventPt) {
+        return invokeBuildSdpAnswer(localIp, localPort, telephoneEventPt, 8000);
+    }
+
+    /**
+     * Calls the package-private {@code buildSdpAnswer} with specified audio codec sample rate.
+     */
+    private static String invokeBuildSdpAnswer(
+            String localIp, int localPort, int telephoneEventPt, int audioCodecSampleRate) {
         try {
             var codecFactory = new PcmaRtpCodecFactory();
             var negotiatedCodecFactory = new NegotiatedRtpCodecFactory(codecFactory, 8, "");
             var method = SdpNegotiator.class.getDeclaredMethod(
-                    "buildSdpAnswer", String.class, int.class, NegotiatedRtpCodecFactory.class, int.class);
+                    "buildSdpAnswer", String.class, int.class, NegotiatedRtpCodecFactory.class, int.class, int.class);
             method.setAccessible(true);
-            return (String) method.invoke(null, localIp, localPort, negotiatedCodecFactory, telephoneEventPt);
+            return (String) method.invoke(
+                    null, localIp, localPort, negotiatedCodecFactory, telephoneEventPt, audioCodecSampleRate);
         } catch (ReflectiveOperationException reflectiveOperationException) {
             throw new AssertionError("Could not invoke buildSdpAnswer", reflectiveOperationException);
         }
+    }
+
+    @Test
+    @DisplayName("SDP answer with 16000 Hz audio codec uses matching telephone-event")
+    void buildSdpAnswer_with16khzAudio_includsTelephoneEventAt16khz() {
+        // given
+        String localIp = "192.168.1.1";
+        int localPort = 20000;
+        int telephoneEventPt = 105;
+        int audioCodecSampleRate = 16000;
+
+        // when
+        String sdpAnswer = invokeBuildSdpAnswer(localIp, localPort, telephoneEventPt, audioCodecSampleRate);
+
+        // then
+        assertTrue(
+                sdpAnswer.contains("a=rtpmap:105 telephone-event/16000"),
+                "SDP answer must include telephone-event/16000 at PT 105 when audio codec is 16000 Hz");
+        assertTrue(sdpAnswer.contains("a=fmtp:105 0-15"), "SDP answer must include telephone-event fmtp at PT 105");
+        assertTrue(sdpAnswer.contains("a=sendrecv"), "SDP answer must use sendrecv to enable DTMF reception");
     }
 
     @Test
