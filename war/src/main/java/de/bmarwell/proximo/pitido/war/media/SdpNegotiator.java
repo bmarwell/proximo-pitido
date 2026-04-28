@@ -116,7 +116,13 @@ public class SdpNegotiator {
         InetSocketAddress remoteAddr = new InetSocketAddress(remoteIp, remotePort);
 
         return new CallMedia(
-                localSocket, remoteAddr, sdpAnswer, negotiatedCodecFactory, telephoneEventPt, new AtomicBoolean(false));
+                localSocket,
+                remoteAddr,
+                sdpAnswer,
+                negotiatedCodecFactory,
+                telephoneEventPt,
+                audioCodecSampleRate,
+                new AtomicBoolean(false));
     }
 
     private static String readSdpBody(SipServletRequest req) throws IOException {

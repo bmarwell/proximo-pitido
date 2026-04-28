@@ -43,6 +43,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @param telephoneEventPayloadType the dynamic RTP payload type negotiated for RFC 4733
  *                                  telephone-event, or {@code -1} if the remote side did not
  *                                  offer telephone-event in its SDP
+ * @param audioCodecSampleRate      the RTP clock rate of the negotiated audio codec (e.g. 8000 or
+ *                                  16000 Hz); used for RFC 4733 DTMF sample rate matching
  * @param held                      thread-safe hold flag; mutated via {@link #hold()} and
  *                                  {@link #unhold()}, never replaced
  */
@@ -52,6 +54,7 @@ public record CallMedia(
         String sdpAnswer,
         NegotiatedRtpCodecFactory codecFactory,
         int telephoneEventPayloadType,
+        int audioCodecSampleRate,
         AtomicBoolean held) {
 
     /**
