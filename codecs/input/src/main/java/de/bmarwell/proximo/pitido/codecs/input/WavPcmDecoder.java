@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.codecs.input;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Comparator;
@@ -92,7 +93,8 @@ public class WavPcmDecoder implements PcmDecoder {
         }
 
         try {
-            AudioInputStream raw = AudioSystem.getAudioInputStream(in);
+            InputStream bufferedStream = new BufferedInputStream(in);
+            AudioInputStream raw = AudioSystem.getAudioInputStream(bufferedStream);
             AudioFormat fmt = raw.getFormat();
 
             if ((int) fmt.getSampleRate() != REQUIRED_SAMPLE_RATE) {
