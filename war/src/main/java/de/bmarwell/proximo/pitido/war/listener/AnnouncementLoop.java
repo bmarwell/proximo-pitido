@@ -127,7 +127,16 @@ public class AnnouncementLoop {
 
             return false;
         } catch (IOException ioException) {
-            if (media.localSocket().isClosed()) {
+            boolean isClosed = media.localSocket().isClosed();
+
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "{0}Time announcement error (socket closed: {1}): {2}",
+                    SipCallHeaders.callPrefix(sessionId),
+                    isClosed,
+                    ioException.getMessage());
+
+            if (isClosed) {
                 LOGGER.log(
                         System.Logger.Level.DEBUG,
                         "{0}Announcement loop: socket closed — exiting",
@@ -138,13 +147,12 @@ public class AnnouncementLoop {
 
             LOGGER.log(
                     System.Logger.Level.WARNING,
-                    "{0}Time announcement failed for language [{1}]: {2}",
+                    "{0}Codec error in language [{1}]; treating as fatal — exiting announcement loop",
                     SipCallHeaders.callPrefix(sessionId),
                     factory.displayName(),
-                    ioException.getMessage(),
                     ioException);
 
-            return false;
+            return true;
         }
     }
 }
