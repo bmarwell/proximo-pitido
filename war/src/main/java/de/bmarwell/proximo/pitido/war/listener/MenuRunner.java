@@ -72,6 +72,12 @@ public class MenuRunner {
             LanguageFactory chosen = this.callSessionManager.takePendingSelection(sessionId);
 
             if (chosen != null) {
+                // Clear the interrupt flag before transitioning to announcement playback.
+                // The menu was cancelled via Future.cancel(true) when the DTMF digit arrived,
+                // which set the thread interrupt flag. We must clear it to allow the announcement
+                // to play on the same executor thread without being immediately interrupted.
+                Thread.interrupted();
+
                 this.announcementLoop.play(session, player, chosen, sessionId, media);
             } else {
                 LOGGER.log(
