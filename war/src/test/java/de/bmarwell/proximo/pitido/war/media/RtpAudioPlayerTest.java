@@ -52,6 +52,9 @@ class RtpAudioPlayerTest {
     @Mock
     CallMedia callMedia;
 
+    @Mock
+    javax.enterprise.concurrent.ManagedExecutorService managedExecutorService;
+
     private RtpAudioPlayer player;
 
     @BeforeEach
@@ -65,7 +68,15 @@ class RtpAudioPlayerTest {
         when(this.metadata.samplesPerFrame()).thenReturn(160);
         when(this.codec.encode(any())).thenReturn(new byte[20]);
 
-        this.player = new RtpAudioPlayer(this.callMedia, this.codec, this.pcmDecoderFactory);
+        // Mock executor to run tasks synchronously
+        when(this.managedExecutorService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            var runnable = (Runnable) invocation.getArgument(0);
+            runnable.run();
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
+        });
+
+        this.player =
+                new RtpAudioPlayer(this.callMedia, this.codec, this.pcmDecoderFactory, this.managedExecutorService);
     }
 
     // ── Marker bit tests ───────────────────────────────────────────────────────────

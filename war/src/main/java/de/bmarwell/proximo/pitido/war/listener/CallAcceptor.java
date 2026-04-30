@@ -223,7 +223,8 @@ public class CallAcceptor {
 
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
+                AudioPlayer player =
+                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,
@@ -277,7 +278,8 @@ public class CallAcceptor {
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player = new RtpAudioPlayer(media, codec, this.pcmDecoderFactory);
+                AudioPlayer player =
+                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,
