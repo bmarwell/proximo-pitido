@@ -94,6 +94,14 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
      */
     private MemorySegment reusableInputSegment;
 
+    /**
+     * Reusable memory segment for FFM output buffer (encoded speech bytes).
+     * Created once per call to avoid per-frame allocation of {@link #MAX_ENCODED_BYTES}.
+     * Scope: per-call instance lifetime.
+     * {@code null} in the CDI factory bean; non-null in per-call instances.
+     */
+    private MemorySegment reusableOutputSegment;
+
     AmrWbRtpCodec(String offeredFmtp) {
         SymbolLookup amrwb = SymbolLookup.libraryLookup("libvo-amrwbenc.so.0", Arena.global());
         Linker linker = Linker.nativeLinker();
@@ -127,6 +135,10 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
 
         this.encodingMode = extractBestMode(offeredFmtp);
         this.stateSegment = rawStatePtr.reinterpret(STATE_SIZE, callArena, this::invokeExit);
+
+        this.reusableInputSegment =
+                this.callArena.allocate(ValueLayout.JAVA_SHORT, metadata().samplesPerFrame());
+        this.reusableOutputSegment = this.callArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
     }
 
     /**
@@ -174,11 +186,11 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
                     "encode() must not be called on the CDI factory bean; obtain a per-call instance via forCall() first");
         }
 
-        // Reuse callArena for this frame instead of allocating a new confined Arena.
-        // This eliminates the per-frame Arena allocation/deallocation overhead which
-        // causes FFM jitter and buffer underruns in audio playback (~1-2ms per frame reduced to <0.5ms).
-        MemorySegment inputSeg = this.callArena.allocateFrom(ValueLayout.JAVA_SHORT, pcmFrame);
-        MemorySegment outputSeg = this.callArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
+        // Copy PCM samples into pre-allocated reusable input segment to avoid per-frame allocation.
+        // Pre-allocated segments live for the call duration; only the memory copy varies per frame.
+        MemorySegment.copy(pcmFrame, 0, this.reusableInputSegment, ValueLayout.JAVA_SHORT, 0, pcmFrame.length);
+        MemorySegment inputSeg = this.reusableInputSegment;
+        MemorySegment outputSeg = this.reusableOutputSegment;
 
         // Log PCM input sample range for diagnostics
         short minSample = Short.MAX_VALUE;
