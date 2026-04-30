@@ -25,7 +25,7 @@ public abstract class NativeRtpCodec implements RtpCodec {
     protected final Arena callArena;
 
     protected NativeRtpCodec() {
-        this.callArena = Arena.ofConfined();
+        this.callArena = Arena.ofShared();
     }
 
     /**
