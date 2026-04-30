@@ -127,11 +127,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         try {
             consumeAndSendPackets();
         } finally {
-            try {
-                encoderFuture.get();
-            } catch (java.util.concurrent.ExecutionException executionException) {
-                LOGGER.log(System.Logger.Level.DEBUG, "Encoder thread failed", executionException);
-            }
+            waitForEncoderCompletion(encoderFuture);
         }
     }
 
@@ -147,6 +143,14 @@ public class RtpAudioPlayer implements AudioPlayer {
                 }
 
                 byte[] rtpPacket = this.codec.encode(silenceFrame);
+
+                if (this.packetQueue.size() >= 4) {
+                    LOGGER.log(
+                            System.Logger.Level.DEBUG,
+                            "RTP queue backpressure: {0}/5 packets queued; encoder waiting for sender",
+                            this.packetQueue.size());
+                }
+
                 this.packetQueue.put(rtpPacket);
             }
         } catch (IOException ioException) {
@@ -195,11 +199,7 @@ public class RtpAudioPlayer implements AudioPlayer {
             try {
                 consumeAndSendPackets();
             } finally {
-                try {
-                    encoderFuture.get();
-                } catch (java.util.concurrent.ExecutionException executionException) {
-                    LOGGER.log(System.Logger.Level.DEBUG, "Encoder thread failed", executionException);
-                }
+                waitForEncoderCompletion(encoderFuture);
             }
         }
     }
@@ -228,6 +228,14 @@ public class RtpAudioPlayer implements AudioPlayer {
 
                 adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
                 byte[] rtpPacket = this.codec.encode(codecFrameBuf);
+
+                if (this.packetQueue.size() >= 4) {
+                    LOGGER.log(
+                            System.Logger.Level.DEBUG,
+                            "RTP queue backpressure: {0}/5 packets queued; encoder waiting for sender",
+                            this.packetQueue.size());
+                }
+
                 this.packetQueue.put(rtpPacket);
             }
         } catch (IOException ioException) {
@@ -407,5 +415,29 @@ public class RtpAudioPlayer implements AudioPlayer {
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
         timestamp += this.codec.metadata().rtpTimestampIncrement();
         this.firstPacketOfTalkspurt = false;
+    }
+
+    /**
+     * Waits for encoder thread to complete with timeout and explicit cancellation if needed.
+     *
+     * <p>If the encoder thread does not finish within 5 seconds (assuming it's stuck or blocked),
+     * this method cancels the future and logs a warning.
+     * This prevents indefinite blocking if the encoder or queue becomes deadlocked.
+     *
+     * @param encoderFuture the encoder task future
+     */
+    private void waitForEncoderCompletion(java.util.concurrent.Future<?> encoderFuture) {
+        try {
+            encoderFuture.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException timeoutException) {
+            LOGGER.log(System.Logger.Level.WARNING, "Encoder thread did not complete within 5 seconds; cancelling");
+            encoderFuture.cancel(true);
+        } catch (java.util.concurrent.ExecutionException executionException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Encoder thread failed", executionException);
+        } catch (InterruptedException interruptedException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Waiting for encoder thread was interrupted", interruptedException);
+            encoderFuture.cancel(true);
+            Thread.currentThread().interrupt();
+        }
     }
 }
