@@ -63,6 +63,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final RtpCodec codec;
     private final CallMedia callMedia;
     private final int ssrc;
+    private final RtpFrameScheduler frameScheduler;
     private int seqNumber;
     private long timestamp;
     private Instant lastPacketSentAt;
@@ -83,6 +84,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
         this.codec = callCodec;
+        this.frameScheduler = new RtpFrameScheduler();
 
         Random rng = new Random();
         this.ssrc = rng.nextInt();
@@ -118,9 +120,12 @@ public class RtpAudioPlayer implements AudioPlayer {
 
             if (this.callMedia.isHeld()) {
                 this.timestamp += this.codec.metadata().rtpTimestampIncrement();
-                Thread.sleep(20);
+                this.frameScheduler.waitUntilNextFrame();
+                this.frameScheduler.advanceToNextFrame();
                 continue;
             }
+
+            this.frameScheduler.waitUntilNextFrame();
 
             try {
                 sendRtpPacket(this.codec.encode(silenceFrame));
@@ -130,8 +135,7 @@ public class RtpAudioPlayer implements AudioPlayer {
             }
 
             this.lastPacketSentAt = Instant.now();
-            // Throttle to the 20 ms RTP packet cadence so the remote end is not flooded.
-            Thread.sleep(20);
+            this.frameScheduler.advanceToNextFrame();
         }
     }
 
@@ -171,10 +175,9 @@ public class RtpAudioPlayer implements AudioPlayer {
                 }
 
                 if (this.callMedia.isHeld()) {
-                    // Call is on hold: pause PCM consumption and RTP sending.
-                    // Advance the RTP timestamp so the timeline stays consistent on resume.
                     this.timestamp += this.codec.metadata().rtpTimestampIncrement();
-                    Thread.sleep(20);
+                    this.frameScheduler.waitUntilNextFrame();
+                    this.frameScheduler.advanceToNextFrame();
                     continue;
                 }
 
@@ -185,14 +188,15 @@ public class RtpAudioPlayer implements AudioPlayer {
                 }
 
                 if (read < decoderSamplesPerPacket) {
-                    // Zero-pad the last partial frame to a full 20 ms packet.
                     Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
                 }
 
                 adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
+
+                this.frameScheduler.waitUntilNextFrame();
                 sendRtpPacket(this.codec.encode(codecFrameBuf));
                 this.lastPacketSentAt = Instant.now();
-                Thread.sleep(20);
+                this.frameScheduler.advanceToNextFrame();
             }
         }
     }
