@@ -86,6 +86,22 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
      */
     protected final int encodingMode;
 
+    /**
+     * Reusable memory segment for FFM input allocation (PCM samples).
+     * Created once per call to avoid Arena allocation overhead per 20ms frame.
+     * Scope: per-call instance lifetime.
+     * {@code null} in the CDI factory bean; non-null in per-call instances.
+     */
+    private MemorySegment reusableInputSegment;
+
+    /**
+     * Reusable memory segment for FFM output buffer (encoded speech bytes).
+     * Created once per call to avoid per-frame allocation of {@link #MAX_ENCODED_BYTES}.
+     * Scope: per-call instance lifetime.
+     * {@code null} in the CDI factory bean; non-null in per-call instances.
+     */
+    private MemorySegment reusableOutputSegment;
+
     AmrWbRtpCodec(String offeredFmtp) {
         SymbolLookup amrwb = SymbolLookup.libraryLookup("libvo-amrwbenc.so.0", Arena.global());
         Linker linker = Linker.nativeLinker();
@@ -119,6 +135,10 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
 
         this.encodingMode = extractBestMode(offeredFmtp);
         this.stateSegment = rawStatePtr.reinterpret(STATE_SIZE, callArena, this::invokeExit);
+
+        this.reusableInputSegment =
+                this.callArena.allocate(ValueLayout.JAVA_SHORT, metadata().samplesPerFrame());
+        this.reusableOutputSegment = this.callArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
     }
 
     /**
@@ -166,72 +186,73 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
                     "encode() must not be called on the CDI factory bean; obtain a per-call instance via forCall() first");
         }
 
-        try (Arena frameArena = Arena.ofConfined()) {
-            MemorySegment inputSeg = frameArena.allocateFrom(ValueLayout.JAVA_SHORT, pcmFrame);
-            MemorySegment outputSeg = frameArena.allocate(ValueLayout.JAVA_BYTE, MAX_ENCODED_BYTES);
+        // Copy PCM samples into pre-allocated reusable input segment to avoid per-frame allocation.
+        // Pre-allocated segments live for the call duration; only the memory copy varies per frame.
+        MemorySegment.copy(pcmFrame, 0, this.reusableInputSegment, ValueLayout.JAVA_SHORT, 0, pcmFrame.length);
+        MemorySegment inputSeg = this.reusableInputSegment;
+        MemorySegment outputSeg = this.reusableOutputSegment;
 
-            // Log PCM input sample range for diagnostics
-            short minSample = Short.MAX_VALUE;
-            short maxSample = Short.MIN_VALUE;
-            for (short sample : pcmFrame) {
-                if (sample < minSample) minSample = sample;
-                if (sample > maxSample) maxSample = sample;
-            }
-            short firstSample;
-            if (pcmFrame.length > 0) {
-                firstSample = pcmFrame[0];
-            } else {
-                firstSample = 0;
-            }
-            short lastSample;
-            if (pcmFrame.length > 0) {
-                lastSample = pcmFrame[pcmFrame.length - 1];
-            } else {
-                lastSample = 0;
-            }
-
-            LOGGER.log(
-                    System.Logger.Level.TRACE,
-                    "AMR-WB octet-aligned encode: encodingMode={0}, pcmSamples={1}, pcmRange=[{2},{3}], first={4}, last={5}",
-                    this.encodingMode,
-                    pcmFrame.length,
-                    minSample,
-                    maxSample,
-                    firstSample,
-                    lastSample);
-
-            int speechBytes = invokeEncode(inputSeg, outputSeg);
-
-            if (speechBytes < 0) {
-                throw new IOException("E_IF_encode failed with error code " + speechBytes);
-            }
-
-            // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) even though we
-            // request octet-aligned. The first byte of encoder output is the ToC byte.
-            // For octet-aligned payloads, we must strip it and prepend our own ToC.
-            byte expectedToC = (byte) ((this.encodingMode << 3) | 0x04);
-            byte firstEncoderByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
-            int offset = 0;
-            int actualSpeechBytes = speechBytes;
-
-            if (firstEncoderByte == expectedToC && speechBytes >= 33) {
-                offset = 1;
-                actualSpeechBytes = speechBytes - 1;
-            }
-
-            byte[] payload = buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
-
-            LOGGER.log(
-                    System.Logger.Level.TRACE,
-                    "AMR-WB octet-aligned encode: encodingMode={0} encoderOutputBytes={1} offset={2} tocDetected={3} payloadBytes={4}",
-                    this.encodingMode,
-                    speechBytes,
-                    offset,
-                    firstEncoderByte == expectedToC,
-                    payload.length);
-
-            return payload;
+        // Log PCM input sample range for diagnostics
+        short minSample = Short.MAX_VALUE;
+        short maxSample = Short.MIN_VALUE;
+        for (short sample : pcmFrame) {
+            if (sample < minSample) minSample = sample;
+            if (sample > maxSample) maxSample = sample;
         }
+        short firstSample;
+        if (pcmFrame.length > 0) {
+            firstSample = pcmFrame[0];
+        } else {
+            firstSample = 0;
+        }
+        short lastSample;
+        if (pcmFrame.length > 0) {
+            lastSample = pcmFrame[pcmFrame.length - 1];
+        } else {
+            lastSample = 0;
+        }
+
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AMR-WB octet-aligned encode: encodingMode={0}, pcmSamples={1}, pcmRange=[{2},{3}], first={4}, last={5}",
+                this.encodingMode,
+                pcmFrame.length,
+                minSample,
+                maxSample,
+                firstSample,
+                lastSample);
+
+        int speechBytes = invokeEncode(inputSeg, outputSeg);
+
+        if (speechBytes < 0) {
+            throw new IOException("E_IF_encode failed with error code " + speechBytes);
+        }
+
+        // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) even though we
+        // request octet-aligned. The first byte of encoder output is the ToC byte.
+        // For octet-aligned payloads, we must strip it and prepend our own ToC.
+        byte expectedToC = (byte) ((this.encodingMode << 3) | 0x04);
+        byte firstEncoderByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
+        int offset = 0;
+        int actualSpeechBytes = speechBytes;
+
+        if (firstEncoderByte == expectedToC && speechBytes >= 33) {
+            offset = 1;
+            actualSpeechBytes = speechBytes - 1;
+        }
+
+        byte[] payload = buildOctetAlignedPayload(outputSeg, actualSpeechBytes, this.encodingMode, offset);
+
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "AMR-WB octet-aligned encode: encodingMode={0} encoderOutputBytes={1} offset={2} tocDetected={3} payloadBytes={4}",
+                this.encodingMode,
+                speechBytes,
+                offset,
+                firstEncoderByte == expectedToC,
+                payload.length);
+
+        return payload;
     }
 
     /**
