@@ -15,11 +15,17 @@
 -XX:+IgnoreUnrecognizedVMOptions
 
 # OpenJ9 container tuning — silently ignored on HotSpot.
-# IdleTuningGcOnIdle: run a GC cycle when the JVM is idle to reclaim heap pages.
 # ClassRelationshipVerifier: lazy class verification reduces startup time.
 # Xtune:virtualize: optimise for a virtualised or container host.
--XX:+IdleTuningGcOnIdle
 -XX:+ClassRelationshipVerifier
 -Xtune:virtualize
 
-# verbose GC not enabled — do not add -verbose:gc or -Xverbosegclog
+# Heap bounds — gencon (the OpenJ9 default) with explicit min/max.
+# -Xms: minimum heap kept at all times; prevents over-shrinkage between calls.
+# -Xmx: maximum heap; sized for Liberty (~60 MB) plus 4 concurrent calls
+#        (~20 MB each for audio buffers, codec state, and RTP queues) plus margin.
+# -Xmn: nursery fixed at 32 MB; keeps scavenge pauses short and predictable
+#        without requiring GC policy tuning flags.
+-Xms96m
+-Xmx256m
+-Xmn32m
