@@ -15,11 +15,28 @@
 -XX:+IgnoreUnrecognizedVMOptions
 
 # OpenJ9 container tuning — silently ignored on HotSpot.
-# IdleTuningGcOnIdle: run a GC cycle when the JVM is idle to reclaim heap pages.
 # ClassRelationshipVerifier: lazy class verification reduces startup time.
 # Xtune:virtualize: optimise for a virtualised or container host.
--XX:+IdleTuningGcOnIdle
+#
+# IdleTuningGcOnIdle is intentionally absent.
+# It shrinks the heap aggressively when the server is between calls.
+# When a burst of concurrent calls then arrives, the heap has no headroom and
+# triggers a full stop-the-world GC (observed: 398 ms pause with balanced,
+# similar behaviour with gencon), which causes the Docker health-check at
+# :9080/health/ to time out and Docker Compose to restart the container.
 -XX:+ClassRelationshipVerifier
 -Xtune:virtualize
--Xgcpolicy:balanced
--Xgc:targetPauseTime=10
+
+# Heap bounds — gencon (the OpenJ9 default) with explicit min/max.
+# -Xms: minimum heap kept at all times; prevents over-shrinkage between calls.
+# -Xmx: maximum heap; sized for Liberty (~60 MB) plus 4 concurrent calls
+#        (~20 MB each for audio buffers, codec state, and RTP queues) plus margin.
+# -Xmn: nursery fixed at 32 MB; keeps scavenge pauses short and predictable
+#        without requiring GC policy tuning flags.
+#
+# balanced and targetPauseTime are intentionally absent: the balanced policy
+# contracts the heap to meet its pause-time target, which is counter-productive
+# when heap is already small and GC overhead is naturally low between calls.
+-Xms96m
+-Xmx256m
+-Xmn32m
