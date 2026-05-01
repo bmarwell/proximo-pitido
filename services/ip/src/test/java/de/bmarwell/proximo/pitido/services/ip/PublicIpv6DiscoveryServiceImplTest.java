@@ -12,8 +12,8 @@
  */
 package de.bmarwell.proximo.pitido.services.ip;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -21,6 +21,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.Optional;
 import javax.ws.rs.ProcessingException;
@@ -66,11 +68,11 @@ class PublicIpv6DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("2001:db8::1", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
         verify(this.client, times(1)).target(PublicIpv6DiscoveryServiceImpl.DISCOVERY_URLS.getFirst());
     }
 
@@ -83,11 +85,11 @@ class PublicIpv6DiscoveryServiceImplTest {
                 .thenReturn("2001:db8::2");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("2001:db8::2", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
@@ -97,7 +99,7 @@ class PublicIpv6DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenThrow(new ProcessingException("no route to host"));
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertFalse(result.isPresent());
@@ -112,11 +114,11 @@ class PublicIpv6DiscoveryServiceImplTest {
                 .thenReturn("2001:db8::3");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("2001:db8::3", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
@@ -127,11 +129,11 @@ class PublicIpv6DiscoveryServiceImplTest {
         this.discoveryService.discover();
 
         // when
-        Optional<String> cached = this.discoveryService.discover();
+        Optional<InetAddress> cached = this.discoveryService.discover();
 
         // then
         assertTrue(cached.isPresent());
-        assertEquals("2001:db8::1", cached.get());
+        assertInstanceOf(Inet6Address.class, cached.get());
         verify(this.client, times(1)).target(any(URI.class));
     }
 
@@ -142,11 +144,11 @@ class PublicIpv6DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1\n");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("2001:db8::1", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
@@ -163,46 +165,50 @@ class PublicIpv6DiscoveryServiceImplTest {
     }
 
     @Test
-    void isValidPublicIpv6Address_rejectsIpv4Address() {
+    void parseIpv6Address_rejectsIpv4Address() {
         // given / when / then
-        assertFalse(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("1.2.3.4"));
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("1.2.3.4").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv6Address_rejectsHostname() {
+    void parseIpv6Address_rejectsHostname() {
         // given / when / then
-        assertFalse(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("example.com"));
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("example.com").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv6Address_rejectsBracketedAddress() {
+    void parseIpv6Address_rejectsBracketedAddress() {
         // given / when / then
-        assertFalse(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("[2001:db8::1]"));
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("[2001:db8::1]").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv6Address_rejectsNull() {
+    void parseIpv6Address_rejectsNull() {
         // given / when / then
-        assertFalse(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address(null));
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address(null).isEmpty());
     }
 
     @Test
-    void isValidPublicIpv6Address_rejectsBlank() {
+    void parseIpv6Address_rejectsBlank() {
         // given / when / then
-        assertFalse(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("  "));
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("  ").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv6Address_acceptsFullAddress() {
+    void parseIpv6Address_acceptsFullAddress() {
         // given / when / then
-        assertTrue(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("2001:db8:0:0:0:0:0:1"));
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("2001:db8:0:0:0:0:0:1")
+                .isPresent());
     }
 
     @Test
-    void isValidPublicIpv6Address_acceptsCompressedAddress() {
+    void parseIpv6Address_acceptsCompressedAddress() {
         // given / when / then
         // Both compressed ("2001:db8::1") and expanded ("2001:db8:0:0:0:0:0:1") forms are valid.
         // The validation does not require the input to survive a JVM normalisation round-trip.
-        assertTrue(PublicIpv6DiscoveryServiceImpl.isValidPublicIpv6Address("2001:db8::1"));
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("2001:db8::1").isPresent());
     }
 }

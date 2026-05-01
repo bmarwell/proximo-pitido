@@ -12,24 +12,29 @@
  */
 package de.bmarwell.proximo.pitido.services.api;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.util.Optional;
 
 /**
  * Discovers the public IPv4 address of this host.
  *
- * <p>Implementations query remote IP-echo services and cache the result.
+ * <p>Implementations query remote IPv4-only IP-echo services and cache the result.
  * When all services are unreachable, {@link Optional#empty()} is returned.
+ *
+ * <p>The returned {@link InetAddress} is always an {@link Inet4Address}.
  *
  * <p>This interface exists so that the {@code core} module can depend on the contract
  * without coupling to any specific implementation.
  * The implementation is provided at runtime by {@code proximo-pitido-services-ip}.
  */
-public interface PublicIpv4DiscoveryService {
+public non-sealed interface PublicIpv4DiscoveryService extends PublicIpDiscoveryService {
 
     /**
      * Returns the public IPv4 address of this host.
      *
-     * @return the discovered address, or {@link Optional#empty()} when all services fail
+     * @return the discovered {@link Inet4Address}, or {@link Optional#empty()} when all services fail
      */
-    Optional<String> discover();
+    @Override
+    Optional<InetAddress> discover();
 }

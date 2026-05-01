@@ -21,6 +21,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.Optional;
 import javax.ws.rs.ProcessingException;
@@ -67,11 +68,11 @@ class PublicIpv4DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenReturn("1.2.3.4");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("1.2.3.4", result.get());
+        assertEquals("1.2.3.4", result.get().getHostAddress());
         verify(this.client, times(1)).target(PublicIpv4DiscoveryServiceImpl.DISCOVERY_URLS.getFirst());
     }
 
@@ -84,11 +85,11 @@ class PublicIpv4DiscoveryServiceImplTest {
                 .thenReturn("5.6.7.8");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("5.6.7.8", result.get());
+        assertEquals("5.6.7.8", result.get().getHostAddress());
     }
 
     @Test
@@ -98,7 +99,7 @@ class PublicIpv4DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenThrow(new ProcessingException("no route to host"));
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertFalse(result.isPresent());
@@ -113,11 +114,11 @@ class PublicIpv4DiscoveryServiceImplTest {
                 .thenReturn("9.10.11.12");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("9.10.11.12", result.get());
+        assertEquals("9.10.11.12", result.get().getHostAddress());
     }
 
     @Test
@@ -128,11 +129,11 @@ class PublicIpv4DiscoveryServiceImplTest {
         this.discoveryService.discover();
 
         // when
-        Optional<String> cached = this.discoveryService.discover();
+        Optional<InetAddress> cached = this.discoveryService.discover();
 
         // then
         assertTrue(cached.isPresent());
-        assertEquals("1.2.3.4", cached.get());
+        assertEquals("1.2.3.4", cached.get().getHostAddress());
         verify(this.client, times(1)).target(any(URI.class));
     }
 
@@ -143,11 +144,11 @@ class PublicIpv4DiscoveryServiceImplTest {
         when(this.requestBuilder.get(String.class)).thenReturn("203.0.113.1\n");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("203.0.113.1", result.get());
+        assertEquals("203.0.113.1", result.get().getHostAddress());
     }
 
     @Test
@@ -165,20 +166,23 @@ class PublicIpv4DiscoveryServiceImplTest {
     }
 
     @Test
-    void isValidPublicIpv4Address_rejectsIpv6Address() {
+    void parseIpv4Address_rejectsIpv6Address() {
         // given / when / then
-        assertFalse(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("2001:db8::1"));
+        assertTrue(
+                PublicIpv4DiscoveryServiceImpl.parseIpv4Address("2001:db8::1").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv4Address_rejectsHostname() {
+    void parseIpv4Address_rejectsHostname() {
         // given / when / then
-        assertFalse(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("example.com"));
+        assertTrue(
+                PublicIpv4DiscoveryServiceImpl.parseIpv4Address("example.com").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv4Address_acceptsLiteralIpv4() {
+    void parseIpv4Address_acceptsLiteralIpv4() {
         // given / when / then
-        assertTrue(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("203.0.113.1"));
+        assertTrue(
+                PublicIpv4DiscoveryServiceImpl.parseIpv4Address("203.0.113.1").isPresent());
     }
 }

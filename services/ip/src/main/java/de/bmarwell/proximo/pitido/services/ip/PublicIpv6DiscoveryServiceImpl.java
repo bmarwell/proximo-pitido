@@ -50,11 +50,6 @@ import javax.ws.rs.core.MediaType;
  *   <li>{@code https://v6.ident.me} — plain text, IPv6 only</li>
  *   <li>{@code https://api6.ipify.org} — plain text, IPv6 only</li>
  * </ol>
- *
- * <p>Returned addresses are bare IPv6 literals without enclosing brackets,
- * e.g. {@code "2001:db8::1"}.
- * Callers embedding the address in a SIP URI must add brackets
- * ({@code sip:user@[2001:db8::1]}) per RFC 3261 §19.1.1.
  */
 @ApplicationScoped
 public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryService {
@@ -76,15 +71,15 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
             .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build();
 
-    private final AtomicReference<String> cachedIp = new AtomicReference<>();
+    private final AtomicReference<InetAddress> cachedIp = new AtomicReference<>();
     private volatile Instant cacheExpiry = Instant.MIN;
 
     /** CDI no-args constructor. */
     public PublicIpv6DiscoveryServiceImpl() {}
 
     @Override
-    public Optional<String> discover() {
-        String cached = this.cachedIp.get();
+    public Optional<InetAddress> discover() {
+        InetAddress cached = this.cachedIp.get();
 
         if (cached != null && Instant.now().isBefore(this.cacheExpiry)) {
             return Optional.of(cached);
@@ -93,12 +88,12 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
         return queryDiscoveryServices();
     }
 
-    private Optional<String> queryDiscoveryServices() {
+    private Optional<InetAddress> queryDiscoveryServices() {
         Client client = this.clientFactory.get();
 
         try {
             for (URI url : DISCOVERY_URLS) {
-                Optional<String> ip = queryService(client, url);
+                Optional<InetAddress> ip = queryService(client, url);
 
                 if (ip.isPresent()) {
                     this.cachedIp.set(ip.get());
@@ -113,20 +108,26 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
         return Optional.empty();
     }
 
-    private Optional<String> queryService(Client client, URI url) {
+    private Optional<InetAddress> queryService(Client client, URI url) {
         try {
             String body = client.target(url)
                     .request(MediaType.TEXT_PLAIN_TYPE)
                     .get(String.class)
                     .strip();
 
-            if (!isValidPublicIpv6Address(body)) {
+            Optional<InetAddress> addr = parseIpv6Address(body);
+
+            if (addr.isEmpty()) {
                 LOGGER.log(System.Logger.Level.DEBUG, "Unexpected response from {0}: {1}", url, body);
                 return Optional.empty();
             }
 
-            LOGGER.log(System.Logger.Level.INFO, "Discovered public IPv6 address {0} via {1}", body, url);
-            return Optional.of(body);
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Discovered public IPv6 address {0} via {1}",
+                    addr.get().getHostAddress(),
+                    url);
+            return addr;
         } catch (ProcessingException processingException) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
@@ -138,7 +139,7 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
     }
 
     /**
-     * Returns {@code true} only when {@code candidate} is a bare literal IPv6 address.
+     * Parses {@code candidate} as a bare literal IPv6 address.
      *
      * <p>The check uses the presence of {@code ':'} as the IPv6 discriminator, then attempts to
      * parse the address with {@link InetAddress#getByName(String)}.
@@ -147,33 +148,40 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
      * cause the input to fail an equality comparison against the normalised output.
      * IPv4-mapped addresses ({@code ::ffff:1.2.3.4}) are rejected because they embed an IPv4 address
      * and would be misleading in an IPv6-only context.
+     *
+     * @return the parsed {@link Inet6Address}, or {@link Optional#empty()} if {@code candidate}
+     *     is not a valid public IPv6 literal
      */
-    static boolean isValidPublicIpv6Address(String candidate) {
+    static Optional<InetAddress> parseIpv6Address(String candidate) {
         if (candidate == null || candidate.isBlank()) {
-            return false;
+            return Optional.empty();
         }
 
         // Reject any bracketed form — services should return bare addresses
         if (candidate.startsWith("[") || candidate.endsWith("]")) {
-            return false;
+            return Optional.empty();
         }
 
         // All IPv6 addresses contain ':'; reject IPv4 addresses and hostnames early
         if (!candidate.contains(":")) {
-            return false;
+            return Optional.empty();
         }
 
         try {
             InetAddress addr = InetAddress.getByName(candidate);
 
             if (!(addr instanceof Inet6Address inet6)) {
-                return false;
+                return Optional.empty();
             }
 
             // Reject IPv4-mapped addresses
-            return !inet6.isIPv4CompatibleAddress();
+            if (inet6.isIPv4CompatibleAddress()) {
+                return Optional.empty();
+            }
+
+            return Optional.of(addr);
         } catch (UnknownHostException unknownHostException) {
-            return false;
+            return Optional.empty();
         }
     }
 }

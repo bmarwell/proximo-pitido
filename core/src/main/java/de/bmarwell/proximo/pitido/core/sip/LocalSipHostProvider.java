@@ -138,7 +138,7 @@ public class LocalSipHostProvider {
             return Optional.of(this.ipv6Mode);
         }
 
-        Optional<String> discovered = this.publicIpv6DiscoveryService.discover();
+        Optional<String> discovered = this.publicIpv6DiscoveryService.discover().map(InetAddress::getHostAddress);
 
         if (discovered.isPresent()) {
             LOGGER.log(
@@ -166,7 +166,7 @@ public class LocalSipHostProvider {
             return Optional.of(host);
         }
 
-        Optional<String> discovered = this.publicIpv4DiscoveryService.discover();
+        Optional<String> discovered = this.publicIpv4DiscoveryService.discover().map(InetAddress::getHostAddress);
 
         if (discovered.isPresent()) {
             LOGGER.log(

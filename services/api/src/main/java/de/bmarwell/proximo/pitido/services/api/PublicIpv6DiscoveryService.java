@@ -12,6 +12,8 @@
  */
 package de.bmarwell.proximo.pitido.services.api;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.util.Optional;
 
 /**
@@ -24,17 +26,17 @@ import java.util.Optional;
  * <p>When all services are unreachable (e.g. the host has no IPv6 connectivity),
  * {@link Optional#empty()} is returned and the caller falls back to IPv4.
  *
- * <p>Returned addresses are bare IPv6 literals without enclosing brackets,
- * e.g. {@code "2001:db8::1"}.
- * Callers that embed the address in a SIP URI must add brackets themselves
+ * <p>The returned {@link InetAddress} is always an {@link Inet6Address}.
+ * Callers that embed the address in a SIP URI must format it with square brackets
  * ({@code sip:user@[2001:db8::1]}) per RFC 3261 §19.1.1.
  */
-public interface PublicIpv6DiscoveryService {
+public non-sealed interface PublicIpv6DiscoveryService extends PublicIpDiscoveryService {
 
     /**
      * Returns the public IPv6 address of this host.
      *
-     * @return the discovered address without brackets, or {@link Optional#empty()} when all services fail
+     * @return the discovered {@link Inet6Address}, or {@link Optional#empty()} when all services fail
      */
-    Optional<String> discover();
+    @Override
+    Optional<InetAddress> discover();
 }

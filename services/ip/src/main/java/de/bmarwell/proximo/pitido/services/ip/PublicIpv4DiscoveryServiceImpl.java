@@ -74,15 +74,15 @@ public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryServic
             .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build();
 
-    private final AtomicReference<String> cachedIp = new AtomicReference<>();
+    private final AtomicReference<InetAddress> cachedIp = new AtomicReference<>();
     private volatile Instant cacheExpiry = Instant.MIN;
 
     /** CDI no-args constructor. */
     public PublicIpv4DiscoveryServiceImpl() {}
 
     @Override
-    public Optional<String> discover() {
-        String cached = this.cachedIp.get();
+    public Optional<InetAddress> discover() {
+        InetAddress cached = this.cachedIp.get();
 
         if (cached != null && Instant.now().isBefore(this.cacheExpiry)) {
             return Optional.of(cached);
@@ -91,12 +91,12 @@ public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryServic
         return queryDiscoveryServices();
     }
 
-    private Optional<String> queryDiscoveryServices() {
+    private Optional<InetAddress> queryDiscoveryServices() {
         Client client = this.clientFactory.get();
 
         try {
             for (URI url : DISCOVERY_URLS) {
-                Optional<String> ip = queryService(client, url);
+                Optional<InetAddress> ip = queryService(client, url);
 
                 if (ip.isPresent()) {
                     this.cachedIp.set(ip.get());
@@ -111,20 +111,26 @@ public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryServic
         return Optional.empty();
     }
 
-    private Optional<String> queryService(Client client, URI url) {
+    private Optional<InetAddress> queryService(Client client, URI url) {
         try {
             String body = client.target(url)
                     .request(MediaType.TEXT_PLAIN_TYPE)
                     .get(String.class)
                     .strip();
 
-            if (!isValidPublicIpv4Address(body)) {
+            Optional<InetAddress> addr = parseIpv4Address(body);
+
+            if (addr.isEmpty()) {
                 LOGGER.log(System.Logger.Level.DEBUG, "Unexpected response from {0}: {1}", url, body);
                 return Optional.empty();
             }
 
-            LOGGER.log(System.Logger.Level.INFO, "Discovered public IPv4 address {0} via {1}", body, url);
-            return Optional.of(body);
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Discovered public IPv4 address {0} via {1}",
+                    addr.get().getHostAddress(),
+                    url);
+            return addr;
         } catch (ProcessingException processingException) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
@@ -136,24 +142,32 @@ public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryServic
     }
 
     /**
-     * Returns {@code true} only when {@code candidate} is a literal dotted-decimal IPv4 address.
+     * Parses {@code candidate} as a literal dotted-decimal IPv4 address.
      *
      * <p>Uses a round-trip check — {@link InetAddress#getHostAddress()} must equal the original
      * input — to reject DNS hostnames that {@link InetAddress#getByName(String)} would otherwise
      * silently resolve.
      * IPv4 addresses are at most 15 characters ({@code "255.255.255.255"});
      * any longer string is rejected immediately.
+     *
+     * @return the parsed {@link Inet4Address}, or {@link Optional#empty()} if {@code candidate}
+     *     is not a valid public IPv4 literal
      */
-    static boolean isValidPublicIpv4Address(String candidate) {
+    static Optional<InetAddress> parseIpv4Address(String candidate) {
         if (candidate == null || candidate.isBlank() || candidate.length() > 15) {
-            return false;
+            return Optional.empty();
         }
 
         try {
             InetAddress addr = InetAddress.getByName(candidate);
-            return addr instanceof Inet4Address && addr.getHostAddress().equals(candidate);
+
+            if (!(addr instanceof Inet4Address) || !addr.getHostAddress().equals(candidate)) {
+                return Optional.empty();
+            }
+
+            return Optional.of(addr);
         } catch (UnknownHostException unknownHostException) {
-            return false;
+            return Optional.empty();
         }
     }
 }
