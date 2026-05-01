@@ -28,11 +28,6 @@ module de.bmarwell.proximo.pitido.core {
     // JDK platform modules
     requires java.naming; // javax.naming.* — JNDI SRV DNS lookup (package-private use only)
 
-    // JAX-RS 2.1 client API — provided at runtime by Liberty's jaxrsClient feature.
-    // javax.ws.rs-api declares "requires transitive java.xml.bind"; jaxb-api on the
-    // module path satisfies that at compile time; Liberty's jaxb feature covers runtime.
-    requires java.ws.rs;
-
     // MicroProfile Config — provided by Liberty; annotation-only use (@ConfigProperty)
     requires static microprofile.config.api;
 

@@ -10,7 +10,7 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.core.sip;
+package de.bmarwell.proximo.pitido.services.ip;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,7 +35,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class PublicIpDiscoveryServiceTest {
+class PublicIpv4DiscoveryServiceImplTest {
 
     @Mock
     Client client;
@@ -46,15 +46,15 @@ class PublicIpDiscoveryServiceTest {
     @Mock
     Invocation.Builder requestBuilder;
 
-    PublicIpDiscoveryService discoveryService;
+    PublicIpv4DiscoveryServiceImpl discoveryService;
 
     @BeforeEach
     void setUp() {
-        this.discoveryService = new PublicIpDiscoveryService();
+        this.discoveryService = new PublicIpv4DiscoveryServiceImpl();
         this.discoveryService.clientFactory = () -> this.client;
     }
 
-    /** Stubs the JAX-RS fluent chain for tests that actually invoke {@link PublicIpDiscoveryService#discover()}. */
+    /** Stubs the JAX-RS fluent chain for tests that actually invoke {@link PublicIpv4DiscoveryServiceImpl#discover()}. */
     private void wireClientChain() {
         when(this.client.target(any(URI.class))).thenReturn(this.webTarget);
         when(this.webTarget.request(any(MediaType.class))).thenReturn(this.requestBuilder);
@@ -72,7 +72,7 @@ class PublicIpDiscoveryServiceTest {
         // then
         assertTrue(result.isPresent());
         assertEquals("1.2.3.4", result.get());
-        verify(this.client, times(1)).target(PublicIpDiscoveryService.DISCOVERY_URLS.getFirst());
+        verify(this.client, times(1)).target(PublicIpv4DiscoveryServiceImpl.DISCOVERY_URLS.getFirst());
     }
 
     @Test
@@ -160,25 +160,25 @@ class PublicIpDiscoveryServiceTest {
         this.discoveryService.discover();
 
         // then
-        verify(this.client, never()).target(PublicIpDiscoveryService.DISCOVERY_URLS.get(1));
-        verify(this.client, never()).target(PublicIpDiscoveryService.DISCOVERY_URLS.get(2));
+        verify(this.client, never()).target(PublicIpv4DiscoveryServiceImpl.DISCOVERY_URLS.get(1));
+        verify(this.client, never()).target(PublicIpv4DiscoveryServiceImpl.DISCOVERY_URLS.get(2));
     }
 
     @Test
     void isValidPublicIpv4Address_rejectsIpv6Address() {
         // given / when / then
-        assertFalse(PublicIpDiscoveryService.isValidPublicIpv4Address("2001:db8::1"));
+        assertFalse(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("2001:db8::1"));
     }
 
     @Test
     void isValidPublicIpv4Address_rejectsHostname() {
         // given / when / then
-        assertFalse(PublicIpDiscoveryService.isValidPublicIpv4Address("example.com"));
+        assertFalse(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("example.com"));
     }
 
     @Test
     void isValidPublicIpv4Address_acceptsLiteralIpv4() {
         // given / when / then
-        assertTrue(PublicIpDiscoveryService.isValidPublicIpv4Address("203.0.113.1"));
+        assertTrue(PublicIpv4DiscoveryServiceImpl.isValidPublicIpv4Address("203.0.113.1"));
     }
 }

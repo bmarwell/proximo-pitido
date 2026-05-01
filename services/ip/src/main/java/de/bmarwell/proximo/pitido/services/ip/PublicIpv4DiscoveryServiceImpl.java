@@ -10,8 +10,9 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.core.sip;
+package de.bmarwell.proximo.pitido.services.ip;
 
+import de.bmarwell.proximo.pitido.services.api.PublicIpv4DiscoveryService;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
@@ -52,9 +53,9 @@ import javax.ws.rs.core.MediaType;
  * </ol>
  */
 @ApplicationScoped
-public class PublicIpDiscoveryService {
+public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryService {
 
-    private static final System.Logger LOGGER = System.getLogger(PublicIpDiscoveryService.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(PublicIpv4DiscoveryServiceImpl.class.getName());
 
     static final List<URI> DISCOVERY_URLS = List.of(
             URI.create("https://v4.ident.me"),
@@ -77,14 +78,9 @@ public class PublicIpDiscoveryService {
     private volatile Instant cacheExpiry = Instant.MIN;
 
     /** CDI no-args constructor. */
-    public PublicIpDiscoveryService() {}
+    public PublicIpv4DiscoveryServiceImpl() {}
 
-    /**
-     * Returns the public IPv4 address of this host, querying remote services if the cache is stale.
-     *
-     * @return the discovered IPv4 address, or {@link Optional#empty()} when all services are
-     *     unreachable
-     */
+    @Override
     public Optional<String> discover() {
         String cached = this.cachedIp.get();
 
@@ -127,12 +123,12 @@ public class PublicIpDiscoveryService {
                 return Optional.empty();
             }
 
-            LOGGER.log(System.Logger.Level.INFO, "Discovered public IP {0} via {1}", body, url);
+            LOGGER.log(System.Logger.Level.INFO, "Discovered public IPv4 address {0} via {1}", body, url);
             return Optional.of(body);
         } catch (ProcessingException processingException) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
-                    "Failed to query public IP from {0}: {1}",
+                    "Failed to query public IPv4 from {0}: {1}",
                     url,
                     processingException.getMessage());
             return Optional.empty();
@@ -145,6 +141,8 @@ public class PublicIpDiscoveryService {
      * <p>Uses a round-trip check — {@link InetAddress#getHostAddress()} must equal the original
      * input — to reject DNS hostnames that {@link InetAddress#getByName(String)} would otherwise
      * silently resolve.
+     * IPv4 addresses are at most 15 characters ({@code "255.255.255.255"});
+     * any longer string is rejected immediately.
      */
     static boolean isValidPublicIpv4Address(String candidate) {
         if (candidate == null || candidate.isBlank() || candidate.length() > 15) {

@@ -12,6 +12,7 @@
  */
 package de.bmarwell.proximo.pitido.core.sip;
 
+import de.bmarwell.proximo.pitido.services.api.PublicIpv4DiscoveryService;
 import de.bmarwell.proximo.pitido.services.api.PublicIpv6DiscoveryService;
 import java.io.IOException;
 import java.net.DatagramSocket;
@@ -46,7 +47,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  *   <li>{@code SIP_PUBLIC_IPV4} / {@code sip.public.ipv4} — tri-state IPv4 control:
  *       <ul>
  *         <li>{@code "disabled"} — IPv4 is skipped entirely; fall through to local detection.</li>
- *         <li>{@code "auto"} (default) — query {@link PublicIpDiscoveryService}; use the result
+ *         <li>{@code "auto"} (default) — query {@link PublicIpv4DiscoveryService}; use the result
  *             if successful.</li>
  *         <li>any other value — used as a literal IPv4 address without any network call.</li>
  *       </ul></li>
@@ -88,7 +89,7 @@ public class LocalSipHostProvider {
     boolean registrationEnabled;
 
     @Inject
-    PublicIpDiscoveryService publicIpDiscoveryService;
+    PublicIpv4DiscoveryService publicIpv4DiscoveryService;
 
     @Inject
     PublicIpv6DiscoveryService publicIpv6DiscoveryService;
@@ -165,12 +166,12 @@ public class LocalSipHostProvider {
             return Optional.of(host);
         }
 
-        Optional<String> discovered = this.publicIpDiscoveryService.discover();
+        Optional<String> discovered = this.publicIpv4DiscoveryService.discover();
 
         if (discovered.isPresent()) {
             LOGGER.log(
                     System.Logger.Level.INFO,
-                    "SIP Contact address (public IPv4 via PublicIpDiscoveryService): {0}",
+                    "SIP Contact address (public IPv4 via PublicIpv4DiscoveryService): {0}",
                     discovered.get());
         }
 
