@@ -90,6 +90,9 @@ public class CallAcceptor {
     @Resource(lookup = "concurrent/codecExecutor")
     ManagedExecutorService managedExecutorService;
 
+    @Resource(lookup = "concurrent/ioExecutor")
+    ManagedExecutorService senderExecutorService;
+
     /**
      * Handles an incoming INVITE.
      * Rejects with {@code 403 Forbidden} for blocklisted callers, {@code 480 Temporarily
@@ -223,8 +226,8 @@ public class CallAcceptor {
 
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player =
-                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
+                AudioPlayer player = new RtpAudioPlayer(
+                        media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,
@@ -278,8 +281,8 @@ public class CallAcceptor {
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
         Future<?> callFuture = this.managedExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player =
-                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
+                AudioPlayer player = new RtpAudioPlayer(
+                        media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,

@@ -72,16 +72,22 @@ final class RtpFrameScheduler {
     /**
      * Waits until it is time to send the next RTP packet.
      *
-     * <p>On the first call, initialises the frame clock to current time + 20ms.
+     * <p>On the first call (and after a re-sync caused by a gap larger than one frame),
+     * the frame clock is initialised to the current time and the method returns immediately.
      * Subsequent calls block until the scheduled frame time arrives.
      * Uses hybrid busy-wait: coarse sleep for large delays, spin-wait for final nanoseconds.
+     *
+     * <p>If the scheduled deadline falls more than one frame (20 ms) into the past — for
+     * example after a hold period where no packets were enqueued — the clock is reset to the
+     * current time so the sender does not burst-send multiple packets to catch up.
      *
      * @throws InterruptedException if the current thread is interrupted while waiting
      */
     void waitUntilNextFrame() throws InterruptedException {
-        if (this.nextFrameTimeNanos < 0L) {
-            this.nextFrameTimeNanos = System.nanoTime() + FRAME_DURATION_NANOS;
-            return;
+        long now = System.nanoTime();
+
+        if (this.nextFrameTimeNanos < 0L || this.nextFrameTimeNanos < now - FRAME_DURATION_NANOS) {
+            this.nextFrameTimeNanos = now;
         }
 
         while (true) {

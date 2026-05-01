@@ -14,6 +14,7 @@ package de.bmarwell.proximo.pitido.war.media;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,6 +27,8 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,9 +56,24 @@ class RtpAudioPlayerTest {
     CallMedia callMedia;
 
     @Mock
-    javax.enterprise.concurrent.ManagedExecutorService managedExecutorService;
+    javax.enterprise.concurrent.ManagedExecutorService encoderService;
+
+    @Mock
+    javax.enterprise.concurrent.ManagedExecutorService senderService;
 
     private RtpAudioPlayer player;
+
+    @AfterEach
+    void tearDown() throws Exception {
+        // Signal the sender loop to exit, then wait for it to finish.
+        lenient().when(this.socket.isClosed()).thenReturn(true);
+
+        try {
+            this.player.senderFuture.get(200, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.CancellationException ignored) {
+            // Best-effort cleanup.
+        }
+    }
 
     @BeforeEach
     void setUp() throws IOException {
@@ -68,15 +86,21 @@ class RtpAudioPlayerTest {
         when(this.metadata.samplesPerFrame()).thenReturn(160);
         when(this.codec.encode(any())).thenReturn(new byte[20]);
 
-        // Mock executor to run tasks synchronously
-        when(this.managedExecutorService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+        // Encoder tasks run synchronously on the test thread.
+        when(this.encoderService.submit(any(Runnable.class))).thenAnswer(invocation -> {
             var runnable = (Runnable) invocation.getArgument(0);
             runnable.run();
             return java.util.concurrent.CompletableFuture.completedFuture(null);
         });
 
-        this.player =
-                new RtpAudioPlayer(this.callMedia, this.codec, this.pcmDecoderFactory, this.managedExecutorService);
+        // Sender task runs asynchronously so the sender loop does not block setUp().
+        when(this.senderService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            var runnable = (Runnable) invocation.getArgument(0);
+            return java.util.concurrent.CompletableFuture.runAsync(runnable);
+        });
+
+        this.player = new RtpAudioPlayer(
+                this.callMedia, this.codec, this.pcmDecoderFactory, this.encoderService, this.senderService);
     }
 
     // ── Marker bit tests ───────────────────────────────────────────────────────────
