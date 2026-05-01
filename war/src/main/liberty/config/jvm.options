@@ -27,16 +27,17 @@
 -XX:+ClassRelationshipVerifier
 -Xtune:virtualize
 
-# Heap bounds — gencon (the OpenJ9 default) with explicit min/max.
-# -Xms: minimum heap kept at all times; prevents over-shrinkage between calls.
+# Heap bounds with explicit min/max — prevents over-shrinkage between calls.
+# -Xms: minimum heap kept at all times; with IdleTuningGcOnIdle absent the JVM
+#        no longer shrinks below this floor during the quiet period between calls.
 # -Xmx: maximum heap; sized for Liberty (~60 MB) plus 4 concurrent calls
 #        (~20 MB each for audio buffers, codec state, and RTP queues) plus margin.
-# -Xmn: nursery fixed at 32 MB; keeps scavenge pauses short and predictable
-#        without requiring GC policy tuning flags.
-#
-# balanced and targetPauseTime are intentionally absent: the balanced policy
-# contracts the heap to meet its pause-time target, which is counter-productive
-# when heap is already small and GC overhead is naturally low between calls.
 -Xms96m
 -Xmx256m
--Xmn32m
+
+# balanced GC policy with a 10 ms target pause time.
+# Under testing on this branch to compare against the gencon default on main.
+# With explicit heap bounds in place, balanced no longer contracts the heap
+# aggressively between calls (IdleTuningGcOnIdle was the main driver of that).
+-Xgcpolicy:balanced
+-Xgc:targetPauseTime=10
