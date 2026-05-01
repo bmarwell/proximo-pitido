@@ -90,6 +90,9 @@ public class CallAcceptor {
     @Resource(lookup = "concurrent/codecExecutor")
     ManagedExecutorService managedExecutorService;
 
+    @Resource(lookup = "concurrent/ioExecutor")
+    ManagedExecutorService senderExecutorService;
+
     /**
      * Handles an incoming INVITE.
      * Rejects with {@code 403 Forbidden} for blocklisted callers, {@code 480 Temporarily
@@ -221,10 +224,10 @@ public class CallAcceptor {
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
-        Future<?> callFuture = this.managedExecutorService.submit(() -> {
+        Future<?> callFuture = this.senderExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player =
-                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
+                AudioPlayer player = new RtpAudioPlayer(
+                        media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,
@@ -276,10 +279,10 @@ public class CallAcceptor {
         // before 200 OK was sent. Audio playback must begin immediately after 200 OK
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
-        Future<?> callFuture = this.managedExecutorService.submit(() -> {
+        Future<?> callFuture = this.senderExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
-                AudioPlayer player =
-                        new RtpAudioPlayer(media, codec, this.pcmDecoderFactory, this.managedExecutorService);
+                AudioPlayer player = new RtpAudioPlayer(
+                        media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);
 
                 LOGGER.log(
                         System.Logger.Level.DEBUG,

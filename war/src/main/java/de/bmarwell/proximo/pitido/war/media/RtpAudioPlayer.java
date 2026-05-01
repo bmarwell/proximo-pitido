@@ -23,9 +23,13 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sends audio to the remote caller as RTP packets over UDP.
@@ -46,8 +50,30 @@ import java.util.Random;
  *   <li>Sequence number and timestamp increment per packet</li>
  *   <li>SSRC is chosen randomly at construction time</li>
  *   <li>Marker bit (M) is set to 1 on the first packet of the call and on the first packet
- *       of each talkspurt (after silence ≥10 ms), per RFC 3551 §2.3</li>
+ *       of each talkspurt (after a clip ends), per RFC 3551 §2.3</li>
  * </ul>
+ *
+ * <h2>Threading model</h2>
+ *
+ * <p>Three threads cooperate per call:
+ * <ol>
+ *   <li><b>Caller thread</b> — calls {@link #playSilence} and {@link #playBlocking} in sequence;
+ *       blocks on a {@link CompletableFuture} until the clip is fully sent, so clips play
+ *       one at a time with no overlap.</li>
+ *   <li><b>Encoder thread</b> — submitted to the managed executor for each clip; decodes PCM,
+ *       encodes to RTP payload, and enqueues frames into {@link #packetQueue}.
+ *       Only one encoder task runs at a time (the caller blocks until the previous clip ends).</li>
+ *   <li><b>Sender thread</b> — a virtual thread started in the constructor; runs for the
+ *       entire call, dequeuing frames at precise 20 ms intervals via {@link RtpFrameScheduler}
+ *       and sending them as UDP packets.
+ *       Terminates when the socket is closed or the thread is interrupted.</li>
+ * </ol>
+ *
+ * <p>Clip sequencing uses a {@code ClipEnd} sentinel enqueued by the encoder after all frames.
+ * The sender completes the per-clip {@link CompletableFuture} when it processes the sentinel,
+ * which unblocks the caller thread.
+ * A {@link #senderStopped} fallback future ensures the caller never blocks indefinitely if the
+ * socket closes mid-clip.
  *
  * <p>The caller is responsible for closing the {@link DatagramSocket} that backs this player;
  * obtain the socket via {@link CallMedia#localSocket()}.
@@ -56,6 +82,14 @@ public class RtpAudioPlayer implements AudioPlayer {
 
     private static final System.Logger LOGGER = System.getLogger(RtpAudioPlayer.class.getName());
     private static final int RTP_PACKETS_PER_SECOND = 50;
+    private static final int QUEUE_CAPACITY = 100;
+
+    // Queue item types: either a pre-encoded RTP payload or a clip-end sentinel.
+    private interface QueueItem {}
+
+    private record Packet(byte[] payload) implements QueueItem {}
+
+    private record ClipEnd(CompletableFuture<Void> done) implements QueueItem {}
 
     private final DatagramSocket socket;
     private final InetSocketAddress remoteRtp;
@@ -63,42 +97,58 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final RtpCodec codec;
     private final CallMedia callMedia;
     private final int ssrc;
-    private final RtpFrameScheduler frameScheduler;
-    private final RtpPacketQueue packetQueue;
-    private final javax.enterprise.concurrent.ManagedExecutorService managedExecutorService;
+    private final javax.enterprise.concurrent.ManagedExecutorService encoderService;
+    private final LinkedBlockingQueue<QueueItem> packetQueue;
+
+    /**
+     * Completed when the sender thread exits (socket closed or interrupted).
+     * Used as a fallback to unblock any caller waiting on a per-clip {@code done} future.
+     */
+    private final CompletableFuture<Void> senderStopped;
+
+    /** Long-lived sender task; started in the constructor, runs for the entire call. */
+    final Future<?> senderFuture;
+
+    /** The most recently submitted encoder task; cancelled on interruption. */
+    private volatile Future<?> encoderFuture;
+
+    // RTP header state — only accessed from the sender thread.
     private int seqNumber;
     private long timestamp;
-    private Instant lastPacketSentAt;
     private boolean firstPacketOfTalkspurt = true;
 
     /**
      * Creates an {@link RtpAudioPlayer} bound to the media session in {@code callMedia}.
+     * The sender thread starts immediately and runs until the socket is closed.
      *
-     * @param callMedia                the negotiated call media; the socket must still be open
-     * @param callCodec                the per-call codec instance obtained by calling
-     *                                 {@code callMedia.codec().forCall()} on the announcement thread;
-     *                                 must be closed by the caller after the call ends
-     * @param pcmDecoderFactory        the factory used to select the decoder for each audio resource
-     * @param managedExecutorService   Jakarta EE managed executor for background encoder thread
+     * @param callMedia              the negotiated call media; the socket must still be open
+     * @param callCodec              the per-call codec instance; must be closed by the caller
+     * @param pcmDecoderFactory      the factory used to select the decoder for each audio resource
+     * @param encoderService         Jakarta EE managed executor for the encoder background thread
+     * @param senderService          Jakarta EE managed executor for the long-lived sender thread;
+     *                               should support I/O-bound virtual threads
      */
     public RtpAudioPlayer(
             CallMedia callMedia,
             RtpCodec callCodec,
             PcmDecoderFactory pcmDecoderFactory,
-            javax.enterprise.concurrent.ManagedExecutorService managedExecutorService) {
+            javax.enterprise.concurrent.ManagedExecutorService encoderService,
+            javax.enterprise.concurrent.ManagedExecutorService senderService) {
         this.callMedia = callMedia;
         this.socket = callMedia.localSocket();
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
         this.codec = callCodec;
-        this.frameScheduler = new RtpFrameScheduler();
-        this.packetQueue = new RtpPacketQueue();
-        this.managedExecutorService = managedExecutorService;
+        this.encoderService = encoderService;
+        this.packetQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
+        this.senderStopped = new CompletableFuture<>();
 
         Random rng = new Random();
         this.ssrc = rng.nextInt();
         this.seqNumber = rng.nextInt(0x10000);
         this.timestamp = rng.nextInt(Integer.MAX_VALUE) & 0xFFFFFFFFL;
+
+        this.senderFuture = senderService.submit(this::senderLoop);
     }
 
     /**
@@ -108,82 +158,190 @@ public class RtpAudioPlayer implements AudioPlayer {
      * <p>Each packet carries a zero-filled PCM frame encoded by the negotiated codec.
      * Packets are sent at the same 20 ms cadence as normal audio packets.
      * Non-positive durations are silently ignored.
+     * Blocks until the sender thread has transmitted all silence packets.
      *
      * @param duration how long to send silence
      * @throws InterruptedException if the calling thread is interrupted
      */
     @Override
     public void playSilence(Duration duration) throws InterruptedException {
-        long packets = duration.toMillis() / 20L;
+        long packetCount = duration.toMillis() / 20L;
 
-        if (packets <= 0) {
+        if (packetCount <= 0) {
             return;
         }
 
         short[] silenceFrame = new short[this.codec.metadata().samplesPerFrame()];
+        CompletableFuture<Void> done = new CompletableFuture<>();
 
-        var encoderFuture = this.managedExecutorService.submit(() -> encodeAndQueueSilence(packets, silenceFrame));
+        this.senderStopped.thenRun(() -> done.complete(null));
 
-        try {
-            consumeAndSendPackets();
-        } finally {
-            waitForEncoderCompletion(encoderFuture);
-        }
-    }
+        this.encoderFuture = this.encoderService.submit(() -> encodeAndQueueSilence(packetCount, silenceFrame, done));
 
-    private void encodeAndQueueSilence(long packetCount, short[] silenceFrame) {
-        try {
-            for (long i = 0; i < packetCount; i++) {
-                if (Thread.currentThread().isInterrupted()) {
-                    break;
-                }
-
-                if (this.callMedia.isHeld()) {
-                    continue;
-                }
-
-                byte[] rtpPacket = this.codec.encode(silenceFrame);
-
-                if (this.packetQueue.size() >= 4) {
-                    LOGGER.log(
-                            System.Logger.Level.DEBUG,
-                            "RTP queue backpressure: {0}/5 packets queued; encoder waiting for sender",
-                            this.packetQueue.size());
-                }
-
-                this.packetQueue.put(rtpPacket);
-            }
-        } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Failed to encode silence frame", ioException);
-        } catch (InterruptedException interruptedException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Silence encoder interrupted", interruptedException);
-            Thread.currentThread().interrupt();
-        } finally {
-            this.packetQueue.signalEnd();
-        }
+        awaitClipEnd(done);
     }
 
     /**
      * Opens the classpath resource at {@code resourcePath}, decodes it to mono PCM at
      * {@link RtpCodecFactory#inputSampleRate()} Hz, encodes each 20 ms frame via the negotiated codec,
-     * and sends it as an RTP packet.
+     * and transmits it as RTP packets.
+     * Blocks until the sender thread has transmitted all audio frames.
      *
      * <p>Decoders that support multi-rate output (e.g. {@link de.bmarwell.proximo.pitido.codecs.input.OggOpusPcmDecoder})
      * will produce samples at exactly {@link RtpCodecFactory#inputSampleRate()}, avoiding any upsampling.
      * Decoders that do not (e.g. deprecated WAV) fall back to 8 kHz output; the pipeline then
      * upsamples to match the codec's expectation.
      *
-     * <p>Playback stops immediately when the thread is interrupted.
-     *
-     * @param resourcePath classpath path of the audio file (e.g. {@code /audio/de/012.opus})
+     * @param resourcePath classpath path of the audio file (e.g. {@code audio/de/012.opus})
      * @throws IOException          if the resource cannot be opened or decoded
      * @throws InterruptedException if the calling thread is interrupted mid-playback
      */
     @Override
     public void playBlocking(String resourcePath) throws IOException, InterruptedException {
         LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
-        advanceTimestampForSilence();
 
+        CompletableFuture<Void> done = new CompletableFuture<>();
+
+        this.senderStopped.thenRun(() -> done.complete(null));
+
+        this.encoderFuture = this.encoderService.submit(() -> openDecodeEnqueueAndClose(resourcePath, done));
+
+        awaitClipEnd(done);
+
+        if (this.socket.isClosed()) {
+            throw new IOException("Socket closed during playback");
+        }
+    }
+
+    /**
+     * Blocks until the clip's {@code done} future is completed by the sender thread.
+     * On interruption, cancels the encoder task and drains the queue.
+     */
+    private void awaitClipEnd(CompletableFuture<Void> done) throws InterruptedException {
+        try {
+            done.get();
+        } catch (ExecutionException executionException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Clip encoder failed", executionException.getCause());
+        } catch (InterruptedException interruptedException) {
+            cancelEncoderAndDrainQueue();
+            throw interruptedException;
+        }
+    }
+
+    /**
+     * Cancels the current encoder task and clears the packet queue.
+     * Called when the caller thread is interrupted mid-clip (e.g. DTMF digit received).
+     */
+    private void cancelEncoderAndDrainQueue() {
+        Future<?> future = this.encoderFuture;
+
+        if (future != null) {
+            future.cancel(true);
+
+            try {
+                future.get(200, TimeUnit.MILLISECONDS);
+            } catch (Exception ignored) {
+                // Expected: CancellationException, InterruptedException, or timeout.
+            }
+        }
+
+        this.packetQueue.clear();
+    }
+
+    /**
+     * Sender loop: runs for the entire call on a dedicated virtual thread.
+     *
+     * <p>Dequeues {@link Packet} items at precise 20 ms intervals and sends them as UDP datagrams.
+     * When a {@link ClipEnd} sentinel is dequeued, the per-clip {@code done} future is completed
+     * to unblock the caller thread, and {@link #firstPacketOfTalkspurt} is reset for the next clip.
+     * Exits when the socket is closed, the thread is interrupted, or a send error occurs.
+     * On exit, drains any remaining items to complete pending {@code done} futures and signals
+     * {@link #senderStopped} so no caller blocks indefinitely.
+     */
+    private void senderLoop() {
+        RtpFrameScheduler frameScheduler = new RtpFrameScheduler();
+
+        try {
+            while (!Thread.currentThread().isInterrupted() && !this.socket.isClosed()) {
+                QueueItem item = this.packetQueue.poll(50, TimeUnit.MILLISECONDS);
+
+                if (item == null) {
+                    continue;
+                }
+
+                if (item instanceof Packet packet) {
+                    if (!this.callMedia.isHeld()) {
+                        frameScheduler.waitUntilNextFrame();
+                        sendRtpPacket(packet.payload());
+                        frameScheduler.advanceToNextFrame();
+                    }
+                } else if (item instanceof ClipEnd clipEnd) {
+                    clipEnd.done().complete(null);
+                    this.firstPacketOfTalkspurt = true;
+                }
+            }
+        } catch (IOException ioException) {
+            if (!this.socket.isClosed()) {
+                LOGGER.log(System.Logger.Level.DEBUG, "Socket error during packet send", ioException);
+            }
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        } finally {
+            drainQueueAndSignalEnd();
+        }
+    }
+
+    /**
+     * Drains any remaining queue items and completes all pending {@link ClipEnd} futures.
+     * Called from the sender thread's {@code finally} block on exit.
+     */
+    private void drainQueueAndSignalEnd() {
+        QueueItem item;
+
+        while ((item = this.packetQueue.poll()) != null) {
+            if (item instanceof ClipEnd clipEnd) {
+                clipEnd.done().complete(null);
+            }
+        }
+
+        this.senderStopped.complete(null);
+    }
+
+    private void encodeAndQueueSilence(long packetCount, short[] silenceFrame, CompletableFuture<Void> done) {
+        try {
+            long i = 0;
+
+            while (i < packetCount) {
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
+
+                if (this.callMedia.isHeld()) {
+                    TimeUnit.MILLISECONDS.sleep(20);
+                    continue;
+                }
+
+                byte[] payload = this.codec.encode(silenceFrame);
+                putInQueue(payload);
+                i++;
+            }
+        } catch (IOException ioException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Failed to encode silence frame", ioException);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(System.Logger.Level.TRACE, "Silence encoder interrupted");
+        } finally {
+            enqueueClipEnd(done);
+        }
+    }
+
+    /**
+     * Opens the classpath resource at {@code resourcePath}, decodes it, encodes each frame, and
+     * enqueues them into the packet queue.
+     * Resources are always closed via try-with-resources regardless of how the task exits.
+     * Called on the encoder thread.
+     */
+    private void openDecodeEnqueueAndClose(String resourcePath, CompletableFuture<Void> done) {
         try (InputStream rawStream = openResource(resourcePath);
                 PcmStream pcm = this.pcmDecoderFactory
                         .forPath(resourcePath)
@@ -192,113 +350,84 @@ public class RtpAudioPlayer implements AudioPlayer {
             short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
             short[] codecFrameBuf = new short[this.codec.metadata().samplesPerFrame()];
             validateFrameSizing(decoderSamplesPerPacket, codecFrameBuf.length);
-
-            var encoderFuture = this.managedExecutorService.submit(
-                    () -> encodeAndQueueAudio(pcm, decoderFrameBuf, codecFrameBuf, decoderSamplesPerPacket));
-
-            try {
-                consumeAndSendPackets();
-            } finally {
-                waitForEncoderCompletion(encoderFuture);
-            }
+            encodeAndQueueAudio(pcm, decoderFrameBuf, codecFrameBuf, decoderSamplesPerPacket);
+        } catch (IOException ioException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Failed to open or decode audio resource", ioException);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(System.Logger.Level.TRACE, "Audio encoder interrupted");
+        } finally {
+            enqueueClipEnd(done);
         }
     }
 
     private void encodeAndQueueAudio(
-            PcmStream pcm, short[] decoderFrameBuf, short[] codecFrameBuf, int decoderSamplesPerPacket) {
-        try {
-            while (true) {
-                if (Thread.currentThread().isInterrupted()) {
-                    break;
-                }
-
-                if (this.callMedia.isHeld()) {
-                    continue;
-                }
-
-                int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
-
-                if (read == -1) {
-                    break;
-                }
-
-                if (read < decoderSamplesPerPacket) {
-                    Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
-                }
-
-                adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
-                byte[] rtpPacket = this.codec.encode(codecFrameBuf);
-
-                if (this.packetQueue.size() >= 4) {
-                    LOGGER.log(
-                            System.Logger.Level.DEBUG,
-                            "RTP queue backpressure: {0}/5 packets queued; encoder waiting for sender",
-                            this.packetQueue.size());
-                }
-
-                this.packetQueue.put(rtpPacket);
-            }
-        } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Failed to encode audio frame", ioException);
-        } catch (InterruptedException interruptedException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Audio encoder interrupted", interruptedException);
-            Thread.currentThread().interrupt();
-        } finally {
-            this.packetQueue.signalEnd();
-        }
-    }
-
-    private void consumeAndSendPackets() throws InterruptedException {
-        while (!this.packetQueue.isEnded() || !this.packetQueue.isEmpty()) {
+            PcmStream pcm, short[] decoderFrameBuf, short[] codecFrameBuf, int decoderSamplesPerPacket)
+            throws IOException, InterruptedException {
+        while (true) {
             if (Thread.currentThread().isInterrupted()) {
-                throw new InterruptedException("RTP packet sending interrupted");
-            }
-
-            byte[] rtpPacket = this.packetQueue.take();
-            if (rtpPacket == null) {
                 break;
             }
 
-            this.frameScheduler.waitUntilNextFrame();
-
-            try {
-                sendRtpPacket(rtpPacket);
-            } catch (IOException ioException) {
-                LOGGER.log(System.Logger.Level.DEBUG, "Socket closed during packet send", ioException);
-                return;
+            if (this.callMedia.isHeld()) {
+                TimeUnit.MILLISECONDS.sleep(20);
+                continue;
             }
 
-            this.lastPacketSentAt = Instant.now();
-            this.frameScheduler.advanceToNextFrame();
+            int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
+
+            if (read == -1) {
+                break;
+            }
+
+            if (read < decoderSamplesPerPacket) {
+                Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
+            }
+
+            adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
+            byte[] payload = this.codec.encode(codecFrameBuf);
+            putInQueue(payload);
         }
     }
 
     /**
-     * Advances {@link #timestamp} to account for any silence between the last sent packet and now.
-     *
-     * <p>After {@link #playBlocking(String)} returns, {@code this.timestamp} points 20 ms ahead of
-     * the last packet (the natural next-packet position).
-     * If the caller sleeps before the next {@code playBlocking} call, the wall clock advances but
-     * {@code this.timestamp} does not, causing the receiver to see no gap in the RTP stream.
-     * This method calculates the extra elapsed time and advances the timestamp by the equivalent
-     * number of silent 20 ms frames so that the receiver hears genuine silence.
-     * When silence of 10 ms or more is detected, the {@link #firstPacketOfTalkspurt} flag is
-     * set to true, which causes the next RTP packet to have the marker bit (M) set per RFC 3551 §2.3.
+     * Enqueues a pre-encoded RTP payload.
+     * Uses {@code offer()} with a 100 ms timeout per attempt so that if the sender thread exits
+     * (socket error, interruption) while the queue is full, the encoder does not block forever.
+     * Drops the packet and returns if {@link #senderStopped} has completed (sender gone).
      */
-    private void advanceTimestampForSilence() {
-        if (this.lastPacketSentAt == null) {
-            return;
+    private void putInQueue(byte[] payload) throws InterruptedException {
+        while (true) {
+            if (this.senderStopped.isDone()) {
+                return;
+            }
+
+            if (this.packetQueue.offer(new Packet(payload), 100, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Enqueues the {@link ClipEnd} sentinel with up to three retries.
+     * If all retries fail (queue full and cannot drain because sender has exited),
+     * the {@code done} future is completed directly so the caller does not block forever.
+     */
+    private void enqueueClipEnd(CompletableFuture<Void> done) {
+        ClipEnd sentinel = new ClipEnd(done);
+        boolean offered = false;
+
+        for (int attempt = 0; attempt < 3 && !offered; attempt++) {
+            try {
+                offered = this.packetQueue.offer(sentinel, 100, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
 
-        long elapsedMs = Instant.now().toEpochMilli() - this.lastPacketSentAt.toEpochMilli();
-        // this.timestamp already points 20ms past the last packet (the Thread.sleep(20)
-        // after the last sendRtpPacket has run). Any elapsed time beyond that 20ms is silence.
-        long extraSilenceMs = elapsedMs - 20L;
-
-        if (extraSilenceMs >= 10L) {
-            long silencePackets = extraSilenceMs / 20L;
-            this.timestamp += silencePackets * this.codec.metadata().rtpTimestampIncrement();
-            this.firstPacketOfTalkspurt = true;
+        if (!offered) {
+            done.complete(null);
         }
     }
 
@@ -388,16 +517,16 @@ public class RtpAudioPlayer implements AudioPlayer {
         int markerBit = this.firstPacketOfTalkspurt ? 0x80 : 0x00;
         packet[1] = (byte) (markerBit | this.codec.metadata().payloadType());
 
-        packet[2] = (byte) (seqNumber >> 8);
-        packet[3] = (byte) (seqNumber & 0xFF);
-        packet[4] = (byte) (timestamp >> 24);
-        packet[5] = (byte) (timestamp >> 16);
-        packet[6] = (byte) (timestamp >> 8);
-        packet[7] = (byte) (timestamp & 0xFF);
-        packet[8] = (byte) (ssrc >> 24);
-        packet[9] = (byte) (ssrc >> 16);
-        packet[10] = (byte) (ssrc >> 8);
-        packet[11] = (byte) (ssrc & 0xFF);
+        packet[2] = (byte) (this.seqNumber >> 8);
+        packet[3] = (byte) (this.seqNumber & 0xFF);
+        packet[4] = (byte) (this.timestamp >> 24);
+        packet[5] = (byte) (this.timestamp >> 16);
+        packet[6] = (byte) (this.timestamp >> 8);
+        packet[7] = (byte) (this.timestamp & 0xFF);
+        packet[8] = (byte) (this.ssrc >> 24);
+        packet[9] = (byte) (this.ssrc >> 16);
+        packet[10] = (byte) (this.ssrc >> 8);
+        packet[11] = (byte) (this.ssrc & 0xFF);
         System.arraycopy(payload, 0, packet, 12, payload.length);
 
         boolean markerBitSet = (packet[1] & 0x80) != 0;
@@ -406,38 +535,14 @@ public class RtpAudioPlayer implements AudioPlayer {
                 System.Logger.Level.TRACE,
                 "Sending RTP packet: seqNum={0} ts={1} marker={2} payloadBytes={3}",
                 this.seqNumber,
-                timestamp,
+                this.timestamp,
                 markerBitSet,
                 payload.length);
 
         this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
-        timestamp += this.codec.metadata().rtpTimestampIncrement();
+        this.timestamp += this.codec.metadata().rtpTimestampIncrement();
         this.firstPacketOfTalkspurt = false;
-    }
-
-    /**
-     * Waits for encoder thread to complete with timeout and explicit cancellation if needed.
-     *
-     * <p>If the encoder thread does not finish within 5 seconds (assuming it's stuck or blocked),
-     * this method cancels the future and logs a warning.
-     * This prevents indefinite blocking if the encoder or queue becomes deadlocked.
-     *
-     * @param encoderFuture the encoder task future
-     */
-    private void waitForEncoderCompletion(java.util.concurrent.Future<?> encoderFuture) {
-        try {
-            encoderFuture.get(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (java.util.concurrent.TimeoutException timeoutException) {
-            LOGGER.log(System.Logger.Level.WARNING, "Encoder thread did not complete within 5 seconds; cancelling");
-            encoderFuture.cancel(true);
-        } catch (java.util.concurrent.ExecutionException executionException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Encoder thread failed", executionException);
-        } catch (InterruptedException interruptedException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Waiting for encoder thread was interrupted", interruptedException);
-            encoderFuture.cancel(true);
-            Thread.currentThread().interrupt();
-        }
     }
 }

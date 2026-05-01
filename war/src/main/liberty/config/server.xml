@@ -43,9 +43,12 @@
 
   <!--
     Named managed executor services.
-    ioExecutor:    virtual-thread pool for DTMF dispatch.
-                   DTMF handling is short, I/O-bound work; virtual threads are well-suited.
-    codecExecutor: platform-thread pool for call/codec work and announcement playback.
+    ioExecutor:    virtual-thread pool for I/O-bound blocking tasks.
+                   Used for: DTMF dispatch, RTP sender loop (one per call), and the
+                   blocking caller thread that sequences clips and waits for ClipEnd.
+                   Virtual threads are ideal because these tasks spend most of their
+                   time blocked on queue polls, UDP sends, or CompletableFuture.get().
+    codecExecutor: platform-thread pool for encoder tasks (one per clip).
                    Platform threads are required because OGG/Opus and AMR-WB decoders
                    use the Foreign Function & Memory API with Arena.ofConfined(), which
                    binds the arena to the creating thread; a virtual thread yielding to a

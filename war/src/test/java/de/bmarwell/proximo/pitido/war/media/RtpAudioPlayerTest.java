@@ -14,6 +14,7 @@ package de.bmarwell.proximo.pitido.war.media;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,6 +27,8 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,30 +56,51 @@ class RtpAudioPlayerTest {
     CallMedia callMedia;
 
     @Mock
-    javax.enterprise.concurrent.ManagedExecutorService managedExecutorService;
+    javax.enterprise.concurrent.ManagedExecutorService encoderService;
+
+    @Mock
+    javax.enterprise.concurrent.ManagedExecutorService senderService;
 
     private RtpAudioPlayer player;
+
+    @AfterEach
+    void tearDown() throws Exception {
+        // Signal the sender loop to exit, then wait for it to finish.
+        lenient().when(this.socket.isClosed()).thenReturn(true);
+
+        try {
+            this.player.senderFuture.get(200, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.CancellationException ignored) {
+            // Best-effort cleanup.
+        }
+    }
 
     @BeforeEach
     void setUp() throws IOException {
         when(this.callMedia.localSocket()).thenReturn(this.socket);
         when(this.callMedia.remoteRtp()).thenReturn(new InetSocketAddress("127.0.0.1", 5004));
-        when(this.callMedia.isHeld()).thenReturn(false);
+        lenient().when(this.callMedia.isHeld()).thenReturn(false);
         when(this.codec.metadata()).thenReturn(this.metadata);
         when(this.metadata.payloadType()).thenReturn(8); // PCMA
         when(this.metadata.rtpTimestampIncrement()).thenReturn(160); // 20ms at 8kHz
         when(this.metadata.samplesPerFrame()).thenReturn(160);
         when(this.codec.encode(any())).thenReturn(new byte[20]);
 
-        // Mock executor to run tasks synchronously
-        when(this.managedExecutorService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+        // Encoder tasks run synchronously on the test thread.
+        lenient().when(this.encoderService.submit(any(Runnable.class))).thenAnswer(invocation -> {
             var runnable = (Runnable) invocation.getArgument(0);
             runnable.run();
             return java.util.concurrent.CompletableFuture.completedFuture(null);
         });
 
-        this.player =
-                new RtpAudioPlayer(this.callMedia, this.codec, this.pcmDecoderFactory, this.managedExecutorService);
+        // Sender task runs asynchronously so the sender loop does not block setUp().
+        when(this.senderService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            var runnable = (Runnable) invocation.getArgument(0);
+            return java.util.concurrent.CompletableFuture.runAsync(runnable);
+        });
+
+        this.player = new RtpAudioPlayer(
+                this.callMedia, this.codec, this.pcmDecoderFactory, this.encoderService, this.senderService);
     }
 
     // ── Marker bit tests ───────────────────────────────────────────────────────────
@@ -146,5 +170,50 @@ class RtpAudioPlayerTest {
 
         assertEquals(1, markerBit, "Marker bit should be set");
         assertEquals(120, payloadType, "Payload type should be 120 (Opus), not modified by marker bit");
+    }
+
+    @Test
+    @DisplayName("Silence encoder does not advance packet count while held; sends correct number after hold releases")
+    void playSilence_whenHeldThenReleased_sendsCorrectPacketCount() throws InterruptedException, IOException {
+        // given: held on first encoder check, not held on second+
+        when(this.callMedia.isHeld()).thenReturn(true, false);
+
+        // when: request exactly 1 silence packet (20ms)
+        this.player.playSilence(Duration.ofMillis(20));
+
+        // then: exactly 1 packet sent (hold did not consume the counter)
+        verify(this.socket, times(1)).send(any());
+    }
+
+    @Test
+    @DisplayName("playSilence throws InterruptedException when caller thread is interrupted mid-wait")
+    void playSilence_whenInterrupted_throwsInterruptedException() throws IOException {
+        // given: encoder runs asynchronously so the caller thread blocks in done.get() —
+        // with a sync encoder the future completes before awaitClipEnd() is reached,
+        // so done.get() would return immediately without ever seeing the interruption.
+        when(this.encoderService.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            var runnable = (Runnable) invocation.getArgument(0);
+            return java.util.concurrent.CompletableFuture.runAsync(runnable);
+        });
+
+        Thread testThread = Thread.currentThread();
+        Thread interrupter = new Thread(() -> {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ignored) {
+                // Interrupter was itself interrupted — stop silently.
+            }
+            testThread.interrupt();
+        });
+        interrupter.start();
+
+        try {
+            // when/then: caller blocks on a 10-second silence and is interrupted
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    InterruptedException.class, () -> this.player.playSilence(Duration.ofSeconds(10)));
+        } finally {
+            interrupter.interrupt();
+            Thread.interrupted(); // clear interrupt flag for teardown
+        }
     }
 }
