@@ -224,7 +224,7 @@ public class CallAcceptor {
         LinkedHashMap<Integer, LanguageFactory> singleMenu = new LinkedHashMap<>();
         singleMenu.put(1, factory);
 
-        Future<?> callFuture = this.managedExecutorService.submit(() -> {
+        Future<?> callFuture = this.senderExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(
                         media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);
@@ -279,7 +279,7 @@ public class CallAcceptor {
         // before 200 OK was sent. Audio playback must begin immediately after 200 OK
         // so RTP arrives within the endpoint's audio-delivery window (~1-2s).
         // Adding post-answer delays causes audio dropout on many SIP endpoints.
-        Future<?> callFuture = this.managedExecutorService.submit(() -> {
+        Future<?> callFuture = this.senderExecutorService.submit(() -> {
             try (var codec = media.codecFactory().forCall()) {
                 AudioPlayer player = new RtpAudioPlayer(
                         media, codec, this.pcmDecoderFactory, this.managedExecutorService, this.senderExecutorService);

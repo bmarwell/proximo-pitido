@@ -97,7 +97,7 @@ public class RtpAudioPlayer implements AudioPlayer {
     private final RtpCodec codec;
     private final CallMedia callMedia;
     private final int ssrc;
-    private final javax.enterprise.concurrent.ManagedExecutorService managedExecutorService;
+    private final javax.enterprise.concurrent.ManagedExecutorService encoderService;
     private final LinkedBlockingQueue<QueueItem> packetQueue;
 
     /**
@@ -139,7 +139,7 @@ public class RtpAudioPlayer implements AudioPlayer {
         this.remoteRtp = callMedia.remoteRtp();
         this.pcmDecoderFactory = pcmDecoderFactory;
         this.codec = callCodec;
-        this.managedExecutorService = encoderService;
+        this.encoderService = encoderService;
         this.packetQueue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
         this.senderStopped = new CompletableFuture<>();
 
@@ -176,8 +176,7 @@ public class RtpAudioPlayer implements AudioPlayer {
 
         this.senderStopped.thenRun(() -> done.complete(null));
 
-        this.encoderFuture =
-                this.managedExecutorService.submit(() -> encodeAndQueueSilence(packetCount, silenceFrame, done));
+        this.encoderFuture = this.encoderService.submit(() -> encodeAndQueueSilence(packetCount, silenceFrame, done));
 
         awaitClipEnd(done);
     }
@@ -193,7 +192,7 @@ public class RtpAudioPlayer implements AudioPlayer {
      * Decoders that do not (e.g. deprecated WAV) fall back to 8 kHz output; the pipeline then
      * upsamples to match the codec's expectation.
      *
-     * @param resourcePath classpath path of the audio file (e.g. {@code /audio/de/012.opus})
+     * @param resourcePath classpath path of the audio file (e.g. {@code audio/de/012.opus})
      * @throws IOException          if the resource cannot be opened or decoded
      * @throws InterruptedException if the calling thread is interrupted mid-playback
      */
@@ -201,22 +200,11 @@ public class RtpAudioPlayer implements AudioPlayer {
     public void playBlocking(String resourcePath) throws IOException, InterruptedException {
         LOGGER.log(System.Logger.Level.DEBUG, "RTP: playing [{0}] to {1}", resourcePath, this.remoteRtp);
 
-        InputStream rawStream = openResource(resourcePath);
-        PcmStream pcm = this.pcmDecoderFactory
-                .forPath(resourcePath)
-                .open(rawStream, this.codec.metadata().inputSampleRate());
-
-        int decoderSamplesPerPacket = pcm.sampleRate() / RTP_PACKETS_PER_SECOND;
-        short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
-        short[] codecFrameBuf = new short[this.codec.metadata().samplesPerFrame()];
-        validateFrameSizing(decoderSamplesPerPacket, codecFrameBuf.length);
-
         CompletableFuture<Void> done = new CompletableFuture<>();
 
         this.senderStopped.thenRun(() -> done.complete(null));
 
-        this.encoderFuture = this.managedExecutorService.submit(() -> encodeAndQueueAudioAndCloseStream(
-                pcm, rawStream, decoderFrameBuf, codecFrameBuf, decoderSamplesPerPacket, done));
+        this.encoderFuture = this.encoderService.submit(() -> openDecodeEnqueueAndClose(resourcePath, done));
 
         awaitClipEnd(done);
 
@@ -282,9 +270,11 @@ public class RtpAudioPlayer implements AudioPlayer {
                 }
 
                 if (item instanceof Packet packet) {
-                    frameScheduler.waitUntilNextFrame();
-                    sendRtpPacket(packet.payload());
-                    frameScheduler.advanceToNextFrame();
+                    if (!this.callMedia.isHeld()) {
+                        frameScheduler.waitUntilNextFrame();
+                        sendRtpPacket(packet.payload());
+                        frameScheduler.advanceToNextFrame();
+                    }
                 } else if (item instanceof ClipEnd clipEnd) {
                     clipEnd.done().complete(null);
                     this.firstPacketOfTalkspurt = true;
@@ -319,17 +309,21 @@ public class RtpAudioPlayer implements AudioPlayer {
 
     private void encodeAndQueueSilence(long packetCount, short[] silenceFrame, CompletableFuture<Void> done) {
         try {
-            for (long i = 0; i < packetCount; i++) {
+            long i = 0;
+
+            while (i < packetCount) {
                 if (Thread.currentThread().isInterrupted()) {
                     break;
                 }
 
                 if (this.callMedia.isHeld()) {
+                    TimeUnit.MILLISECONDS.sleep(20);
                     continue;
                 }
 
                 byte[] payload = this.codec.encode(silenceFrame);
                 putInQueue(payload);
+                i++;
             }
         } catch (IOException ioException) {
             LOGGER.log(System.Logger.Level.DEBUG, "Failed to encode silence frame", ioException);
@@ -341,68 +335,77 @@ public class RtpAudioPlayer implements AudioPlayer {
         }
     }
 
-    private void encodeAndQueueAudioAndCloseStream(
-            PcmStream pcm,
-            InputStream rawStream,
-            short[] decoderFrameBuf,
-            short[] codecFrameBuf,
-            int decoderSamplesPerPacket,
-            CompletableFuture<Void> done) {
-        try {
+    /**
+     * Opens the classpath resource at {@code resourcePath}, decodes it, encodes each frame, and
+     * enqueues them into the packet queue.
+     * Resources are always closed via try-with-resources regardless of how the task exits.
+     * Called on the encoder thread.
+     */
+    private void openDecodeEnqueueAndClose(String resourcePath, CompletableFuture<Void> done) {
+        try (InputStream rawStream = openResource(resourcePath);
+                PcmStream pcm = this.pcmDecoderFactory
+                        .forPath(resourcePath)
+                        .open(rawStream, this.codec.metadata().inputSampleRate())) {
+            int decoderSamplesPerPacket = pcm.sampleRate() / RTP_PACKETS_PER_SECOND;
+            short[] decoderFrameBuf = new short[decoderSamplesPerPacket];
+            short[] codecFrameBuf = new short[this.codec.metadata().samplesPerFrame()];
+            validateFrameSizing(decoderSamplesPerPacket, codecFrameBuf.length);
             encodeAndQueueAudio(pcm, decoderFrameBuf, codecFrameBuf, decoderSamplesPerPacket);
+        } catch (IOException ioException) {
+            LOGGER.log(System.Logger.Level.DEBUG, "Failed to open or decode audio resource", ioException);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(System.Logger.Level.TRACE, "Audio encoder interrupted");
         } finally {
-            try {
-                pcm.close();
-                rawStream.close();
-            } catch (IOException ioException) {
-                LOGGER.log(System.Logger.Level.DEBUG, "Failed to close PCM stream", ioException);
-            }
-
             enqueueClipEnd(done);
         }
     }
 
     private void encodeAndQueueAudio(
-            PcmStream pcm, short[] decoderFrameBuf, short[] codecFrameBuf, int decoderSamplesPerPacket) {
-        try {
-            while (true) {
-                if (Thread.currentThread().isInterrupted()) {
-                    break;
-                }
-
-                if (this.callMedia.isHeld()) {
-                    continue;
-                }
-
-                int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
-
-                if (read == -1) {
-                    break;
-                }
-
-                if (read < decoderSamplesPerPacket) {
-                    Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
-                }
-
-                adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
-                byte[] payload = this.codec.encode(codecFrameBuf);
-                putInQueue(payload);
+            PcmStream pcm, short[] decoderFrameBuf, short[] codecFrameBuf, int decoderSamplesPerPacket)
+            throws IOException, InterruptedException {
+        while (true) {
+            if (Thread.currentThread().isInterrupted()) {
+                break;
             }
-        } catch (IOException ioException) {
-            LOGGER.log(System.Logger.Level.DEBUG, "Failed to encode audio frame", ioException);
-        } catch (InterruptedException interruptedException) {
-            Thread.currentThread().interrupt();
-            LOGGER.log(System.Logger.Level.TRACE, "Audio encoder interrupted");
+
+            if (this.callMedia.isHeld()) {
+                TimeUnit.MILLISECONDS.sleep(20);
+                continue;
+            }
+
+            int read = readFrame(pcm, decoderFrameBuf, decoderSamplesPerPacket);
+
+            if (read == -1) {
+                break;
+            }
+
+            if (read < decoderSamplesPerPacket) {
+                Arrays.fill(decoderFrameBuf, read, decoderSamplesPerPacket, (short) 0);
+            }
+
+            adaptPcmFrameForCodec(decoderFrameBuf, codecFrameBuf);
+            byte[] payload = this.codec.encode(codecFrameBuf);
+            putInQueue(payload);
         }
     }
 
     /**
      * Enqueues a pre-encoded RTP payload.
-     * Blocks if the queue is full (capacity {@value QUEUE_CAPACITY}), which naturally paces the
-     * encoder to the sender's 50-packets-per-second drain rate.
+     * Uses {@code offer()} with a 100 ms timeout per attempt so that if the sender thread exits
+     * (socket error, interruption) while the queue is full, the encoder does not block forever.
+     * Drops the packet and returns if {@link #senderStopped} has completed (sender gone).
      */
     private void putInQueue(byte[] payload) throws InterruptedException {
-        this.packetQueue.put(new Packet(payload));
+        while (true) {
+            if (this.senderStopped.isDone()) {
+                return;
+            }
+
+            if (this.packetQueue.offer(new Packet(payload), 100, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+        }
     }
 
     /**
@@ -514,16 +517,16 @@ public class RtpAudioPlayer implements AudioPlayer {
         int markerBit = this.firstPacketOfTalkspurt ? 0x80 : 0x00;
         packet[1] = (byte) (markerBit | this.codec.metadata().payloadType());
 
-        packet[2] = (byte) (seqNumber >> 8);
-        packet[3] = (byte) (seqNumber & 0xFF);
-        packet[4] = (byte) (timestamp >> 24);
-        packet[5] = (byte) (timestamp >> 16);
-        packet[6] = (byte) (timestamp >> 8);
-        packet[7] = (byte) (timestamp & 0xFF);
-        packet[8] = (byte) (ssrc >> 24);
-        packet[9] = (byte) (ssrc >> 16);
-        packet[10] = (byte) (ssrc >> 8);
-        packet[11] = (byte) (ssrc & 0xFF);
+        packet[2] = (byte) (this.seqNumber >> 8);
+        packet[3] = (byte) (this.seqNumber & 0xFF);
+        packet[4] = (byte) (this.timestamp >> 24);
+        packet[5] = (byte) (this.timestamp >> 16);
+        packet[6] = (byte) (this.timestamp >> 8);
+        packet[7] = (byte) (this.timestamp & 0xFF);
+        packet[8] = (byte) (this.ssrc >> 24);
+        packet[9] = (byte) (this.ssrc >> 16);
+        packet[10] = (byte) (this.ssrc >> 8);
+        packet[11] = (byte) (this.ssrc & 0xFF);
         System.arraycopy(payload, 0, packet, 12, payload.length);
 
         boolean markerBitSet = (packet[1] & 0x80) != 0;
@@ -532,14 +535,14 @@ public class RtpAudioPlayer implements AudioPlayer {
                 System.Logger.Level.TRACE,
                 "Sending RTP packet: seqNum={0} ts={1} marker={2} payloadBytes={3}",
                 this.seqNumber,
-                timestamp,
+                this.timestamp,
                 markerBitSet,
                 payload.length);
 
         this.socket.send(new DatagramPacket(packet, packet.length, this.remoteRtp));
 
         this.seqNumber = (this.seqNumber + 1) & 0xFFFF;
-        timestamp += this.codec.metadata().rtpTimestampIncrement();
+        this.timestamp += this.codec.metadata().rtpTimestampIncrement();
         this.firstPacketOfTalkspurt = false;
     }
 }
