@@ -516,7 +516,10 @@ public class SipRegistrationListener {
     }
 
     private Address buildContactAddress(SipFactory sipFactory) {
-        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId.orElse(""), localSipHostProvider.get()));
+        String host = localSipHostProvider.get();
+        String sipHost = host.contains(":") ? "[" + host + "]" : host;
+
+        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId.orElse(""), sipHost));
     }
 
     private String buildAuthHeader(SipServletResponse challengeResponse) {

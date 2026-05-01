@@ -16,6 +16,7 @@
 module de.bmarwell.proximo.pitido.core {
     // Internal project modules
     requires transitive de.bmarwell.proximo.pitido.spi;
+    requires de.bmarwell.proximo.pitido.services.api;
 
     // CDI 2.0 (javax namespace) — provided by the Liberty container at runtime.
     // Transitive because @ApplicationScoped is a runtime-visible annotation on exported types;
