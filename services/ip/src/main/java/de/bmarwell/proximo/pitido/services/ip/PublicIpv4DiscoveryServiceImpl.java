@@ -10,8 +10,9 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.core.sip;
+package de.bmarwell.proximo.pitido.services.ip;
 
+import de.bmarwell.proximo.pitido.services.api.PublicIpv4DiscoveryService;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.URI;
@@ -52,9 +53,9 @@ import javax.ws.rs.core.MediaType;
  * </ol>
  */
 @ApplicationScoped
-public class PublicIpDiscoveryService {
+public class PublicIpv4DiscoveryServiceImpl implements PublicIpv4DiscoveryService {
 
-    private static final System.Logger LOGGER = System.getLogger(PublicIpDiscoveryService.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(PublicIpv4DiscoveryServiceImpl.class.getName());
 
     static final List<URI> DISCOVERY_URLS = List.of(
             URI.create("https://v4.ident.me"),
@@ -73,20 +74,15 @@ public class PublicIpDiscoveryService {
             .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build();
 
-    private final AtomicReference<String> cachedIp = new AtomicReference<>();
+    private final AtomicReference<InetAddress> cachedIp = new AtomicReference<>();
     private volatile Instant cacheExpiry = Instant.MIN;
 
     /** CDI no-args constructor. */
-    public PublicIpDiscoveryService() {}
+    public PublicIpv4DiscoveryServiceImpl() {}
 
-    /**
-     * Returns the public IPv4 address of this host, querying remote services if the cache is stale.
-     *
-     * @return the discovered IPv4 address, or {@link Optional#empty()} when all services are
-     *     unreachable
-     */
-    public Optional<String> discover() {
-        String cached = this.cachedIp.get();
+    @Override
+    public Optional<InetAddress> discover() {
+        InetAddress cached = this.cachedIp.get();
 
         if (cached != null && Instant.now().isBefore(this.cacheExpiry)) {
             return Optional.of(cached);
@@ -95,12 +91,12 @@ public class PublicIpDiscoveryService {
         return queryDiscoveryServices();
     }
 
-    private Optional<String> queryDiscoveryServices() {
+    private Optional<InetAddress> queryDiscoveryServices() {
         Client client = this.clientFactory.get();
 
         try {
             for (URI url : DISCOVERY_URLS) {
-                Optional<String> ip = queryService(client, url);
+                Optional<InetAddress> ip = queryService(client, url);
 
                 if (ip.isPresent()) {
                     this.cachedIp.set(ip.get());
@@ -115,24 +111,30 @@ public class PublicIpDiscoveryService {
         return Optional.empty();
     }
 
-    private Optional<String> queryService(Client client, URI url) {
+    private Optional<InetAddress> queryService(Client client, URI url) {
         try {
             String body = client.target(url)
                     .request(MediaType.TEXT_PLAIN_TYPE)
                     .get(String.class)
                     .strip();
 
-            if (!isValidPublicIpv4Address(body)) {
+            Optional<InetAddress> addr = parseIpv4Address(body);
+
+            if (addr.isEmpty()) {
                 LOGGER.log(System.Logger.Level.DEBUG, "Unexpected response from {0}: {1}", url, body);
                 return Optional.empty();
             }
 
-            LOGGER.log(System.Logger.Level.INFO, "Discovered public IP {0} via {1}", body, url);
-            return Optional.of(body);
+            LOGGER.log(
+                    System.Logger.Level.INFO,
+                    "Discovered public IPv4 address {0} via {1}",
+                    addr.get().getHostAddress(),
+                    url);
+            return addr;
         } catch (ProcessingException processingException) {
             LOGGER.log(
                     System.Logger.Level.DEBUG,
-                    "Failed to query public IP from {0}: {1}",
+                    "Failed to query public IPv4 from {0}: {1}",
                     url,
                     processingException.getMessage());
             return Optional.empty();
@@ -140,22 +142,32 @@ public class PublicIpDiscoveryService {
     }
 
     /**
-     * Returns {@code true} only when {@code candidate} is a literal dotted-decimal IPv4 address.
+     * Parses {@code candidate} as a literal dotted-decimal IPv4 address.
      *
      * <p>Uses a round-trip check — {@link InetAddress#getHostAddress()} must equal the original
      * input — to reject DNS hostnames that {@link InetAddress#getByName(String)} would otherwise
      * silently resolve.
+     * IPv4 addresses are at most 15 characters ({@code "255.255.255.255"});
+     * any longer string is rejected immediately.
+     *
+     * @return the parsed {@link Inet4Address}, or {@link Optional#empty()} if {@code candidate}
+     *     is not a valid public IPv4 literal
      */
-    static boolean isValidPublicIpv4Address(String candidate) {
+    static Optional<InetAddress> parseIpv4Address(String candidate) {
         if (candidate == null || candidate.isBlank() || candidate.length() > 15) {
-            return false;
+            return Optional.empty();
         }
 
         try {
             InetAddress addr = InetAddress.getByName(candidate);
-            return addr instanceof Inet4Address && addr.getHostAddress().equals(candidate);
+
+            if (!(addr instanceof Inet4Address) || !addr.getHostAddress().equals(candidate)) {
+                return Optional.empty();
+            }
+
+            return Optional.of(addr);
         } catch (UnknownHostException unknownHostException) {
-            return false;
+            return Optional.empty();
         }
     }
 }

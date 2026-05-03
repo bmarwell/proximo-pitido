@@ -10,10 +10,10 @@
  * distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the Licence for the specific language governing permissions and limitations under the Licence.
  */
-package de.bmarwell.proximo.pitido.core.sip;
+package de.bmarwell.proximo.pitido.services.ip;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -21,6 +21,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.Optional;
 import javax.ws.rs.ProcessingException;
@@ -35,7 +37,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class PublicIpDiscoveryServiceTest {
+class PublicIpv6DiscoveryServiceImplTest {
 
     @Mock
     Client client;
@@ -46,49 +48,48 @@ class PublicIpDiscoveryServiceTest {
     @Mock
     Invocation.Builder requestBuilder;
 
-    PublicIpDiscoveryService discoveryService;
+    PublicIpv6DiscoveryServiceImpl discoveryService;
 
     @BeforeEach
     void setUp() {
-        this.discoveryService = new PublicIpDiscoveryService();
+        this.discoveryService = new PublicIpv6DiscoveryServiceImpl();
         this.discoveryService.clientFactory = () -> this.client;
     }
 
-    /** Stubs the JAX-RS fluent chain for tests that actually invoke {@link PublicIpDiscoveryService#discover()}. */
     private void wireClientChain() {
         when(this.client.target(any(URI.class))).thenReturn(this.webTarget);
         when(this.webTarget.request(any(MediaType.class))).thenReturn(this.requestBuilder);
     }
 
     @Test
-    void discover_firstServiceRespondsWithValidIp_returnsThatIp() {
+    void discover_firstServiceRespondsWithValidIpv6_returnsThatAddress() {
         // given
         wireClientChain();
-        when(this.requestBuilder.get(String.class)).thenReturn("1.2.3.4");
+        when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("1.2.3.4", result.get());
-        verify(this.client, times(1)).target(PublicIpDiscoveryService.DISCOVERY_URLS.getFirst());
+        assertInstanceOf(Inet6Address.class, result.get());
+        verify(this.client, times(1)).target(PublicIpv6DiscoveryServiceImpl.DISCOVERY_URLS.getFirst());
     }
 
     @Test
-    void discover_firstServiceFails_triesNextAndReturnsItsIp() {
+    void discover_firstServiceFails_triesNextAndReturnsItsAddress() {
         // given
         wireClientChain();
         when(this.requestBuilder.get(String.class))
                 .thenThrow(new ProcessingException("connection refused"))
-                .thenReturn("5.6.7.8");
+                .thenReturn("2001:db8::2");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("5.6.7.8", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
@@ -98,7 +99,7 @@ class PublicIpDiscoveryServiceTest {
         when(this.requestBuilder.get(String.class)).thenThrow(new ProcessingException("no route to host"));
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertFalse(result.isPresent());
@@ -110,29 +111,29 @@ class PublicIpDiscoveryServiceTest {
         wireClientChain();
         when(this.requestBuilder.get(String.class))
                 .thenReturn("not-an-ip-address")
-                .thenReturn("9.10.11.12");
+                .thenReturn("2001:db8::3");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("9.10.11.12", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
     void discover_secondCallWithinCacheWindow_doesNotQueryRemoteServices() {
         // given
         wireClientChain();
-        when(this.requestBuilder.get(String.class)).thenReturn("1.2.3.4");
+        when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1");
         this.discoveryService.discover();
 
         // when
-        Optional<String> cached = this.discoveryService.discover();
+        Optional<InetAddress> cached = this.discoveryService.discover();
 
         // then
         assertTrue(cached.isPresent());
-        assertEquals("1.2.3.4", cached.get());
+        assertInstanceOf(Inet6Address.class, cached.get());
         verify(this.client, times(1)).target(any(URI.class));
     }
 
@@ -140,45 +141,74 @@ class PublicIpDiscoveryServiceTest {
     void discover_responseWithTrailingNewline_isStrippedAndAccepted() {
         // given
         wireClientChain();
-        when(this.requestBuilder.get(String.class)).thenReturn("203.0.113.1\n");
+        when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1\n");
 
         // when
-        Optional<String> result = this.discoveryService.discover();
+        Optional<InetAddress> result = this.discoveryService.discover();
 
         // then
         assertTrue(result.isPresent());
-        assertEquals("203.0.113.1", result.get());
+        assertInstanceOf(Inet6Address.class, result.get());
     }
 
     @Test
     void discover_firstServiceSucceeds_doesNotQueryFurtherServices() {
         // given
         wireClientChain();
-        when(this.requestBuilder.get(String.class)).thenReturn("1.2.3.4");
+        when(this.requestBuilder.get(String.class)).thenReturn("2001:db8::1");
 
         // when
         this.discoveryService.discover();
 
         // then
-        verify(this.client, never()).target(PublicIpDiscoveryService.DISCOVERY_URLS.get(1));
-        verify(this.client, never()).target(PublicIpDiscoveryService.DISCOVERY_URLS.get(2));
+        verify(this.client, never()).target(PublicIpv6DiscoveryServiceImpl.DISCOVERY_URLS.get(1));
     }
 
     @Test
-    void isValidPublicIpv4Address_rejectsIpv6Address() {
+    void parseIpv6Address_rejectsIpv4Address() {
         // given / when / then
-        assertFalse(PublicIpDiscoveryService.isValidPublicIpv4Address("2001:db8::1"));
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("1.2.3.4").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv4Address_rejectsHostname() {
+    void parseIpv6Address_rejectsHostname() {
         // given / when / then
-        assertFalse(PublicIpDiscoveryService.isValidPublicIpv4Address("example.com"));
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("example.com").isEmpty());
     }
 
     @Test
-    void isValidPublicIpv4Address_acceptsLiteralIpv4() {
+    void parseIpv6Address_rejectsBracketedAddress() {
         // given / when / then
-        assertTrue(PublicIpDiscoveryService.isValidPublicIpv4Address("203.0.113.1"));
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("[2001:db8::1]").isEmpty());
+    }
+
+    @Test
+    void parseIpv6Address_rejectsNull() {
+        // given / when / then
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address(null).isEmpty());
+    }
+
+    @Test
+    void parseIpv6Address_rejectsBlank() {
+        // given / when / then
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("  ").isEmpty());
+    }
+
+    @Test
+    void parseIpv6Address_acceptsFullAddress() {
+        // given / when / then
+        assertTrue(PublicIpv6DiscoveryServiceImpl.parseIpv6Address("2001:db8:0:0:0:0:0:1")
+                .isPresent());
+    }
+
+    @Test
+    void parseIpv6Address_acceptsCompressedAddress() {
+        // given / when / then
+        // Both compressed ("2001:db8::1") and expanded ("2001:db8:0:0:0:0:0:1") forms are valid.
+        // The validation does not require the input to survive a JVM normalisation round-trip.
+        assertTrue(
+                PublicIpv6DiscoveryServiceImpl.parseIpv6Address("2001:db8::1").isPresent());
     }
 }
