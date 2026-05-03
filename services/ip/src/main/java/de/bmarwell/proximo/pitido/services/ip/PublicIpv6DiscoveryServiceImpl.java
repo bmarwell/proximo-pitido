@@ -174,8 +174,9 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
                 return Optional.empty();
             }
 
-            // Reject IPv4-mapped addresses
-            if (inet6.isIPv4CompatibleAddress()) {
+            // Reject IPv4-compatible (::w.x.y.z) and IPv4-mapped (::ffff:w.x.y.z) addresses.
+            // isIPv4CompatibleAddress() only covers the former; inspect raw bytes for both.
+            if (isIpv4EmbeddedAddress(inet6)) {
                 return Optional.empty();
             }
 
@@ -183,5 +184,28 @@ public class PublicIpv6DiscoveryServiceImpl implements PublicIpv6DiscoveryServic
         } catch (UnknownHostException unknownHostException) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Returns {@code true} when {@code addr} is an IPv4-compatible ({@code ::w.x.y.z}) or
+     * IPv4-mapped ({@code ::ffff:w.x.y.z}) address.
+     *
+     * <p>{@link Inet6Address#isIPv4CompatibleAddress()} only detects the deprecated
+     * IPv4-compatible form; it does not detect the IPv4-mapped form.
+     * A raw byte check is therefore used to cover both cases.
+     */
+    private static boolean isIpv4EmbeddedAddress(Inet6Address addr) {
+        byte[] bytes = addr.getAddress();
+
+        // First 10 bytes must be zero for both forms
+        for (int byteIndex = 0; byteIndex < 10; byteIndex++) {
+            if (bytes[byteIndex] != 0) {
+                return false;
+            }
+        }
+
+        // IPv4-compatible: bytes 10–11 are 0x00 0x00
+        // IPv4-mapped:     bytes 10–11 are 0xFF 0xFF
+        return (bytes[10] == 0 && bytes[11] == 0) || (bytes[10] == (byte) 0xFF && bytes[11] == (byte) 0xFF);
     }
 }

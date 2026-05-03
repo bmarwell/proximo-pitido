@@ -517,7 +517,7 @@ public class SipRegistrationListener {
 
     private Address buildContactAddress(SipFactory sipFactory) {
         String host = localSipHostProvider.get();
-        String sipHost = host.contains(":") ? "[" + host + "]" : host;
+        String sipHost = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
 
         return sipFactory.createAddress(sipFactory.createSipURI(this.sipId.orElse(""), sipHost));
     }

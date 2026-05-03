@@ -17,9 +17,11 @@ import de.bmarwell.proximo.pitido.services.api.PublicIpv6DiscoveryService;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.Optional;
 import javax.enterprise.context.ApplicationScoped;
@@ -36,10 +38,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  *       as-is without any network call (backward-compatible with pre-IPv6 deployments).</li>
  *   <li>{@code SIP_PUBLIC_IPV6} / {@code sip.public.ipv6} — tri-state IPv6 control:
  *       <ul>
- *         <li>{@code "disabled"} — IPv6 is skipped entirely; proceed to IPv4.</li>
- *         <li>{@code "auto"} (default) — query {@link PublicIpv6DiscoveryService}; use the result
+ *         <li>{@code "disabled"} (default) — IPv6 is skipped entirely; proceed to IPv4.</li>
+ *         <li>{@code "auto"} — query {@link PublicIpv6DiscoveryService}; use the result
  *             if successful.</li>
- *         <li>any other value — used as a literal IPv6 address without any network call.</li>
+ *         <li>any other value — treated as a literal IPv6 address (brackets optional);
+ *             validated and used without any network call.</li>
  *       </ul>
  *       Primarily useful on DS-Lite connections where no public IPv4 address is available.
  *       Note: callers building SIP URIs must bracket the returned address
@@ -49,7 +52,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  *         <li>{@code "disabled"} — IPv4 is skipped entirely; fall through to local detection.</li>
  *         <li>{@code "auto"} (default) — query {@link PublicIpv4DiscoveryService}; use the result
  *             if successful.</li>
- *         <li>any other value — used as a literal IPv4 address without any network call.</li>
+ *         <li>any other value — treated as a literal IPv4 address; validated and used
+ *             without any network call.</li>
  *       </ul></li>
  *   <li>Outbound interface IP detected via a connected {@link DatagramSocket} pointed at the
  *       configured SIP registrar — reliable in Docker and Podman environments because it consults
@@ -134,8 +138,7 @@ public class LocalSipHostProvider {
         }
 
         if (!MODE_AUTO.equalsIgnoreCase(this.ipv6Mode)) {
-            LOGGER.log(System.Logger.Level.INFO, "SIP Contact address (sip.public.ipv6 literal): {0}", this.ipv6Mode);
-            return Optional.of(this.ipv6Mode);
+            return parseIpv6Literal(this.ipv6Mode);
         }
 
         Optional<String> discovered = this.publicIpv6DiscoveryService.discover().map(InetAddress::getHostAddress);
@@ -156,8 +159,7 @@ public class LocalSipHostProvider {
         }
 
         if (!MODE_AUTO.equalsIgnoreCase(this.ipv4Mode)) {
-            LOGGER.log(System.Logger.Level.INFO, "SIP Contact address (sip.public.ipv4 literal): {0}", this.ipv4Mode);
-            return Optional.of(this.ipv4Mode);
+            return parseIpv4Literal(this.ipv4Mode);
         }
 
         if (!this.registrationEnabled) {
@@ -176,6 +178,82 @@ public class LocalSipHostProvider {
         }
 
         return discovered;
+    }
+
+    /**
+     * Validates and normalises a user-supplied IPv6 literal.
+     *
+     * <p>Brackets ({@code [2001:db8::1]}) are stripped before parsing so operators may supply
+     * the address in either bare or bracketed form.
+     * The bare address is returned so that {@code buildContactAddress()} can apply its own
+     * bracketing consistently.
+     * Non-IPv6 values are rejected with a WARNING log and an empty result.
+     */
+    private Optional<String> parseIpv6Literal(String raw) {
+        String bare = raw.strip();
+
+        if (bare.startsWith("[") && bare.endsWith("]")) {
+            bare = bare.substring(1, bare.length() - 1);
+        }
+
+        try {
+            InetAddress addr = InetAddress.getByName(bare);
+
+            if (!(addr instanceof Inet6Address)) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "sip.public.ipv6 / SIP_PUBLIC_IPV6 is set to a non-IPv6 value: [{0}]; ignoring.",
+                        raw);
+
+                return Optional.empty();
+            }
+
+            String literal = addr.getHostAddress();
+            LOGGER.log(System.Logger.Level.INFO, "SIP Contact address (sip.public.ipv6 literal): {0}", literal);
+
+            return Optional.of(literal);
+        } catch (UnknownHostException unknownHostException) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "sip.public.ipv6 / SIP_PUBLIC_IPV6 is not a valid address: [{0}]; ignoring.",
+                    raw);
+
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Validates a user-supplied IPv4 literal.
+     *
+     * <p>Whitespace is stripped before parsing.
+     * Non-IPv4 values (hostnames, IPv6 addresses, malformed strings) are rejected with a WARNING
+     * log and an empty result.
+     */
+    private Optional<String> parseIpv4Literal(String raw) {
+        try {
+            InetAddress addr = InetAddress.getByName(raw.strip());
+
+            if (!(addr instanceof Inet4Address)) {
+                LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "sip.public.ipv4 / SIP_PUBLIC_IPV4 is set to a non-IPv4 value: [{0}]; ignoring.",
+                        raw);
+
+                return Optional.empty();
+            }
+
+            String literal = addr.getHostAddress();
+            LOGGER.log(System.Logger.Level.INFO, "SIP Contact address (sip.public.ipv4 literal): {0}", literal);
+
+            return Optional.of(literal);
+        } catch (UnknownHostException unknownHostException) {
+            LOGGER.log(
+                    System.Logger.Level.WARNING,
+                    "sip.public.ipv4 / SIP_PUBLIC_IPV4 is not a valid address: [{0}]; ignoring.",
+                    raw);
+
+            return Optional.empty();
+        }
     }
 
     private String detectLocalAddress() {
