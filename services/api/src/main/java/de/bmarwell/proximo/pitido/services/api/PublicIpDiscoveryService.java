@@ -16,17 +16,24 @@ import java.net.InetAddress;
 import java.util.Optional;
 
 /**
- * Sealed root contract for public-IP discovery services.
+ * Root contract for public-IP discovery services.
  *
- * <p>The two permitted sub-interfaces — {@link PublicIpv4DiscoveryService} and
+ * <p>The two sub-interfaces — {@link PublicIpv4DiscoveryService} and
  * {@link PublicIpv6DiscoveryService} — specialise this contract for each address family.
- * Callers that need to handle both families can use a switch expression over the
- * sub-interface type.
+ * Callers inject the appropriate sub-interface directly; this base interface exists only
+ * to share the {@link #discover()} contract.
+ *
+ * <p>Note: this interface is intentionally <em>not</em> sealed.
+ * Weld (CDI 2.0, used by Open Liberty) generates client-proxy subclasses at runtime
+ * for every {@code @ApplicationScoped} bean.
+ * If this interface were sealed, the JVM would reject those generated proxies with an
+ * {@code IncompatibleClassChangeError} because the proxy class is not in the {@code permits}
+ * list.
  *
  * <p>Implementations query remote IP-echo services and cache the result.
  * When all services are unreachable, {@link Optional#empty()} is returned.
  */
-public sealed interface PublicIpDiscoveryService permits PublicIpv4DiscoveryService, PublicIpv6DiscoveryService {
+public interface PublicIpDiscoveryService {
 
     /**
      * Returns the public IP address of this host.

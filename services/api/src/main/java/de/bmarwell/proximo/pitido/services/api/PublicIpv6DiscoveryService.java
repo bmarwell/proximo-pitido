@@ -30,7 +30,7 @@ import java.util.Optional;
  * Callers that embed the address in a SIP URI must format it with square brackets
  * ({@code sip:user@[2001:db8::1]}) per RFC 3261 §19.1.1.
  */
-public non-sealed interface PublicIpv6DiscoveryService extends PublicIpDiscoveryService {
+public interface PublicIpv6DiscoveryService extends PublicIpDiscoveryService {
 
     /**
      * Returns the public IPv6 address of this host.
