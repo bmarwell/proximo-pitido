@@ -28,7 +28,7 @@ import java.util.Optional;
  * without coupling to any specific implementation.
  * The implementation is provided at runtime by {@code proximo-pitido-services-ip}.
  */
-public non-sealed interface PublicIpv4DiscoveryService extends PublicIpDiscoveryService {
+public interface PublicIpv4DiscoveryService extends PublicIpDiscoveryService {
 
     /**
      * Returns the public IPv4 address of this host.
