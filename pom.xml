@@ -16,7 +16,7 @@
     <maven.compiler.release>25</maven.compiler.release>
 
     <!-- plugin dependencies -->
-    <dependency.palantir.version>2.90.0</dependency.palantir.version>
+    <dependency.palantir.version>2.91.0</dependency.palantir.version>
     <dependency.cleanthat.version>2.25</dependency.cleanthat.version>
     <dependency.forbiddenapis.version>3.10</dependency.forbiddenapis.version>
 
