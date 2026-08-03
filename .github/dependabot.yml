@@ -16,6 +16,9 @@ updates:
         patterns:
           - "org.apache.maven.plugins:*"
           - "io.openliberty.tools:*"
+      monthly-batch:
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: "/"
