@@ -12,6 +12,9 @@ updates:
         patterns:
           - "jakarta.*:*"
           - "javax.*:*"
+      microprofile-apis:
+        patterns:
+          - "org.eclipse.microprofile.*:*"
       maven-plugins:
         patterns:
           - "org.apache.maven.plugins:*"
