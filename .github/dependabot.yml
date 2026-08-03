@@ -16,7 +16,7 @@ updates:
         patterns:
           - "org.apache.maven.plugins:*"
           - "io.openliberty.tools:*"
-      monthly-batch:
+      monthly-batch-maven:
         patterns:
           - "*"
 
@@ -28,6 +28,6 @@ updates:
       interval: monthly
     open-pull-requests-limit: 10
     groups:
-      monthly-batch:
+      monthly-batch-actions:
         patterns:
           - "*"
