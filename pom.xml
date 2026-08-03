@@ -17,7 +17,7 @@
 
     <!-- plugin dependencies -->
     <dependency.palantir.version>2.96.0</dependency.palantir.version>
-    <dependency.cleanthat.version>2.25</dependency.cleanthat.version>
+    <dependency.cleanthat.version>2.26</dependency.cleanthat.version>
     <dependency.forbiddenapis.version>3.10</dependency.forbiddenapis.version>
 
     <!-- allow skipping forbidden-apis in specialised workflows -->
@@ -74,7 +74,7 @@
       <dependency>
         <groupId>org.eclipse.microprofile.config</groupId>
         <artifactId>microprofile-config-api</artifactId>
-        <version>3.0</version>
+        <version>3.1.1</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
@@ -121,7 +121,7 @@
       <dependency>
         <groupId>org.apache.cxf</groupId>
         <artifactId>cxf-rt-rs-client</artifactId>
-        <version>4.2.1</version>
+        <version>4.2.2</version>
         <scope>test</scope>
       </dependency>
 
@@ -142,7 +142,7 @@
       <dependency>
         <groupId>org.junit</groupId>
         <artifactId>junit-bom</artifactId>
-        <version>6.1.0</version>
+        <version>6.1.2</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -198,7 +198,7 @@
         <plugin>
           <groupId>com.diffplug.spotless</groupId>
           <artifactId>spotless-maven-plugin</artifactId>
-          <version>3.4.0</version>
+          <version>3.8.0</version>
         </plugin>
 
         <plugin>
