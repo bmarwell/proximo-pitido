@@ -125,6 +125,12 @@ public class AmrWbBandwidthEfficientRtpCodec extends AmrWbRtpCodec implements Rt
                 throw new IOException("E_IF_encode failed with error code " + speechBytes);
             }
 
+            if (speechBytes > MAX_ENCODED_BYTES) {
+                throw new IOException(
+                        "E_IF_encode wrote " + speechBytes + " bytes — exceeds MAX_ENCODED_BYTES=" + MAX_ENCODED_BYTES
+                                + "; native buffer overflow occurred before this check. Increase MAX_ENCODED_BYTES.");
+            }
+
             /* Extract sample of encoder output bytes for diagnostics. */
             byte firstByte = outputSeg.get(ValueLayout.JAVA_BYTE, 0);
             byte secondByte;

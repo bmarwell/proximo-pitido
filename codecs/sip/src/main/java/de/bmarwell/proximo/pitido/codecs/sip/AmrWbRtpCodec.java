@@ -57,10 +57,21 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
 
     /**
      * Maximum output bytes from {@code E_IF_encode} at any mode.
-     * The highest-rate AMR-WB frame (mode 8, 23.85 kbps) is 60 bytes of speech data.
-     * 64 bytes is a rounded-up safe upper bound for all modes.
+     *
+     * <p>The highest-rate AMR-WB frame (mode 8, 23.85 kbps) is 477 bits of speech = 60 bytes,
+     * plus 1 ToC byte = 61 bytes in IF1 (octet-aligned) format.
+     * Some {@code libvo-amrwbenc} builds output IF2 (bandwidth-efficient, no ToC prefix),
+     * which for mode 8 is 60 raw bytes.
+     *
+     * <p>128 bytes is a 2× safety margin above the theoretical maximum (61 bytes).
+     * The extra headroom prevents single-byte overflows from corrupting adjacent
+     * native-heap allocations (e.g. OpenJ9 GC remembered-set nodes), which would
+     * produce a delayed {@code SIGSEGV} inside {@code MM_Scavenger} during GC.
+     *
+     * <p>The buffer is allocated once per call and reused for every 20 ms frame,
+     * so the 64-byte increase has negligible memory impact per call.
      */
-    protected static final int MAX_ENCODED_BYTES = 64;
+    protected static final int MAX_ENCODED_BYTES = 128;
 
     private final MethodHandle eIfInitHandle;
     private final MethodHandle eIfExitHandle;
@@ -226,6 +237,12 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
 
         if (speechBytes < 0) {
             throw new IOException("E_IF_encode failed with error code " + speechBytes);
+        }
+
+        if (speechBytes > MAX_ENCODED_BYTES) {
+            throw new IOException(
+                    "E_IF_encode wrote " + speechBytes + " bytes — exceeds MAX_ENCODED_BYTES=" + MAX_ENCODED_BYTES
+                            + "; native buffer overflow occurred before this check. Increase MAX_ENCODED_BYTES.");
         }
 
         // libvo-amrwbenc outputs bandwidth-efficient format (ToC + speech) even though we
