@@ -58,7 +58,7 @@
                    Both are I/O-bound, so virtual threads are acceptable.
   -->
   <managedExecutorService id="ioExecutor" jndiName="concurrent/ioExecutor" virtualThread="true" />
-  <managedExecutorService id="codecExecutor" jndiName="concurrent/codecExecutor" />
+  <managedExecutorService id="codecExecutor" jndiName="concurrent/codecExecutor" maxConcurrency="1" />
   <managedScheduledExecutorService id="scheduler" jndiName="concurrent/scheduler" virtualThread="true" />
 
   <!--

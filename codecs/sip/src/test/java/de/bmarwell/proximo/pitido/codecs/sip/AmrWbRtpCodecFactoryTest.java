@@ -17,12 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
 @NativeCodec(AmrWbRtpCodecFactory.class)
 public class AmrWbRtpCodecFactoryTest {
 
-    private final AmrWbRtpCodecFactory codec = new AmrWbRtpCodecFactory();
+    private final AmrWbRtpCodecFactory codec = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
     @Test
     void preferenceIsHigherThanG722() {
@@ -43,7 +44,7 @@ public class AmrWbRtpCodecFactoryTest {
     @Test
     void isAvailableAfterProbeWhenLibraryPresent() {
         // given
-        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 

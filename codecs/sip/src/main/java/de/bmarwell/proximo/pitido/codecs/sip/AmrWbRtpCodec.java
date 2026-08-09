@@ -103,17 +103,34 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
      * Scope: per-call instance lifetime.
      * {@code null} in the CDI factory bean; non-null in per-call instances.
      */
-    private MemorySegment reusableInputSegment;
+    /**
+     * Reusable memory segment for FFM input allocation (PCM samples).
+     * Created once per call to avoid Arena allocation overhead per 20ms frame.
+     * Scope: per-call instance lifetime.
+     * {@code null} in the CDI factory bean; non-null in per-call instances.
+     * {@code protected} so {@link AmrWbBandwidthEfficientRtpCodec} can reuse these
+     * shared-arena segments instead of allocating per-frame confined-arena segments.
+     */
+    protected MemorySegment reusableInputSegment;
 
     /**
      * Reusable memory segment for FFM output buffer (encoded speech bytes).
      * Created once per call to avoid per-frame allocation of {@link #MAX_ENCODED_BYTES}.
      * Scope: per-call instance lifetime.
      * {@code null} in the CDI factory bean; non-null in per-call instances.
+     * {@code protected} so {@link AmrWbBandwidthEfficientRtpCodec} can reuse these
+     * shared-arena segments instead of allocating per-frame confined-arena segments.
      */
-    private MemorySegment reusableOutputSegment;
+    protected MemorySegment reusableOutputSegment;
 
-    AmrWbRtpCodec(String offeredFmtp) {
+    /**
+     * Shared service that serialises all {@code E_IF_encode} calls onto a single thread.
+     * {@code libvo-amrwbenc} has global mutable state and is not safe to call concurrently.
+     */
+    private final AmrWbEncodeService encodeService;
+
+    AmrWbRtpCodec(String offeredFmtp, AmrWbEncodeService encodeService) {
+        this.encodeService = encodeService;
         SymbolLookup amrwb = SymbolLookup.libraryLookup("libvo-amrwbenc.so.0", Arena.global());
         Linker linker = Linker.nativeLinker();
 
@@ -373,16 +390,12 @@ public class AmrWbRtpCodec extends NativeRtpCodec implements RtpCodec {
     }
 
     protected int invokeEncode(MemorySegment inputSeg, MemorySegment outputSeg) throws IOException {
-        try {
-            LOGGER.log(
-                    System.Logger.Level.TRACE,
-                    "invokeEncode: about to call E_IF_encode with encodingMode={0}",
-                    this.encodingMode);
-            return (int) this.eIfEncodeHandle.invoke(this.stateSegment, this.encodingMode, inputSeg, outputSeg, 0);
-        } catch (RuntimeException runtimeException) {
-            throw runtimeException;
-        } catch (Throwable throwable) {
-            throw new IOException("E_IF_encode invocation failed", throwable);
-        }
+        LOGGER.log(
+                System.Logger.Level.TRACE,
+                "invokeEncode: submitting E_IF_encode to encoder thread, encodingMode={0}",
+                this.encodingMode);
+
+        return this.encodeService.encode(
+                this.eIfEncodeHandle, this.stateSegment, this.encodingMode, inputSeg, outputSeg);
     }
 }

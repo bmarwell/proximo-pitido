@@ -19,12 +19,13 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import java.io.IOException;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
 @NativeCodec(AmrWbRtpCodecFactory.class)
 class AmrWbRtpCodecTest {
 
-    private final AmrWbRtpCodec codec = new AmrWbRtpCodecFactory().forCall("");
+    private final AmrWbRtpCodec codec = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor()).forCall("");
 
     // -------------------------------------------------------------------------
     // Codec constants — no native library needed
@@ -67,17 +68,18 @@ class AmrWbRtpCodecTest {
 
     @Test
     void closeOnFactoryBean_isNoOp() {
-        // given: a fresh factory bean (no callArena, no stateSegment)
-        var factory = new AmrWbRtpCodec("");
+        // given: a fresh per-call instance from the factory
+        var factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
+        var instance = factory.forCall("");
 
-        // when / then: close() must not throw on the CDI factory bean
-        factory.close();
+        // when / then: close() must not throw
+        instance.close();
     }
 
     @Test
     void closeOnPerCallInstance_preventsSubsequentEncode() {
         // given
-        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
@@ -93,7 +95,7 @@ class AmrWbRtpCodecTest {
     @Test
     void silenceFrameProducesOctetAlignedPayload() throws IOException {
         // given
-        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
@@ -110,7 +112,7 @@ class AmrWbRtpCodecTest {
     @Test
     void mode2EncodingProducesCorrectToCByte() throws IOException {
         // given
-        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
@@ -131,7 +133,7 @@ class AmrWbRtpCodecTest {
     @Test
     void payloadStructureDoesNotHaveDoubleHeader() throws IOException {
         // given
-        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory();
+        AmrWbRtpCodecFactory factory = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor());
 
         assumeTrue(factory.isAvailable(), "libvo-amrwbenc not available on this host — skipping");
 
