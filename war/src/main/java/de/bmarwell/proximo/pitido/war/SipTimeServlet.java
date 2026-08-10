@@ -56,17 +56,17 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     SipCallHandler sipCallHandler;
 
     @Override
-    protected void doInvite(SipServletRequest req) throws ServletException, IOException {
+    protected void doInvite(SipServletRequest req) throws IOException {
         sipCallHandler.handleInvite(req);
     }
 
     @Override
-    protected void doInfo(SipServletRequest req) throws ServletException, IOException {
+    protected void doInfo(SipServletRequest req) throws IOException {
         sipCallHandler.handleDtmf(req);
     }
 
     @Override
-    protected void doBye(SipServletRequest req) throws ServletException, IOException {
+    protected void doBye(SipServletRequest req) throws IOException {
         sipCallHandler.handleBye(req);
     }
 
@@ -105,11 +105,18 @@ public class SipTimeServlet extends SipServlet implements Serializable {
         if (!"REGISTER".equals(method)) {
             return;
         }
+
+        if (status < 200) {
+            // could be 100 CONTINUE, do not handle.
+            return;
+        }
+
         if (status == SipServletResponse.SC_UNAUTHORIZED
                 || status == SipServletResponse.SC_PROXY_AUTHENTICATION_REQUIRED) {
             handleAuthChallenge(response);
             return;
         }
+
         if (status == SipServletResponse.SC_OK) {
             int grantedExpires = this.sipRegistrationService.resolveGrantedExpires(response);
             this.sipRegistrationService.markRegistered(grantedExpires);

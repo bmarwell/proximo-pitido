@@ -15,16 +15,35 @@ package de.bmarwell.proximo.pitido.war.listener;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
+import javax.enterprise.concurrent.ManagedScheduledExecutorService;
 import javax.servlet.sip.Address;
 import javax.servlet.sip.SipServletResponse;
 import javax.servlet.sip.SipURI;
 import org.junit.jupiter.api.Test;
 
 class SipRegistrationListenerTest {
+
+    /**
+     * Creates a {@link SipRegistrationListener} whose {@code managedScheduledExecutorService}
+     * is replaced with a no-op stub so that tests that exercise retry-scheduling do not NPE.
+     */
+    @SuppressWarnings("unchecked")
+    private static SipRegistrationListener listenerWithStubScheduler() {
+        var listener = new SipRegistrationListener();
+        var scheduler = mock(ManagedScheduledExecutorService.class);
+        when(scheduler.schedule(any(Runnable.class), anyLong(), any())).thenReturn(mock(ScheduledFuture.class));
+        when(scheduler.scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any()))
+                .thenReturn(mock(ScheduledFuture.class));
+        listener.managedScheduledExecutorService = scheduler;
+        return listener;
+    }
 
     @Test
     void markRegistered_setsRegisteredState() {
@@ -138,5 +157,63 @@ class SipRegistrationListenerTest {
 
         // then
         assertEquals(120, grantedExpires);
+    }
+
+    @Test
+    void markRegistered_resetsBackoffPolicy() {
+        // given: two prior failures have been recorded
+        var listener = new SipRegistrationListener();
+        listener.backoffPolicy.nextDelaySeconds();
+        listener.backoffPolicy.nextDelaySeconds();
+
+        // when
+        listener.markRegistered(-1);
+
+        // then: failure counter is reset; next delay is back to the shortest step
+        assertEquals(0, listener.backoffPolicy.failureCount());
+        assertEquals(30, listener.backoffPolicy.nextDelaySeconds());
+    }
+
+    @Test
+    void handleOptionsResponse_2xx_leavesStateUnchanged() {
+        // given
+        var listener = new SipRegistrationListener();
+        listener.markRegistered(-1);
+
+        // when
+        listener.handleOptionsResponse(200);
+
+        // then: still registered; no retry triggered
+        assertTrue(listener.isRegistered());
+    }
+
+    @Test
+    void handleOptionsResponse_408_triggersRetryAndResetsToIdle() {
+        // given
+        var listener = listenerWithStubScheduler();
+        listener.markRegistered(-1);
+
+        // when
+        listener.handleOptionsResponse(408);
+
+        // then: state reset to idle so a fresh registration cycle can begin
+        assertTrue(listener.isIdle());
+        assertFalse(listener.isRegistered());
+    }
+
+    @Test
+    void scheduleRetryAfterFailure_idempotent_whenAlreadyIdle() {
+        // given: state is already IDLE — simulates a second concurrent failure arriving after
+        // the first caller already reset state to IDLE
+        var listener = listenerWithStubScheduler();
+        listener.markRegistered(-1); // state = REGISTERED
+
+        // when: first caller transitions REGISTERED → IDLE and schedules retry
+        listener.scheduleRetryAfterFailure("first");
+        // second caller arrives after state is already IDLE — CAS fails, it is a no-op
+        listener.scheduleRetryAfterFailure("second");
+
+        // then: failure count was incremented only once (second call was dropped by CAS)
+        assertEquals(1, listener.backoffPolicy.failureCount());
     }
 }
