@@ -13,9 +13,8 @@
 package de.bmarwell.proximo.pitido.war.listener;
 
 import de.bmarwell.proximo.pitido.core.sip.DigestMd5Computer;
-import de.bmarwell.proximo.pitido.core.sip.LocalSipHostProvider;
 import de.bmarwell.proximo.pitido.core.sip.SipDigestChallenge;
-import de.bmarwell.proximo.pitido.core.sip.SrvDnsResolver;
+import de.bmarwell.proximo.pitido.war.protocol.ProtocolHelper;
 import java.io.IOException;
 import java.util.ListIterator;
 import java.util.Objects;
@@ -35,7 +34,6 @@ import javax.servlet.sip.ServletParseException;
 import javax.servlet.sip.SipFactory;
 import javax.servlet.sip.SipServletResponse;
 import javax.servlet.sip.SipURI;
-import javax.servlet.sip.URI;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -64,8 +62,20 @@ public class SipRegistrationListener {
      */
     private static final double RE_REGISTRATION_FACTOR = 2.0 / 3.0;
 
+    /// Interval in seconds between outgoing OPTIONS keep-alive requests.
+    /// The Fritz!Box SIP ALG silently drops idle TCP connections after roughly 20 minutes.
+    /// Sending OPTIONS every 30 s keeps the TCP connection alive and detects transport failures
+    /// before the next scheduled re-registration.
+    private static final int OPTIONS_KEEPALIVE_INTERVAL_SECONDS = 30;
+
     private final AtomicInteger regState = new AtomicInteger(0);
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+
+    /**
+     * Tracks consecutive REGISTER failures and selects the next retry delay.
+     * Reset to zero by {@link #markRegistered(int)}.
+     */
+    final RegistrationBackoffPolicy backoffPolicy = new RegistrationBackoffPolicy();
 
     /**
      * Allows exactly one stale-nonce retry per session. Some providers respond with
@@ -84,12 +94,12 @@ public class SipRegistrationListener {
     @ConfigProperty(name = "sip.registration.enabled", defaultValue = "true")
     boolean registrationEnabled;
 
-    /** SIP domain of the registrar, e.g. {@code tel.t-online.de} or {@code sip.sipgate.de}. Maps to {@code SIP_REGISTRAR}. */
+    /// SIP domain of the registrar, e.g. `tel.t-online.de` or `sip.sipgate.de`. Maps to `SIP_REGISTRAR`.
     @Inject
     @ConfigProperty(name = "sip.registrar", defaultValue = "")
     Optional<String> registrar;
 
-    /** SIP subscriber ID / phone number used to build the SIP URI. Maps to {@code SIP_SIPID}. */
+    /// SIP subscriber ID / phone number used to build the SIP URI. Maps to `SIP_SIPID`.
     @Inject
     @ConfigProperty(name = "sip.sipid", defaultValue = "")
     Optional<String> sipId;
@@ -109,16 +119,13 @@ public class SipRegistrationListener {
     int expires;
 
     @Inject
-    SrvDnsResolver srvDnsResolver;
-
-    @Inject
     DigestMd5Computer digestComputer;
-
-    @Inject
-    LocalSipHostProvider localSipHostProvider;
 
     @Resource(lookup = "concurrent/scheduler")
     ManagedScheduledExecutorService managedScheduledExecutorService;
+
+    @Inject
+    ProtocolHelper protocolHelper;
 
     /**
      * The servlet context, supplied by {@link de.bmarwell.proximo.pitido.war.SipTimeServlet#init}
@@ -130,6 +137,7 @@ public class SipRegistrationListener {
 
     private volatile ScheduledFuture<?> startupRegistrationTask;
     private volatile ScheduledFuture<?> reRegistrationTask;
+    private volatile ScheduledFuture<?> keepAliveTask;
 
     /**
      * Schedules the initial REGISTER via the container's managed scheduler.
@@ -267,11 +275,12 @@ public class SipRegistrationListener {
         var fromUri = sipFactory.createSipURI(this.sipId.orElse(""), this.registrar.orElse(""));
 
         try {
-            var requestURI = buildRequestUri(sipFactory);
+            var requestURI = this.protocolHelper.buildRequestUri(sipFactory, registrar.orElse(""));
             var registerRequest = sipFactory.createRequest(applicationSession, "REGISTER", fromUri, fromUri);
             registerRequest.setExpires(this.expires);
             registerRequest.setRequestURI(requestURI);
-            registerRequest.setAddressHeader("Contact", buildContactAddress(sipFactory));
+            registerRequest.setAddressHeader(
+                    "Contact", this.protocolHelper.buildContactAddress(sipFactory, sipId.orElse("")));
 
             LOGGER.log(
                     System.Logger.Level.DEBUG,
@@ -318,8 +327,9 @@ public class SipRegistrationListener {
             var registerRequest = sipFactory.createRequest(origRequest, true);
             registerRequest.setHeader("Authorization", buildAuthHeader(challenge));
             registerRequest.setExpires(this.expires);
-            registerRequest.setRequestURI(buildRequestUri(sipFactory));
-            registerRequest.setAddressHeader("Contact", buildContactAddress(sipFactory));
+            registerRequest.setRequestURI(this.protocolHelper.buildRequestUri(sipFactory, this.registrar.orElse("")));
+            registerRequest.setAddressHeader(
+                    "Contact", this.protocolHelper.buildContactAddress(sipFactory, this.sipId.orElse("")));
 
             LOGGER.log(
                     System.Logger.Level.DEBUG,
@@ -370,6 +380,7 @@ public class SipRegistrationListener {
      */
     public void markRegistered(int grantedExpires) {
         regState.set(2);
+        this.backoffPolicy.reset();
         int effectiveExpires = grantedExpires > 0 ? grantedExpires : this.expires;
         LOGGER.log(
                 System.Logger.Level.INFO,
@@ -386,6 +397,7 @@ public class SipRegistrationListener {
         }
 
         scheduleReRegistration(effectiveExpires);
+        this.scheduleOptionsKeepAlive();
     }
 
     private int resolveGrantedContactExpires(SipServletResponse response) {
@@ -431,14 +443,12 @@ public class SipRegistrationListener {
         return shortestPositiveExpires;
     }
 
-    /**
-     * Schedules a re-registration at {@value #RE_REGISTRATION_FACTOR} of the effective expires
-     * interval.
-     * Skipped when {@link #servletContext} is not yet set (e.g. in unit tests or before servlet
-     * init).
-     *
-     * @param effectiveExpires the expiry interval in seconds actually granted by the registrar
-     */
+    /// Schedules a re-registration at {@value #RE_REGISTRATION_FACTOR} of the effective expires
+    /// interval.
+    /// Skipped when [#servletContext] is not yet set (e.g. in unit tests or before servlet
+    /// init).
+    ///
+    /// @param effectiveExpires the expiry interval in seconds actually granted by the registrar
     private void scheduleReRegistration(int effectiveExpires) {
         if (this.servletContext == null) {
             return;
@@ -468,6 +478,7 @@ public class SipRegistrationListener {
     void resetForReRegistration() {
         regState.set(0);
         staleRetryUsed.set(false);
+        cancelTask(this.keepAliveTask);
         LOGGER.log(System.Logger.Level.INFO, "Registration state reset to IDLE for re-registration");
     }
 
@@ -508,18 +519,103 @@ public class SipRegistrationListener {
         this.shuttingDown.set(true);
         cancelTask(this.startupRegistrationTask);
         cancelTask(this.reRegistrationTask);
+        cancelTask(this.keepAliveTask);
     }
 
-    private URI buildRequestUri(SipFactory sipFactory) throws ServletParseException {
-        String sipServer = srvDnsResolver.resolve(this.registrar.orElse(""));
-        return sipFactory.createURI("sip:" + sipServer + ":5060;transport=tcp");
+    /// Handles a failed REGISTER response by resetting state and scheduling a retry with
+    /// exponential backoff.
+    ///
+    /// Consecutive failures use delays from [RegistrationBackoffPolicy] (30 s, 60 s, 120 s),
+    /// clamped at the last entry.
+    /// The counter is reset to zero by [#markRegistered(int)] on the next success.
+    ///
+    /// Only the first concurrent caller proceeds; subsequent concurrent calls (e.g. an OPTIONS
+    /// keep-alive timeout racing with a REGISTER 408) are dropped by a CAS on [#regState]
+    /// from any registered/idle state down to IDLE.
+    /// This prevents duplicate retry tasks being scheduled simultaneously.
+    ///
+    /// @param reason short human-readable description of the failure for log messages
+    public void scheduleRetryAfterFailure(String reason) {
+        if (this.shuttingDown.get()) {
+            return;
+        }
+
+        if (!regState.compareAndSet(2, 0) && !regState.compareAndSet(1, 0)) {
+            LOGGER.log(
+                    System.Logger.Level.DEBUG,
+                    "scheduleRetryAfterFailure({0}) — already idle or retry in progress, skipping",
+                    reason);
+            return;
+        }
+
+        int delaySeconds = this.backoffPolicy.nextDelaySeconds();
+        int attempt = this.backoffPolicy.failureCount();
+
+        LOGGER.log(
+                System.Logger.Level.WARNING,
+                "Registration failure ({0}) — retry #{1} in {2}s",
+                reason,
+                attempt,
+                delaySeconds);
+
+        cancelTask(this.startupRegistrationTask);
+        staleRetryUsed.set(false);
+        cancelTask(this.reRegistrationTask);
+        this.reRegistrationTask = this.managedScheduledExecutorService.schedule(
+                this::registerWithStartupRetry, delaySeconds, TimeUnit.SECONDS);
     }
 
-    private Address buildContactAddress(SipFactory sipFactory) {
-        String host = localSipHostProvider.get();
-        String sipHost = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+    /// Handles a response to an outgoing OPTIONS keep-alive request.
+    ///
+    /// A 2xx response confirms the TCP connection is alive — no action required.
+    /// Any other status (typically 408 Request Timeout) indicates the connection has died or the
+    /// registrar is unreachable; a re-registration retry is triggered immediately.
+    ///
+    /// @param status SIP response status code
+    public void handleOptionsResponse(int status) {
+        if (status >= 200 && status < 300) {
+            LOGGER.log(System.Logger.Level.DEBUG, "OPTIONS keep-alive acknowledged (status={0})", status);
+            return;
+        }
 
-        return sipFactory.createAddress(sipFactory.createSipURI(this.sipId.orElse(""), sipHost));
+        LOGGER.log(
+                System.Logger.Level.WARNING,
+                "OPTIONS keep-alive failed (status={0}) — triggering re-registration",
+                status);
+        scheduleRetryAfterFailure("OPTIONS " + status);
+    }
+
+    /// Schedules a periodic OPTIONS request to the registrar to keep the TCP connection alive.
+    ///
+    /// The Fritz!Box SIP ALG silently drops idle TCP connections after roughly 20 minutes.
+    /// Sending OPTIONS every {@value #OPTIONS_KEEPALIVE_INTERVAL_SECONDS} seconds prevents
+    /// the connection from going idle and detects transport failures before the next scheduled
+    /// re-registration.
+    ///
+    /// Any existing keep-alive task is cancelled before scheduling the new one.
+    public void scheduleOptionsKeepAlive() {
+        if (this.servletContext == null) {
+            return;
+        }
+
+        cancelTask(this.keepAliveTask);
+
+        final KeepAliveTask keepAliveTask1 = new KeepAliveTask(
+                this.resolveSipFactory(),
+                this.sipId.orElse(""),
+                this.registrar.orElse(""),
+                this.protocolHelper,
+                this::scheduleRetryAfterFailure);
+
+        this.keepAliveTask = this.managedScheduledExecutorService.scheduleAtFixedRate(
+                keepAliveTask1,
+                OPTIONS_KEEPALIVE_INTERVAL_SECONDS,
+                OPTIONS_KEEPALIVE_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+        LOGGER.log(
+                System.Logger.Level.INFO,
+                "OPTIONS keep-alive scheduled every {0}s",
+                OPTIONS_KEEPALIVE_INTERVAL_SECONDS);
     }
 
     private String buildAuthHeader(SipServletResponse challengeResponse) {

@@ -56,24 +56,40 @@ public class SipTimeServlet extends SipServlet implements Serializable {
     SipCallHandler sipCallHandler;
 
     @Override
-    protected void doInvite(SipServletRequest req) throws ServletException, IOException {
+    protected void doInvite(SipServletRequest req) throws IOException {
         sipCallHandler.handleInvite(req);
     }
 
     @Override
-    protected void doInfo(SipServletRequest req) throws ServletException, IOException {
+    protected void doInfo(SipServletRequest req) throws IOException {
         sipCallHandler.handleDtmf(req);
     }
 
     @Override
-    protected void doBye(SipServletRequest req) throws ServletException, IOException {
+    protected void doBye(SipServletRequest req) throws IOException {
         sipCallHandler.handleBye(req);
+    }
+
+    /**
+     * Responds 200 OK to incoming OPTIONS requests.
+     *
+     * <p>Some SIP providers (e.g. Deutsche Telekom) send OPTIONS probes to verify that the
+     * registered endpoint is still reachable.
+     * Responding 200 confirms availability and keeps the provider from deregistering the binding.
+     */
+    @Override
+    protected void doOptions(SipServletRequest req) throws ServletException, IOException {
+        req.createResponse(SipServletResponse.SC_OK).send();
     }
 
     /**
      * Handles SIP responses. A {@code 401 Unauthorized} or {@code 407 Proxy Authentication Required}
      * from the registrar triggers a re-REGISTER with Digest credentials.
      * A {@code 200 OK} for a REGISTER confirms successful registration.
+     * Any other REGISTER response (e.g. {@code 408 Request Timeout}) triggers a retry with
+     * exponential backoff.
+     * Responses to outgoing OPTIONS keep-alive requests are forwarded to
+     * {@link SipRegistrationListener#handleOptionsResponse(int)}.
      */
     @Override
     protected void doResponse(SipServletResponse response) throws ServletException, IOException {
@@ -81,14 +97,26 @@ public class SipTimeServlet extends SipServlet implements Serializable {
         String method = response.getMethod();
         LOGGER.log(System.Logger.Level.DEBUG, "SIP response [{0}] for method [{1}]", status, method);
 
+        if ("OPTIONS".equals(method)) {
+            this.sipRegistrationService.handleOptionsResponse(status);
+            return;
+        }
+
         if (!"REGISTER".equals(method)) {
             return;
         }
+
+        if (status < 200) {
+            // could be 100 CONTINUE, do not handle.
+            return;
+        }
+
         if (status == SipServletResponse.SC_UNAUTHORIZED
                 || status == SipServletResponse.SC_PROXY_AUTHENTICATION_REQUIRED) {
             handleAuthChallenge(response);
             return;
         }
+
         if (status == SipServletResponse.SC_OK) {
             int grantedExpires = this.sipRegistrationService.resolveGrantedExpires(response);
             this.sipRegistrationService.markRegistered(grantedExpires);
@@ -101,6 +129,7 @@ public class SipTimeServlet extends SipServlet implements Serializable {
         }
 
         LOGGER.log(System.Logger.Level.WARNING, "Unexpected REGISTER response [{0}]: {1}", status, response);
+        this.sipRegistrationService.scheduleRetryAfterFailure("REGISTER " + status);
     }
 
     private void handleAuthChallenge(SipServletResponse response) {
