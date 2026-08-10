@@ -21,7 +21,8 @@ module de.bmarwell.proximo.pitido.codecs.sip {
     // Transitive because @ApplicationScoped is a runtime-visible annotation on exported types;
     // consumers seeing those types must be able to read the annotation class.
     requires transitive jakarta.enterprise.cdi.api;
-    requires java.annotation; // javax.annotation.PostConstruct
+    requires javax.inject; // @Inject
+    requires java.annotation; // javax.annotation.PostConstruct / @PreDestroy
 
     exports de.bmarwell.proximo.pitido.codecs.sip;
 

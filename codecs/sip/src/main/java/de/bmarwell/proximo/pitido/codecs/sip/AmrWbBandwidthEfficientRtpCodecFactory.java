@@ -13,7 +13,9 @@
 package de.bmarwell.proximo.pitido.codecs.sip;
 
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
 import javax.enterprise.context.ApplicationScoped;
+import javax.inject.Inject;
 
 /**
  * AMR-WB bandwidth-efficient RTP codec (RFC 4867 §4.3).
@@ -80,9 +82,25 @@ public class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecFactory
      */
     private static final int RTP_CLOCK_RATE = 16_000;
 
-    /** No-args constructor. */
-    public AmrWbBandwidthEfficientRtpCodecFactory() {
+    /** No-args constructor for CDI proxy generation and unit tests. */
+    AmrWbBandwidthEfficientRtpCodecFactory() {
         super();
+    }
+
+    /** Test constructor — see {@link AmrWbRtpCodecFactory#AmrWbRtpCodecFactory(ExecutorService)}. */
+    AmrWbBandwidthEfficientRtpCodecFactory(ExecutorService testExecutorService) {
+        super(testExecutorService);
+    }
+
+    /**
+     * CDI constructor — Liberty injects the shared {@link AmrWbEncodeService}.
+     *
+     * @param encodeService the single-thread encode service that serialises all
+     *                      {@code E_IF_encode} calls
+     */
+    @Inject
+    public AmrWbBandwidthEfficientRtpCodecFactory(AmrWbEncodeService encodeService) {
+        super(encodeService);
     }
 
     @Override
@@ -164,7 +182,7 @@ public class AmrWbBandwidthEfficientRtpCodecFactory extends AmrWbRtpCodecFactory
                     "AMR-WB codec is not available — libvo-amrwbenc was not loaded; check probe() logs");
         }
 
-        return new AmrWbBandwidthEfficientRtpCodec(offeredFmtp);
+        return new AmrWbBandwidthEfficientRtpCodec(offeredFmtp, this.encodeService);
     }
 
     /**

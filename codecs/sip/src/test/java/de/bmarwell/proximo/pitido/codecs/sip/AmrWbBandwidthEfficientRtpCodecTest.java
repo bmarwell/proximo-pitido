@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import de.bmarwell.proximo.pitido.codecs.sip.extension.NativeCodec;
 import java.io.IOException;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,7 +29,8 @@ import org.junit.jupiter.api.Test;
 @NativeCodec(AmrWbBandwidthEfficientRtpCodecFactory.class)
 class AmrWbBandwidthEfficientRtpCodecTest {
 
-    private final AmrWbBandwidthEfficientRtpCodec codec = new AmrWbBandwidthEfficientRtpCodecFactory().forCall("");
+    private final AmrWbBandwidthEfficientRtpCodec codec =
+            new AmrWbBandwidthEfficientRtpCodecFactory(Executors.newSingleThreadExecutor()).forCall("");
 
     @Test
     void encodeMultipleFramesProduceConsistentPayloads() throws IOException {
@@ -75,7 +77,7 @@ class AmrWbBandwidthEfficientRtpCodecTest {
         // Given
         assumeTrue(isLibVoAmrwbencAvailable(), "libvo-amrwbenc not available");
 
-        var octetAlignedCodec = new AmrWbRtpCodec("");
+        var octetAlignedCodec = new AmrWbRtpCodecFactory(Executors.newSingleThreadExecutor()).forCall("");
         // Ensure probe() has run to load libvo-amrwbenc
 
         short[] pcmFrame = generateTestFrame();
@@ -198,7 +200,7 @@ class AmrWbBandwidthEfficientRtpCodecTest {
 
     private boolean isLibVoAmrwbencAvailable() {
         try {
-            final var factory = new AmrWbBandwidthEfficientRtpCodecFactory();
+            final var factory = new AmrWbBandwidthEfficientRtpCodecFactory(Executors.newSingleThreadExecutor());
 
             return factory.isAvailable();
         } catch (UnsatisfiedLinkError | NoClassDefFoundError exception) {
