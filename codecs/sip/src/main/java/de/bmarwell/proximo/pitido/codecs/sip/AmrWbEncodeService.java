@@ -67,6 +67,17 @@ public class AmrWbEncodeService {
     private final ExecutorService encoderThread;
 
     /**
+     * No-args constructor for CDI proxy generation only.
+     *
+     * <p>Weld generates a proxy subclass for the {@code @ApplicationScoped} bean produced by
+     * {@link de.bmarwell.proximo.pitido.war.AmrWbEncodeServiceProducer}.
+     * The proxy never invokes application logic, so {@code encoderThread} is left {@code null}.
+     */
+    public AmrWbEncodeService() {
+        this.encoderThread = null;
+    }
+
+    /**
      * Creates an encode service backed by the given executor.
      *
      * <p>The executor must be a <em>single-thread</em> executor so that at most one
